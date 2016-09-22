@@ -1,0 +1,66 @@
+#
+#    Licensed to the Apache Software Foundation (ASF) under one or more
+#    contributor license agreements.  See the NOTICE file distributed with
+#    this work for additional information regarding copyright ownership.
+#    The ASF licenses this file to You under the Apache License, Version 2.0
+#    (the "License"); you may not use this file except in compliance with
+#    the License.  You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+#    Unless required by applicable law or agreed to in writing, software
+#    distributed under the License is distributed on an "AS IS" BASIS,
+#    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#    See the License for the specific language governing permissions and
+#    limitations under the License.
+#
+
+language: java
+
+sudo: false
+
+notifications:
+  email:
+    # Group email notifications are disabled for now, since we cannot do it on a per-branch basis.
+    # Right now, it would trigger a notification for each fork, which generates a lot of spam.
+    # recipients:
+    #  - dataflow-sdk-build-notifications+travis@google.com
+    on_success: change
+    on_failure: always
+
+matrix:
+  include:
+    # On OSX, run with default JDK only.
+    - os: osx
+      env: MAVEN_OVERRIDE=""
+    # On Linux, run with specific JDKs only.
+    - os: linux
+      env: CUSTOM_JDK="oraclejdk8" MAVEN_OVERRIDE="-DbeamSurefireArgline='-Xmx512m'"
+    - os: linux
+      env: CUSTOM_JDK="oraclejdk7" MAVEN_OVERRIDE="-DbeamSurefireArgline='-Xmx512m'"
+    - os: linux
+      env: CUSTOM_JDK="openjdk7" MAVEN_OVERRIDE="-DbeamSurefireArgline='-Xmx512m'"
+
+before_install:
+  - echo "MAVEN_OPTS='-Xmx1024m -XX:MaxPermSize=512m -XX:+BytecodeVerificationLocal'" > ~/.mavenrc
+  - if [ "$TRAVIS_OS_NAME" == "osx" ]; then export JAVA_HOME=$(/usr/libexec/java_home); fi
+  - if [ "$TRAVIS_OS_NAME" == "linux" ]; then jdk_switcher use "$CUSTOM_JDK"; fi
+  - export BEAM_SUREFIRE_ARGLINE="-Xmx512m"
+
+install:
+  # Removing this here protects from inadvertent caching
+  - rm -rf "$HOME/.m2/repository/org/apache/beam"
+
+script:
+  - travis_retry mvn --settings .travis/settings.xml --batch-mode --update-snapshots --no-snapshot-updates $MAVEN_OVERRIDE verify
+  - travis_retry .travis/test_wordcount.sh
+
+cache:
+  directories:
+    - $HOME/.m2/repository
+
+before_cache:
+  # Removing here increases cache hits (makes the above
+  # rm in `install` redundant unless our config has a bug,
+  # but it will be idempotent)
+  - rm -rf "$HOME/.m2/repository/org/apache/beam"
