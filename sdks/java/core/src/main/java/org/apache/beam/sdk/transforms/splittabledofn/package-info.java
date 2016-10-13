@@ -16,19 +16,7 @@
  * limitations under the License.
  */
 /**
- * Provides a simple, powerful model for building both batch and
- * streaming parallel data processing
- * {@link org.apache.beam.sdk.Pipeline}s.
- *
- * <p>To use the Apache Beam SDK, you build a
- * {@link org.apache.beam.sdk.Pipeline}, which manages a graph of
- * {@link org.apache.beam.sdk.transforms.PTransform}s
- * and the {@link org.apache.beam.sdk.values.PCollection}s that
- * the PTransforms consume and produce.
- *
- * <p>Each Pipeline has a
- * {@link org.apache.beam.sdk.runners.PipelineRunner} to specify
- * where and how it should run after pipeline construction is complete.
- *
+ * Defines utilities related to <a href="https://s.apache.org/splittable-do-fn>splittable</a>
+ * {@link org.apache.beam.sdk.transforms.DoFn}'s.
  */
-package org.apache.beam.sdk;
+package org.apache.beam.sdk.transforms.splittabledofn;
