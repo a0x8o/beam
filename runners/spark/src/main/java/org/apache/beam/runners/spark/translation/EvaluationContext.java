@@ -35,6 +35,7 @@ import org.apache.beam.sdk.AggregatorRetrievalException;
 import org.apache.beam.sdk.AggregatorValues;
 import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.coders.Coder;
+import org.apache.beam.sdk.metrics.MetricResults;
 import org.apache.beam.sdk.transforms.Aggregator;
 import org.apache.beam.sdk.transforms.AppliedPTransform;
 import org.apache.beam.sdk.transforms.PTransform;
@@ -263,6 +264,11 @@ public class EvaluationContext implements EvaluationResult {
   }
 
   @Override
+  public MetricResults metrics() {
+    throw new UnsupportedOperationException("The SparkRunner does not currently support metrics.");
+  }
+
+  @Override
   public <T> Iterable<T> get(PCollection<T> pcollection) {
     @SuppressWarnings("unchecked")
     RDDHolder<T> rddHolder = (RDDHolder<T>) pcollections.get(pcollection);
@@ -277,7 +283,8 @@ public class EvaluationContext implements EvaluationResult {
   }
 
   @Override
-  public void close() {
+  public void close(boolean gracefully) {
+    // graceful stop is used for streaming.
     SparkContextFactory.stopSparkContext(jsc);
   }
 
