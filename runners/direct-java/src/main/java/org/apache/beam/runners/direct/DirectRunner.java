@@ -186,7 +186,7 @@ public class DirectRunner
 
   ////////////////////////////////////////////////////////////////////////////////////////////////
   private final DirectOptions options;
-  private Supplier<ExecutorService> executorServiceSupplier = new FixedThreadPoolSupplier();
+  private Supplier<ExecutorService> executorServiceSupplier;
   private Supplier<Clock> clockSupplier = new NanosOffsetClockSupplier();
 
   public static DirectRunner fromOptions(PipelineOptions options) {
@@ -195,6 +195,7 @@ public class DirectRunner
 
   private DirectRunner(DirectOptions options) {
     this.options = options;
+    this.executorServiceSupplier = new FixedThreadPoolSupplier(options);
   }
 
   /**
@@ -273,7 +274,7 @@ public class DirectRunner
     DirectPipelineResult result = new DirectPipelineResult(executor, context, aggregatorSteps);
     if (options.isBlockOnRun()) {
       try {
-        result.awaitCompletion();
+        result.waitUntilFinish();
       } catch (UserCodeException userException) {
         throw new PipelineExecutionException(userException.getCause());
       } catch (Throwable t) {
@@ -402,17 +403,20 @@ public class DirectRunner
      *
      * <p>See also {@link PipelineExecutor#awaitCompletion()}.
      */
-    public State awaitCompletion() throws Throwable {
+    @Override
+    public State waitUntilFinish() {
       if (!state.isTerminal()) {
         try {
           executor.awaitCompletion();
           state = State.DONE;
-        } catch (InterruptedException e) {
-          Thread.currentThread().interrupt();
-          throw e;
-        } catch (Throwable t) {
-          state = State.FAILED;
-          throw t;
+        } catch (Exception e) {
+          if (e instanceof InterruptedException) {
+            Thread.currentThread().interrupt();
+          }
+          if (e instanceof RuntimeException) {
+            throw (RuntimeException) e;
+          }
+          throw new RuntimeException(e);
         }
       }
       return state;
@@ -424,14 +428,10 @@ public class DirectRunner
     }
 
     @Override
-    public State waitUntilFinish() throws IOException {
-      return waitUntilFinish(Duration.millis(-1));
-    }
-
-    @Override
     public State waitUntilFinish(Duration duration) throws IOException {
       throw new UnsupportedOperationException(
-          "DirectPipelineResult does not support waitUntilFinish.");
+          "DirectPipelineResult does not support waitUntilFinish with a Duration parameter. See"
+              + " BEAM-596.");
     }
   }
 
@@ -440,9 +440,15 @@ public class DirectRunner
    * {@link Executors#newFixedThreadPool(int)}.
    */
   private static class FixedThreadPoolSupplier implements Supplier<ExecutorService> {
+    private final DirectOptions options;
+
+    private FixedThreadPoolSupplier(DirectOptions options) {
+      this.options = options;
+    }
+
     @Override
     public ExecutorService get() {
-      return Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
+      return Executors.newFixedThreadPool(options.getTargetParallelism());
     }
   }
 
