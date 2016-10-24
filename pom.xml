@@ -34,7 +34,7 @@
   <url>http://beam.incubator.apache.org</url>
   <inceptionYear>2016</inceptionYear>
 
-  <version>0.3.0-incubating-SNAPSHOT</version>
+  <version>0.4.0-incubating-SNAPSHOT</version>
 
   <licenses>
     <license>
@@ -92,13 +92,13 @@
 
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    <beam.javadoc_opts/>
+    <beam.javadoc_opts />
 
     <!-- Disable integration tests by default -->
     <skipITs>true</skipITs>
 
     <!-- Do not add additional surefire arguments by default -->
-    <beamSurefireArgline/>
+    <beamSurefireArgline />
 
     <!-- If updating dependencies, please update any relevant javadoc offlineLinks -->
     <avro.version>1.8.1</avro.version>
@@ -1023,7 +1023,7 @@
                     </goals>
                   </pluginExecutionFilter>
                   <action>
-                    <ignore/>
+                    <ignore />
                   </action>
                 </pluginExecution>
                 <pluginExecution>
@@ -1037,7 +1037,7 @@
                     </goals>
                   </pluginExecutionFilter>
                   <action>
-                    <ignore/>
+                    <ignore />
                   </action>
                 </pluginExecution>
               </pluginExecutions>
