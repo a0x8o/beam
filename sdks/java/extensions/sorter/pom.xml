@@ -21,16 +21,17 @@
 
   <parent>
     <groupId>org.apache.beam</groupId>
-    <artifactId>beam-runners-parent</artifactId>
+    <artifactId>beam-sdks-java-extensions-parent</artifactId>
     <version>0.4.0-incubating-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
 
-  <artifactId>beam-runners-core-java</artifactId>
-  <name>Apache Beam :: Runners :: Core Java</name>
-  <description>Beam Runners Core provides utilities to aid runner authors.</description>
-
-  <packaging>jar</packaging>
+  <artifactId>beam-sdks-java-extensions-sorter</artifactId>
+  <name>Apache Beam :: SDKs :: Java :: Extensions :: Sorter</name>
+  
+  <properties>
+    <hadoop.version>2.7.1</hadoop.version>
+  </properties>
 
   <build>
     <plugins>
@@ -38,59 +39,30 @@
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-compiler-plugin</artifactId>
       </plugin>
-
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-surefire-plugin</artifactId>
         <configuration>
-          <excludedGroups>
-            org.apache.beam.sdk.testing.NeedsRunner
-          </excludedGroups>
           <systemPropertyVariables>
-            <beamUseDummyRunner>true</beamUseDummyRunner>
+            <beamUseDummyRunner>false</beamUseDummyRunner>
           </systemPropertyVariables>
         </configuration>
       </plugin>
-
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-checkstyle-plugin</artifactId>
       </plugin>
-
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-source-plugin</artifactId>
+      </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-jar-plugin</artifactId>
       </plugin>
 
-      <!-- Source plugin for generating source and test-source JARs. -->
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-source-plugin</artifactId>
-      </plugin>
-
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-javadoc-plugin</artifactId>
-        <configuration>
-          <windowtitle>Beam Runners Core utilities ${project.version} API</windowtitle>
-          <doctitle>Beam Runners Core utilities for Java, version ${project.version}</doctitle>
-          <overview>../javadoc/overview.html</overview>
-
-          <subpackages>org.apache.beam.runners.core</subpackages>
-          <use>false</use>
-          <quiet>true</quiet>
-          <bottom><![CDATA[<br>]]></bottom>
-        </configuration>
-        <executions>
-          <execution>
-            <goals>
-              <goal>jar</goal>
-            </goals>
-            <phase>package</phase>
-          </execution>
-        </executions>
-      </plugin>
-
+      <!-- Shading Hadoop dependency so that users may use their own version 
+           of Hadoop without interference from this module. -->
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-shade-plugin</artifactId>
@@ -105,6 +77,8 @@
               <shadeTestJar>true</shadeTestJar>
               <artifactSet>
                 <includes>
+                  <include>org.apache.hadoop:hadoop-mapreduce-client-core</include>
+                  <include>org.apache.hadoop:hadoop-common</include>
                   <include>com.google.guava:guava</include>
                 </includes>
               </artifactSet>
@@ -119,16 +93,17 @@
                 </filter>
               </filters>
               <relocations>
-                <!-- TODO: Once ready, change the following pattern to 'com'
-                     only, exclude 'org.apache.beam.**', and remove
-                     the second relocation. -->
+                <relocation>
+                  <pattern>org.apache.hadoop</pattern>
+                  <shadedPattern>org.apache.beam.repackaged.org.apache.hadoop</shadedPattern>
+                </relocation>
                 <relocation>
                   <pattern>com.google.common</pattern>
-                  <shadedPattern>org.apache.beam.sdk.repackaged.com.google.common</shadedPattern>
+                  <shadedPattern>org.apache.beam.repackaged.com.google.common</shadedPattern>
                 </relocation>
                 <relocation>
                   <pattern>com.google.thirdparty</pattern>
-                  <shadedPattern>org.apache.beam.sdk.repackaged.com.google.thirdparty</shadedPattern>
+                  <shadedPattern>org.apache.beam.repackaged.com.google.thirdparty</shadedPattern>
                 </relocation>
               </relocations>
             </configuration>
@@ -136,11 +111,6 @@
         </executions>
       </plugin>
 
-      <!-- Coverage analysis for unit tests. -->
-      <plugin>
-        <groupId>org.jacoco</groupId>
-        <artifactId>jacoco-maven-plugin</artifactId>
-      </plugin>
 
     </plugins>
   </build>
@@ -151,55 +121,36 @@
       <artifactId>beam-sdks-java-core</artifactId>
     </dependency>
 
-    <!-- build dependencies -->
-
     <dependency>
-      <groupId>com.fasterxml.jackson.core</groupId>
-      <artifactId>jackson-annotations</artifactId>
+      <groupId>org.apache.hadoop</groupId>
+      <artifactId>hadoop-mapreduce-client-core</artifactId>
+      <version>${hadoop.version}</version>
     </dependency>
-
+    
     <dependency>
-      <groupId>com.google.auto.value</groupId>
-      <artifactId>auto-value</artifactId>
-      <scope>provided</scope>
+      <groupId>org.apache.hadoop</groupId>
+      <artifactId>hadoop-common</artifactId>
+      <version>${hadoop.version}</version>
     </dependency>
-
-    <dependency>
-      <groupId>com.google.code.findbugs</groupId>
-      <artifactId>annotations</artifactId>
-    </dependency>
-
+    
     <dependency>
       <groupId>com.google.guava</groupId>
       <artifactId>guava</artifactId>
     </dependency>
 
-    <dependency>
-      <groupId>joda-time</groupId>
-      <artifactId>joda-time</artifactId>
-    </dependency>
-
-    <dependency>
-      <groupId>org.slf4j</groupId>
-      <artifactId>slf4j-api</artifactId>
-    </dependency>
-
     <!-- test dependencies -->
-
-    <!-- Utilities such as WindowMatchers -->
     <dependency>
       <groupId>org.apache.beam</groupId>
-      <artifactId>beam-sdks-java-core</artifactId>
-      <classifier>tests</classifier>
+      <artifactId>beam-runners-direct-java</artifactId>
       <scope>test</scope>
     </dependency>
-
+    
     <dependency>
       <groupId>org.hamcrest</groupId>
       <artifactId>hamcrest-all</artifactId>
       <scope>test</scope>
     </dependency>
-
+    
     <dependency>
       <groupId>org.mockito</groupId>
       <artifactId>mockito-all</artifactId>
@@ -211,11 +162,6 @@
       <artifactId>junit</artifactId>
       <scope>test</scope>
     </dependency>
-
-    <dependency>
-      <groupId>org.slf4j</groupId>
-      <artifactId>slf4j-jdk14</artifactId>
-      <scope>test</scope>
-    </dependency>
   </dependencies>
+
 </project>
