@@ -15,52 +15,68 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.beam.examples.complete;
+package org.apache.beam.examples.cookbook;
 
-import java.net.URI;
 import java.util.Arrays;
+import java.util.List;
 import org.apache.beam.sdk.Pipeline;
-import org.apache.beam.sdk.coders.StringDelegateCoder;
+import org.apache.beam.sdk.coders.StringUtf8Coder;
 import org.apache.beam.sdk.testing.PAssert;
 import org.apache.beam.sdk.testing.RunnableOnService;
 import org.apache.beam.sdk.testing.TestPipeline;
 import org.apache.beam.sdk.transforms.Create;
 import org.apache.beam.sdk.transforms.Distinct;
-import org.apache.beam.sdk.transforms.Keys;
-import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollection;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
 
-/**
- * Tests of {@link TfIdf}.
- */
+/** Unit tests for {@link Distinct}. */
 @RunWith(JUnit4.class)
-public class TfIdfTest {
+public class DistinctExampleTest {
 
-  /** Test that the example runs. */
   @Test
   @Category(RunnableOnService.class)
-  public void testTfIdf() throws Exception {
-    Pipeline pipeline = TestPipeline.create();
+  public void testDistinct() {
+    List<String> strings = Arrays.asList(
+        "k1",
+        "k5",
+        "k5",
+        "k2",
+        "k1",
+        "k2",
+        "k3");
 
-    pipeline.getCoderRegistry().registerCoder(URI.class, StringDelegateCoder.of(URI.class));
+    Pipeline p = TestPipeline.create();
 
-    PCollection<KV<String, KV<URI, Double>>> wordToUriAndTfIdf = pipeline
-        .apply(Create.of(
-            KV.of(new URI("x"), "a b c d"),
-            KV.of(new URI("y"), "a b c"),
-            KV.of(new URI("z"), "a m n")))
-        .apply(new TfIdf.ComputeTfIdf());
+    PCollection<String> input =
+        p.apply(Create.of(strings)
+            .withCoder(StringUtf8Coder.of()));
 
-    PCollection<String> words = wordToUriAndTfIdf
-        .apply(Keys.<String>create())
-        .apply(Distinct.<String>create());
+    PCollection<String> output =
+        input.apply(Distinct.<String>create());
 
-    PAssert.that(words).containsInAnyOrder(Arrays.asList("a", "m", "n", "b", "c", "d"));
+    PAssert.that(output)
+        .containsInAnyOrder("k1", "k5", "k2", "k3");
+    p.run().waitUntilFinish();
+  }
 
-    pipeline.run().waitUntilFinish();
+  @Test
+  @Category(RunnableOnService.class)
+  public void testDistinctEmpty() {
+    List<String> strings = Arrays.asList();
+
+    Pipeline p = TestPipeline.create();
+
+    PCollection<String> input =
+        p.apply(Create.of(strings)
+            .withCoder(StringUtf8Coder.of()));
+
+    PCollection<String> output =
+        input.apply(Distinct.<String>create());
+
+    PAssert.that(output).empty();
+    p.run().waitUntilFinish();
   }
 }

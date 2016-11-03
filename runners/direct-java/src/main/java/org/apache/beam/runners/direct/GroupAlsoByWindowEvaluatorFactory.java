@@ -103,7 +103,8 @@ class GroupAlsoByWindowEvaluatorFactory implements TransformEvaluatorFactory {
 
       @SuppressWarnings("unchecked")
       WindowingStrategy<?, BoundedWindow> windowingStrategy =
-          (WindowingStrategy<?, BoundedWindow>) application.getTransform().getWindowingStrategy();
+          (WindowingStrategy<?, BoundedWindow>)
+              application.getTransform().getInputWindowingStrategy();
 
       DirectStepContext stepContext =
           evaluationContext
@@ -124,8 +125,8 @@ class GroupAlsoByWindowEvaluatorFactory implements TransformEvaluatorFactory {
           ParDoEvaluator.create(
               evaluationContext,
               stepContext,
-              inputBundle,
               application,
+              windowingStrategy,
               gabwDoFn,
               Collections.<PCollectionView<?>>emptyList(),
               MAIN_OUTPUT_TAG,
