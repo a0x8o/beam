@@ -140,12 +140,11 @@
   <packaging>pom</packaging>
 
   <modules>
+    <!-- sdks/java/build-tools has project-wide configuration. To make these available
+      in all modules, link it directly to the parent pom.xml. -->
+    <module>sdks/java/build-tools</module>
     <module>sdks</module>
     <module>runners</module>
-    <!-- sdks/java/maven-archetypes has several dependencies on the DataflowPipelineRunner. 
-      Until these are refactored out or a released artifact exists, we need to modify the 
-      build order. -->
-    <module>sdks/java/maven-archetypes</module>
     <module>examples</module>
   </modules>
 
