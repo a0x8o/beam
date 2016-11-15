@@ -22,6 +22,7 @@ import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
 import static com.google.common.base.Strings.isNullOrEmpty;
 
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Ordering;
 
 import java.io.File;
@@ -38,6 +39,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.zip.GZIPOutputStream;
 
 import javax.annotation.Nullable;
@@ -79,6 +81,8 @@ import org.slf4j.LoggerFactory;
  * @param <T> the type of values written to the sink.
  */
 public abstract class FileBasedSink<T> extends Sink<T> {
+  private static final Logger LOG = LoggerFactory.getLogger(FileBasedSink.class);
+
   /**
    * Directly supported file output compression types.
    */
@@ -262,11 +266,11 @@ public abstract class FileBasedSink<T> extends Sink<T> {
    * FileBasedSinkWriter.
    *
    * <h2>Temporary and Output File Naming:</h2> During the write, bundles are written to temporary
-   * files using the baseTemporaryFilename that can be provided via the constructor of
+   * files using the tempDirectory that can be provided via the constructor of
    * FileBasedWriteOperation. These temporary files will be named
-   * {@code {baseTemporaryFilename}-temp-{bundleId}}, where bundleId is the unique id of the bundle.
-   * For example, if baseTemporaryFilename is "gs://my-bucket/my_temp_output", the output for a
-   * bundle with bundle id 15723 will be "gs://my-bucket/my_temp_output-temp-15723".
+   * {@code {tempDirectory}/{bundleId}}, where bundleId is the unique id of the bundle.
+   * For example, if tempDirectory is "gs://my-bucket/my_temp_output", the output for a
+   * bundle with bundle id 15723 will be "gs://my-bucket/my_temp_output/15723".
    *
    * <p>Final output files are written to baseOutputFilename with the format
    * {@code {baseOutputFilename}-0000i-of-0000n.{extension}} where n is the total number of bundles
@@ -276,12 +280,6 @@ public abstract class FileBasedSink<T> extends Sink<T> {
    * <p>Subclass implementations can change the file naming template by supplying a value for
    * {@link FileBasedSink#fileNamingTemplate}.
    *
-   * <h2>Temporary Bundle File Handling:</h2>
-   *
-   * <p>{@link FileBasedSink.FileBasedWriteOperation#temporaryFileRetention} controls the behavior
-   * for managing temporary files. By default, temporary files will be removed. Subclasses can
-   * provide a different value to the constructor.
-   *
    * <p>Note that in the case of permanent failure of a bundle's write, no clean up of temporary
    * files will occur.
    *
@@ -290,47 +288,26 @@ public abstract class FileBasedSink<T> extends Sink<T> {
    * @param <T> the type of values written to the sink.
    */
   public abstract static class FileBasedWriteOperation<T> extends WriteOperation<T, FileResult> {
-    private static final Logger LOG = LoggerFactory.getLogger(FileBasedWriteOperation.class);
-
-    /**
-     * Options for handling of temporary output files.
-     */
-    public enum TemporaryFileRetention {
-      KEEP,
-      REMOVE
-    }
-
     /**
      * The Sink that this WriteOperation will write to.
      */
     protected final FileBasedSink<T> sink;
 
-    /**
-     * Option to keep or remove temporary output files.
-     */
-    protected final TemporaryFileRetention temporaryFileRetention;
+    /** Directory for temporary output files. */
+    protected final String tempDirectory;
 
-    /**
-     * Base filename used for temporary output files. Default is the baseOutputFilename.
-     */
-    protected final String baseTemporaryFilename;
-
-    /**
-     * Build a temporary filename using the temporary filename separator with the given prefix and
-     * suffix.
-     */
-    protected static final String buildTemporaryFilename(String prefix, String suffix) {
-      try {
-        IOChannelFactory factory = IOChannelUtils.getFactory(prefix);
-        return factory.resolve(prefix, suffix);
-      } catch (IOException e) {
-        throw new RuntimeException(e);
-      }
+    /** Constructs a temporary file path given the temporary directory and a filename. */
+    protected static String buildTemporaryFilename(String tempDirectory, String filename)
+        throws IOException {
+      return IOChannelUtils.getFactory(tempDirectory).resolve(tempDirectory, filename);
     }
 
     /**
-     * Construct a FileBasedWriteOperation using the same base filename for both temporary and
-     * output files.
+     * Constructs a FileBasedWriteOperation using the default strategy for generating a temporary
+     * directory from the base output filename.
+     *
+     * <p>Default is a uniquely named sibling of baseOutputFilename, e.g. if baseOutputFilename is
+     * /path/to/foo, the temporary directory will be /path/to/temp-beam-foo-$date.
      *
      * @param sink the FileBasedSink that will be used to configure this write operation.
      */
@@ -355,27 +332,14 @@ public abstract class FileBasedSink<T> extends Sink<T> {
     }
 
     /**
-     * Construct a FileBasedWriteOperation.
-     *
-     * @param sink the FileBasedSink that will be used to configure this write operation.
-     * @param baseTemporaryFilename the base filename to be used for temporary output files.
-     */
-    public FileBasedWriteOperation(FileBasedSink<T> sink, String baseTemporaryFilename) {
-      this(sink, baseTemporaryFilename, TemporaryFileRetention.REMOVE);
-    }
-
-    /**
      * Create a new FileBasedWriteOperation.
      *
      * @param sink the FileBasedSink that will be used to configure this write operation.
-     * @param baseTemporaryFilename the base filename to be used for temporary output files.
-     * @param temporaryFileRetention defines how temporary files are handled.
+     * @param tempDirectory the base directory to be used for temporary output files.
      */
-    public FileBasedWriteOperation(FileBasedSink<T> sink, String baseTemporaryFilename,
-        TemporaryFileRetention temporaryFileRetention) {
+    public FileBasedWriteOperation(FileBasedSink<T> sink, String tempDirectory) {
       this.sink = sink;
-      this.baseTemporaryFilename = baseTemporaryFilename;
-      this.temporaryFileRetention = temporaryFileRetention;
+      this.tempDirectory = tempDirectory;
     }
 
     /**
@@ -420,10 +384,12 @@ public abstract class FileBasedSink<T> extends Sink<T> {
       }
       copyToOutputFiles(files, options);
 
-      // Optionally remove temporary files.
-      if (temporaryFileRetention == TemporaryFileRetention.REMOVE) {
-        removeTemporaryFiles(options);
-      }
+      // We remove the entire temporary directory, rather than specifically removing the files
+      // from writerResults, because writerResults includes only successfully completed bundles,
+      // and we'd like to clean up the failed ones too.
+      // Note that due to GCS eventual consistency, matching files in the temp directory is also
+      // currently non-perfect and may fail to delete some files.
+      removeTemporaryFiles(files, options);
     }
 
     /**
@@ -483,21 +449,36 @@ public abstract class FileBasedSink<T> extends Sink<T> {
     }
 
     /**
-     * Removes temporary output files. Uses the temporary filename to find files to remove.
+     * Removes temporary output files. Uses the temporary directory to find files to remove.
      *
      * <p>Can be called from subclasses that override {@link FileBasedWriteOperation#finalize}.
      * <b>Note:</b>If finalize is overridden and does <b>not</b> rename or otherwise finalize
      * temporary files, this method will remove them.
      */
-    protected final void removeTemporaryFiles(PipelineOptions options) throws IOException {
-      String pattern = buildTemporaryFilename(baseTemporaryFilename, "*");
-      LOG.debug("Finding temporary bundle output files matching {}.", pattern);
-      FileOperations fileOperations = FileOperationsFactory.getFileOperations(pattern, options);
-      IOChannelFactory factory = IOChannelUtils.getFactory(pattern);
-      Collection<String> matches = factory.match(pattern);
-      LOG.debug("{} temporary files matched {}", matches.size(), pattern);
-      LOG.debug("Removing {} files.", matches.size());
-      fileOperations.remove(matches);
+    protected final void removeTemporaryFiles(List<String> knownFiles, PipelineOptions options)
+        throws IOException {
+      LOG.debug("Removing temporary bundle output files in {}.", tempDirectory);
+      FileOperations fileOperations =
+          FileOperationsFactory.getFileOperations(tempDirectory, options);
+      IOChannelFactory factory = IOChannelUtils.getFactory(tempDirectory);
+
+      // To partially mitigate the effects of filesystems with eventually-consistent
+      // directory matching APIs, we remove not only files that the filesystem says exist
+      // in the directory (which may be incomplete), but also files that are known to exist
+      // (produced by successfully completed bundles).
+      // This may still fail to remove temporary outputs of some failed bundles, but at least
+      // the common case (where all bundles succeed) is guaranteed to be fully addressed.
+      Collection<String> matches = factory.match(factory.resolve(tempDirectory, "*"));
+      Set<String> allMatches = new HashSet<>(matches);
+      allMatches.addAll(knownFiles);
+      LOG.debug(
+          "Removing {} temporary files found under {} ({} matched glob, {} known files)",
+          allMatches.size(),
+          tempDirectory,
+          matches.size(),
+          allMatches.size() - matches.size());
+      fileOperations.remove(allMatches);
+      fileOperations.remove(ImmutableList.of(tempDirectory));
     }
 
     /**
@@ -542,9 +523,7 @@ public abstract class FileBasedSink<T> extends Sink<T> {
     private String id;
 
     /**
-     * The filename of the output bundle. Equal to the
-     * {@link FileBasedSink.FileBasedWriteOperation#TEMPORARY_FILENAME_SEPARATOR} and id appended to
-     * the baseName.
+     * The filename of the output bundle - $tempDirectory/$id.
      */
     private String filename;
 
@@ -597,7 +576,7 @@ public abstract class FileBasedSink<T> extends Sink<T> {
     public final void open(String uId) throws Exception {
       this.id = uId;
       filename = FileBasedWriteOperation.buildTemporaryFilename(
-          getWriteOperation().baseTemporaryFilename, uId);
+          getWriteOperation().tempDirectory, uId);
       LOG.debug("Opening {}.", filename);
       final WritableByteChannelFactory factory =
           getWriteOperation().getSink().writableByteChannelFactory;
@@ -682,7 +661,7 @@ public abstract class FileBasedSink<T> extends Sink<T> {
       if (factory instanceof GcsIOChannelFactory) {
         return new GcsOperations(options);
       } else if (factory instanceof FileIOChannelFactory) {
-        return new LocalFileOperations();
+        return new LocalFileOperations(factory);
       } else {
         throw new IOException("Unrecognized file system.");
       }
@@ -696,19 +675,22 @@ public abstract class FileBasedSink<T> extends Sink<T> {
    */
   private interface FileOperations {
     /**
-     * Copy a collection of files from one location to another.
+     * Copies a collection of files from one location to another.
      *
      * <p>The number of source filenames must equal the number of destination filenames.
      *
      * @param srcFilenames the source filenames.
      * @param destFilenames the destination filenames.
      */
-     void copy(List<String> srcFilenames, List<String> destFilenames) throws IOException;
+    void copy(List<String> srcFilenames, List<String> destFilenames) throws IOException;
 
     /**
-     * Remove a collection of files.
+     * Removes a collection of files or directories.
+     *
+     * <p>Directories are required to be empty. Non-empty directories will not be deleted,
+     * and this method may return silently or throw an exception.
      */
-    void remove(Collection<String> filenames) throws IOException;
+    void remove(Collection<String> filesOrDirs) throws IOException;
   }
 
   /**
@@ -717,7 +699,7 @@ public abstract class FileBasedSink<T> extends Sink<T> {
   private static class GcsOperations implements FileOperations {
     private final GcsUtil gcsUtil;
 
-    public GcsOperations(PipelineOptions options) {
+    GcsOperations(PipelineOptions options) {
       gcsUtil = new GcsUtilFactory().create(options);
     }
 
@@ -727,8 +709,8 @@ public abstract class FileBasedSink<T> extends Sink<T> {
     }
 
     @Override
-    public void remove(Collection<String> filenames) throws IOException {
-      gcsUtil.remove(filenames);
+    public void remove(Collection<String> filesOrDirs) throws IOException {
+      gcsUtil.remove(filesOrDirs);
     }
   }
 
@@ -737,6 +719,12 @@ public abstract class FileBasedSink<T> extends Sink<T> {
    */
   private static class LocalFileOperations implements FileOperations {
     private static final Logger LOG = LoggerFactory.getLogger(LocalFileOperations.class);
+
+    private final IOChannelFactory factory;
+
+    LocalFileOperations(IOChannelFactory factory) {
+      this.factory = factory;
+    }
 
     @Override
     public void copy(List<String> srcFilenames, List<String> destFilenames) throws IOException {
@@ -769,18 +757,18 @@ public abstract class FileBasedSink<T> extends Sink<T> {
     }
 
     @Override
-    public void remove(Collection<String> filenames) throws IOException {
-      for (String filename : filenames) {
-        LOG.debug("Removing file {}", filename);
-        removeOne(filename);
+    public void remove(Collection<String> filesOrDirs) throws IOException {
+      for (String fileOrDir : filesOrDirs) {
+        LOG.debug("Removing file {}", fileOrDir);
+        removeOne(fileOrDir);
       }
     }
 
-    private void removeOne(String filename) throws IOException {
+    private void removeOne(String fileOrDir) throws IOException {
       // Delete the file if it exists.
-      boolean exists = Files.deleteIfExists(Paths.get(filename));
+      boolean exists = Files.deleteIfExists(Paths.get(fileOrDir));
       if (!exists) {
-        LOG.debug("{} does not exist.", filename);
+        LOG.debug("Tried to delete {}, but it did not exist", fileOrDir);
       }
     }
   }
