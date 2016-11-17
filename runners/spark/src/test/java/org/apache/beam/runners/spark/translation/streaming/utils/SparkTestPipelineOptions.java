@@ -15,13 +15,28 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.beam.sdk.transforms.reflect;
+package org.apache.beam.runners.spark.translation.streaming.utils;
 
-import org.apache.beam.sdk.transforms.DoFn;
+import org.apache.beam.runners.spark.SparkPipelineOptions;
+import org.apache.beam.runners.spark.SparkRunner;
+import org.apache.beam.sdk.options.PipelineOptionsFactory;
+import org.junit.rules.ExternalResource;
 
-/** Interface for invoking the {@link DoFn.OnTimer} method for a particular timer. */
-public interface OnTimerInvoker<InputT, OutputT> {
+/**
+ * A rule to create a common {@link SparkPipelineOptions} test options for spark-runner.
+ */
+public class SparkTestPipelineOptions extends ExternalResource {
 
-  /** Invoke the {@link DoFn.OnTimer} method in the provided context. */
-  void invokeOnTimer(DoFn.ArgumentProvider<InputT, OutputT> extra);
+  protected final SparkPipelineOptions options =
+      PipelineOptionsFactory.as(SparkPipelineOptions.class);
+
+  @Override
+  protected void before() throws Throwable {
+    options.setRunner(SparkRunner.class);
+    options.setEnableSparkMetricSinks(false);
+  }
+
+  public SparkPipelineOptions getOptions() {
+    return options;
+  }
 }

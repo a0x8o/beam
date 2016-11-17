@@ -341,7 +341,7 @@ public abstract class DoFn<InputT, OutputT> implements Serializable, HasDisplayD
    * <p>In the case of {@link ProcessElement} it is called once per invocation of
    * {@link ProcessElement}.
    */
-  public interface ExtraContextFactory<InputT, OutputT> {
+  public interface ArgumentProvider<InputT, OutputT> {
     /**
      * Construct the {@link BoundedWindow} to use within a {@link DoFn} that
      * needs it. This is called if the {@link ProcessElement} method has a parameter of type
@@ -350,6 +350,16 @@ public abstract class DoFn<InputT, OutputT> implements Serializable, HasDisplayD
      * @return {@link BoundedWindow} of the element currently being processed.
      */
     BoundedWindow window();
+
+    /**
+     * Provide a {@link DoFn.Context} to use with the given {@link DoFn}.
+     */
+    DoFn<InputT, OutputT>.Context context(DoFn<InputT, OutputT> doFn);
+
+    /**
+     * Provide a {@link DoFn.ProcessContext} to use with the given {@link DoFn}.
+     */
+    DoFn<InputT, OutputT>.ProcessContext processContext(DoFn<InputT, OutputT> doFn);
 
     /**
      * A placeholder for testing purposes.
@@ -403,11 +413,21 @@ public abstract class DoFn<InputT, OutputT> implements Serializable, HasDisplayD
     T get();
   }
 
-  /** For testing only, this {@link ExtraContextFactory} returns {@code null} for all parameters. */
-  public static class FakeExtraContextFactory<InputT, OutputT>
-      implements ExtraContextFactory<InputT, OutputT> {
+  /** For testing only, this {@link ArgumentProvider} returns {@code null} for all parameters. */
+  public static class FakeArgumentProvider<InputT, OutputT>
+      implements ArgumentProvider<InputT, OutputT> {
+    @Override
+    public DoFn<InputT, OutputT>.ProcessContext processContext(DoFn<InputT, OutputT> doFn) {
+      return null;
+    }
+
     @Override
     public BoundedWindow window() {
+      return null;
+    }
+
+    @Override
+    public DoFn<InputT, OutputT>.Context context(DoFn<InputT, OutputT> doFn) {
       return null;
     }
 

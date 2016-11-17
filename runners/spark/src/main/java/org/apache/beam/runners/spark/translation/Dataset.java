@@ -15,13 +15,20 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.beam.sdk.transforms.reflect;
 
-import org.apache.beam.sdk.transforms.DoFn;
+package org.apache.beam.runners.spark.translation;
 
-/** Interface for invoking the {@link DoFn.OnTimer} method for a particular timer. */
-public interface OnTimerInvoker<InputT, OutputT> {
+import java.io.Serializable;
 
-  /** Invoke the {@link DoFn.OnTimer} method in the provided context. */
-  void invokeOnTimer(DoFn.ArgumentProvider<InputT, OutputT> extra);
+
+/**
+ * Holder for Spark RDD/DStream.
+ */
+public interface Dataset extends Serializable {
+
+  void cache();
+
+  void action();
+
+  void setName(String name);
 }
