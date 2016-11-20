@@ -18,6 +18,7 @@
 package org.apache.beam.sdk.transforms;
 
 import java.io.IOException;
+import java.util.Collection;
 import org.apache.beam.sdk.options.PipelineOptions;
 import org.apache.beam.sdk.transforms.Combine.CombineFn;
 import org.apache.beam.sdk.transforms.DoFn.Context;
@@ -77,7 +78,7 @@ public class DoFnAdapters {
   public static <InputT, OutputT> OldDoFn<InputT, OutputT>.ProcessContext adaptProcessContext(
       OldDoFn<InputT, OutputT> fn,
       final DoFn<InputT, OutputT>.ProcessContext c,
-      final DoFn.ArgumentProvider<InputT, OutputT> extra) {
+      final DoFnInvoker.ArgumentProvider<InputT, OutputT> extra) {
     return fn.new ProcessContext() {
       @Override
       public InputT element() {
@@ -244,6 +245,11 @@ public class DoFnAdapters {
     }
 
     @Override
+    Collection<Aggregator<?, ?>> getAggregators() {
+      return fn.getAggregators();
+    }
+
+    @Override
     public Duration getAllowedTimestampSkew() {
       return fn.getAllowedTimestampSkew();
     }
@@ -270,12 +276,12 @@ public class DoFnAdapters {
   }
 
   /**
-   * Wraps an {@link OldDoFn.Context} as a {@link DoFn.ArgumentProvider} inside a {@link
+   * Wraps an {@link OldDoFn.Context} as a {@link DoFnInvoker.ArgumentProvider} inside a {@link
    * DoFn.StartBundle} or {@link DoFn.FinishBundle} method, which means the extra context is
    * unavailable.
    */
   private static class ContextAdapter<InputT, OutputT> extends DoFn<InputT, OutputT>.Context
-      implements DoFn.ArgumentProvider<InputT, OutputT> {
+      implements DoFnInvoker.ArgumentProvider<InputT, OutputT> {
 
     private OldDoFn<InputT, OutputT>.Context context;
 
@@ -371,11 +377,11 @@ public class DoFnAdapters {
   }
 
   /**
-   * Wraps an {@link OldDoFn.ProcessContext} as a {@link DoFn.ArgumentProvider} method.
+   * Wraps an {@link OldDoFn.ProcessContext} as a {@link DoFnInvoker.ArgumentProvider} method.
    */
   private static class ProcessContextAdapter<InputT, OutputT>
       extends DoFn<InputT, OutputT>.ProcessContext
-      implements DoFn.ArgumentProvider<InputT, OutputT> {
+      implements DoFnInvoker.ArgumentProvider<InputT, OutputT> {
 
     private OldDoFn<InputT, OutputT>.ProcessContext context;
 
