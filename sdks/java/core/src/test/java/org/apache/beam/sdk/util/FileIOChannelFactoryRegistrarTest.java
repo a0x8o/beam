@@ -17,37 +17,28 @@
  */
 package org.apache.beam.sdk.util;
 
-import java.io.ByteArrayInputStream;
-import java.io.IOException;
+import static org.junit.Assert.fail;
+
+import com.google.common.collect.Lists;
+import java.util.ServiceLoader;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
 
 /**
- * {@link ByteArrayInputStream} that allows accessing the entire internal buffer without copying.
+ * Tests for {@link FileIOChannelFactoryRegistrar}.
  */
-public class ExposedByteArrayInputStream extends ByteArrayInputStream{
+@RunWith(JUnit4.class)
+public class FileIOChannelFactoryRegistrarTest {
 
-  public ExposedByteArrayInputStream(byte[] buf) {
-    super(buf);
-  }
-
-  /**
-   * Read all remaining bytes.
-   */
-  public byte[] readAll() throws IOException {
-    if (pos == 0 && count == buf.length) {
-      pos = count;
-      return buf;
+  @Test
+  public void testServiceLoader() {
+    for (IOChannelFactoryRegistrar registrar
+        : Lists.newArrayList(ServiceLoader.load(IOChannelFactoryRegistrar.class).iterator())) {
+      if (registrar instanceof FileIOChannelFactoryRegistrar) {
+        return;
+      }
     }
-    byte[] ret = new byte[count - pos];
-    super.read(ret);
-    return ret;
-  }
-
-  @Override
-  public void close() {
-    try {
-      super.close();
-    } catch (IOException exn) {
-      throw new RuntimeException("Unexpected IOException closing ByteArrayInputStream", exn);
-    }
+    fail("Expected to find " + FileIOChannelFactoryRegistrar.class);
   }
 }

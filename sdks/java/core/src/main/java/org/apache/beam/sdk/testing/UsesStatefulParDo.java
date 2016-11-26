@@ -15,39 +15,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.beam.sdk.util;
+package org.apache.beam.sdk.testing;
 
-import java.io.ByteArrayInputStream;
-import java.io.IOException;
+import org.apache.beam.sdk.transforms.ParDo;
 
 /**
- * {@link ByteArrayInputStream} that allows accessing the entire internal buffer without copying.
+ * Category tag for validation tests which utilize stateful {@link ParDo}.
  */
-public class ExposedByteArrayInputStream extends ByteArrayInputStream{
-
-  public ExposedByteArrayInputStream(byte[] buf) {
-    super(buf);
-  }
-
-  /**
-   * Read all remaining bytes.
-   */
-  public byte[] readAll() throws IOException {
-    if (pos == 0 && count == buf.length) {
-      pos = count;
-      return buf;
-    }
-    byte[] ret = new byte[count - pos];
-    super.read(ret);
-    return ret;
-  }
-
-  @Override
-  public void close() {
-    try {
-      super.close();
-    } catch (IOException exn) {
-      throw new RuntimeException("Unexpected IOException closing ByteArrayInputStream", exn);
-    }
-  }
-}
+public interface UsesStatefulParDo {}

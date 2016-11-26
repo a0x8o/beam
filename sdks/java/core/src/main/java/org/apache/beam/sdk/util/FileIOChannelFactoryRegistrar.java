@@ -17,37 +17,22 @@
  */
 package org.apache.beam.sdk.util;
 
-import java.io.ByteArrayInputStream;
-import java.io.IOException;
+import com.google.auto.service.AutoService;
+import org.apache.beam.sdk.options.PipelineOptions;
 
 /**
- * {@link ByteArrayInputStream} that allows accessing the entire internal buffer without copying.
+ * {@link AutoService} registrar for the {@link FileIOChannelFactory}.
  */
-public class ExposedByteArrayInputStream extends ByteArrayInputStream{
+@AutoService(IOChannelFactoryRegistrar.class)
+public class FileIOChannelFactoryRegistrar implements IOChannelFactoryRegistrar {
 
-  public ExposedByteArrayInputStream(byte[] buf) {
-    super(buf);
-  }
-
-  /**
-   * Read all remaining bytes.
-   */
-  public byte[] readAll() throws IOException {
-    if (pos == 0 && count == buf.length) {
-      pos = count;
-      return buf;
-    }
-    byte[] ret = new byte[count - pos];
-    super.read(ret);
-    return ret;
+  @Override
+  public IOChannelFactory fromOptions(PipelineOptions options) {
+    return FileIOChannelFactory.fromOptions(options);
   }
 
   @Override
-  public void close() {
-    try {
-      super.close();
-    } catch (IOException exn) {
-      throw new RuntimeException("Unexpected IOException closing ByteArrayInputStream", exn);
-    }
+  public String getScheme() {
+    return "file";
   }
 }

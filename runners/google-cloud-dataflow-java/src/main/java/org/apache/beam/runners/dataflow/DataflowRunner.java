@@ -240,7 +240,7 @@ public class DataflowRunner extends PipelineRunner<DataflowPipelineJob> {
    */
   public static DataflowRunner fromOptions(PipelineOptions options) {
     // (Re-)register standard IO factories. Clobbers any prior credentials.
-    IOChannelUtils.registerStandardIOFactories(options);
+    IOChannelUtils.registerIOFactoriesAllowOverride(options);
 
     DataflowPipelineOptions dataflowOptions =
         PipelineOptionsValidator.validate(DataflowPipelineOptions.class, options);
@@ -2360,8 +2360,8 @@ public class DataflowRunner extends PipelineRunner<DataflowPipelineJob> {
   }
 
   /**
-   * A specialized {@link DoFn} for writing the contents of a {@link PCollection}
-   * to a streaming {@link PCollectionView} backend implementation.
+   * A marker {@link DoFn} for writing the contents of a {@link PCollection} to a streaming
+   * {@link PCollectionView} backend implementation.
    */
   @Deprecated
   public static class StreamingPCollectionViewWriterFn<T>
@@ -2389,13 +2389,9 @@ public class DataflowRunner extends PipelineRunner<DataflowPipelineJob> {
 
     @Override
     public void processElement(ProcessContext c) throws Exception {
-      List<WindowedValue<T>> output = new ArrayList<>();
-      for (T elem : c.element()) {
-        output.add(WindowedValue.of(elem, c.timestamp(), c.window(), c.pane()));
-      }
-
-      c.windowingInternals().writePCollectionViewData(
-          view.getTagInternal(), output, dataCoder);
+      throw new UnsupportedOperationException(
+          String.format(
+              "%s is a marker class only and should never be executed.", getClass().getName()));
     }
   }
 
