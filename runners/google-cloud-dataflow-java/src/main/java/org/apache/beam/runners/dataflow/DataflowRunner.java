@@ -59,7 +59,6 @@ import java.net.URISyntaxException;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.channels.Channels;
-import java.nio.channels.WritableByteChannel;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -128,7 +127,6 @@ import org.apache.beam.sdk.transforms.Create;
 import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.Flatten;
 import org.apache.beam.sdk.transforms.GroupByKey;
-import org.apache.beam.sdk.transforms.OldDoFn;
 import org.apache.beam.sdk.transforms.PTransform;
 import org.apache.beam.sdk.transforms.ParDo;
 import org.apache.beam.sdk.transforms.SerializableFunction;
@@ -212,9 +210,9 @@ public class DataflowRunner extends PipelineRunner<DataflowPipelineJob> {
   // Default Docker container images that execute Dataflow worker harness, residing in Google
   // Container Registry, separately for Batch and Streaming.
   public static final String BATCH_WORKER_HARNESS_CONTAINER_IMAGE =
-      "dataflow.gcr.io/v1beta3/beam-java-batch:beam-master-20161031";
+      "dataflow.gcr.io/v1beta3/beam-java-batch:beam-master-20161129";
   public static final String STREAMING_WORKER_HARNESS_CONTAINER_IMAGE =
-      "dataflow.gcr.io/v1beta3/beam-java-streaming:beam-master-20161031";
+      "dataflow.gcr.io/v1beta3/beam-java-streaming:beam-master-20161129";
 
   // The limit of CreateJob request size.
   private static final int CREATE_JOB_REQUEST_LIMIT_BYTES = 10 * 1024 * 1024;
@@ -567,15 +565,13 @@ public class DataflowRunner extends PipelineRunner<DataflowPipelineJob> {
           String.format(
               "Location must be local or on Cloud Storage, got {}.", fileLocation));
       String workSpecJson = DataflowPipelineTranslator.jobToString(newJob);
-      try (
-          WritableByteChannel writer =
-              IOChannelUtils.create(fileLocation, MimeTypes.TEXT);
-          PrintWriter printWriter = new PrintWriter(Channels.newOutputStream(writer))) {
+      try (PrintWriter printWriter = new PrintWriter(
+          Channels.newOutputStream(IOChannelUtils.create(fileLocation, MimeTypes.TEXT)))) {
         printWriter.print(workSpecJson);
         LOG.info("Printed job specification to {}", fileLocation);
       } catch (IOException ex) {
         String error =
-            String.format("Cannot create output file at {}", fileLocation);
+            String.format("Cannot create output file at %s", fileLocation);
         if (isTemplate) {
           throw new RuntimeException(error, ex);
         } else {
@@ -2364,8 +2360,7 @@ public class DataflowRunner extends PipelineRunner<DataflowPipelineJob> {
    * {@link PCollectionView} backend implementation.
    */
   @Deprecated
-  public static class StreamingPCollectionViewWriterFn<T>
-  extends OldDoFn<Iterable<T>, T> implements OldDoFn.RequiresWindowAccess {
+  public static class StreamingPCollectionViewWriterFn<T> extends DoFn<Iterable<T>, T> {
     private final PCollectionView<?> view;
     private final Coder<T> dataCoder;
 
@@ -2387,8 +2382,8 @@ public class DataflowRunner extends PipelineRunner<DataflowPipelineJob> {
       return dataCoder;
     }
 
-    @Override
-    public void processElement(ProcessContext c) throws Exception {
+    @ProcessElement
+    public void processElement(ProcessContext c, BoundedWindow w) throws Exception {
       throw new UnsupportedOperationException(
           String.format(
               "%s is a marker class only and should never be executed.", getClass().getName()));
