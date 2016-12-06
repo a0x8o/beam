@@ -26,14 +26,16 @@ import static org.apache.beam.runners.spark.io.hadoop.ShardNameBuilder.replaceSh
 
 import com.google.common.collect.Maps;
 import java.io.IOException;
+import java.util.Collections;
 import java.util.Map;
 import org.apache.avro.mapred.AvroKey;
 import org.apache.avro.mapreduce.AvroJob;
 import org.apache.avro.mapreduce.AvroKeyInputFormat;
 import org.apache.beam.runners.core.AssignWindowsDoFn;
 import org.apache.beam.runners.spark.SparkRunner;
-import org.apache.beam.runners.spark.aggregators.AccumulatorSingleton;
 import org.apache.beam.runners.spark.aggregators.NamedAggregators;
+import org.apache.beam.runners.spark.aggregators.SparkAggregators;
+import org.apache.beam.runners.spark.coders.CoderHelpers;
 import org.apache.beam.runners.spark.io.SourceRDD;
 import org.apache.beam.runners.spark.io.hadoop.HadoopIO;
 import org.apache.beam.runners.spark.io.hadoop.ShardNameTemplateHelper;
@@ -42,6 +44,7 @@ import org.apache.beam.runners.spark.io.hadoop.TemplatedTextOutputFormat;
 import org.apache.beam.runners.spark.util.BroadcastHelper;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.coders.KvCoder;
+import org.apache.beam.sdk.coders.StringUtf8Coder;
 import org.apache.beam.sdk.io.AvroIO;
 import org.apache.beam.sdk.io.Read;
 import org.apache.beam.sdk.io.TextIO;
@@ -78,6 +81,7 @@ import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.JavaSparkContext;
 import org.apache.spark.api.java.function.Function;
 import org.apache.spark.api.java.function.PairFunction;
+
 import scala.Tuple2;
 
 
@@ -122,7 +126,7 @@ public final class TransformTranslator {
         final KvCoder<K, V> coder = (KvCoder<K, V>) context.getInput(transform).getCoder();
 
         final Accumulator<NamedAggregators> accum =
-                AccumulatorSingleton.getInstance(context.getSparkContext());
+            SparkAggregators.getNamedAggregators(context.getSparkContext());
 
         context.putDataset(transform,
             new BoundedDataset<>(GroupCombineFunctions.groupByKey(inRDD, accum, coder,
@@ -245,7 +249,7 @@ public final class TransformTranslator {
         final WindowFn<Object, ?> windowFn =
             (WindowFn<Object, ?>) context.getInput(transform).getWindowingStrategy().getWindowFn();
         Accumulator<NamedAggregators> accum =
-            AccumulatorSingleton.getInstance(context.getSparkContext());
+            SparkAggregators.getNamedAggregators(context.getSparkContext());
         Map<TupleTag<?>, KV<WindowingStrategy<?, ?>, BroadcastHelper<?>>> sideInputs =
             TranslationUtils.getSideInputs(transform.getSideInputs(), context);
         context.putDataset(transform,
@@ -277,7 +281,7 @@ public final class TransformTranslator {
         final WindowFn<Object, ?> windowFn =
             (WindowFn<Object, ?>) context.getInput(transform).getWindowingStrategy().getWindowFn();
         Accumulator<NamedAggregators> accum =
-            AccumulatorSingleton.getInstance(context.getSparkContext());
+            SparkAggregators.getNamedAggregators(context.getSparkContext());
         JavaPairRDD<TupleTag<?>, WindowedValue<?>> all = inRDD
             .mapPartitionsToPair(
                 new MultiDoFnFunction<>(accum, transform.getFn(), context.getRuntimeContext(),
@@ -526,7 +530,7 @@ public final class TransformTranslator {
           WindowFn<? super T, W> windowFn = (WindowFn<? super T, W>) transform.getWindowFn();
           OldDoFn<T, T> addWindowsDoFn = new AssignWindowsDoFn<>(windowFn);
           Accumulator<NamedAggregators> accum =
-              AccumulatorSingleton.getInstance(context.getSparkContext());
+              SparkAggregators.getNamedAggregators(context.getSparkContext());
           context.putDataset(transform,
               new BoundedDataset<>(inRDD.mapPartitions(new DoFnFunction<>(accum, addWindowsDoFn,
                   context.getRuntimeContext(), null, null))));
@@ -583,6 +587,27 @@ public final class TransformTranslator {
     };
   }
 
+  private static TransformEvaluator<StorageLevelPTransform> storageLevel() {
+    return new TransformEvaluator<StorageLevelPTransform>() {
+      @Override
+      public void evaluate(StorageLevelPTransform transform, EvaluationContext context) {
+        JavaRDD rdd = ((BoundedDataset) (context).borrowDataset(transform)).getRDD();
+        JavaSparkContext javaSparkContext = context.getSparkContext();
+
+        WindowedValue.ValueOnlyWindowedValueCoder<String> windowCoder =
+            WindowedValue.getValueOnlyCoder(StringUtf8Coder.of());
+        JavaRDD output =
+            javaSparkContext.parallelize(
+                CoderHelpers.toByteArrays(
+                    Collections.singletonList(rdd.getStorageLevel().description()),
+                    StringUtf8Coder.of()))
+            .map(CoderHelpers.fromByteFunction(windowCoder));
+
+        context.putDataset(transform, new BoundedDataset<String>(output));
+      }
+    };
+  }
+
   private static final Map<Class<? extends PTransform>, TransformEvaluator<?>> EVALUATORS = Maps
       .newHashMap();
 
@@ -602,6 +627,8 @@ public final class TransformTranslator {
     EVALUATORS.put(View.AsIterable.class, viewAsIter());
     EVALUATORS.put(View.CreatePCollectionView.class, createPCollView());
     EVALUATORS.put(Window.Bound.class, window());
+    // mostly test evaluators
+    EVALUATORS.put(StorageLevelPTransform.class, storageLevel());
   }
 
   /**

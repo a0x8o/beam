@@ -30,7 +30,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 import javax.annotation.Nullable;
-import org.apache.beam.runners.core.GBKIntoKeyedWorkItems;
+import org.apache.beam.runners.core.SplittableParDo;
 import org.apache.beam.runners.direct.DirectGroupByKey.DirectGroupAlsoByWindow;
 import org.apache.beam.runners.direct.DirectGroupByKey.DirectGroupByKeyOnly;
 import org.apache.beam.runners.direct.DirectRunner.DirectPipelineResult;
@@ -62,7 +62,6 @@ import org.apache.beam.sdk.values.PCollection.IsBounded;
 import org.apache.beam.sdk.values.PCollectionView;
 import org.apache.beam.sdk.values.PInput;
 import org.apache.beam.sdk.values.POutput;
-import org.apache.beam.sdk.values.PValue;
 import org.joda.time.Duration;
 import org.joda.time.Instant;
 
@@ -88,7 +87,7 @@ public class DirectRunner extends PipelineRunner<DirectPipelineResult> {
               .put(ParDo.Bound.class, new ParDoSingleViaMultiOverrideFactory())
               .put(ParDo.BoundMulti.class, new ParDoMultiOverrideFactory())
               .put(
-                  GBKIntoKeyedWorkItems.class,
+                  SplittableParDo.GBKIntoKeyedWorkItems.class,
                   new DirectGBKIntoKeyedWorkItemsOverrideFactory())
               .build();
 
@@ -198,18 +197,18 @@ public class DirectRunner extends PipelineRunner<DirectPipelineResult> {
   enum Enforcement {
     ENCODABILITY {
       @Override
-      public boolean appliesTo(PTransform<?, ?> transform) {
+      public boolean appliesTo(PCollection<?> collection, DirectGraph graph) {
         return true;
       }
     },
     IMMUTABILITY {
       @Override
-      public boolean appliesTo(PTransform<?, ?> transform) {
-        return CONTAINS_UDF.contains(transform.getClass());
+      public boolean appliesTo(PCollection<?> collection, DirectGraph graph) {
+        return CONTAINS_UDF.contains(graph.getProducer(collection).getTransform().getClass());
       }
     };
 
-    public abstract boolean appliesTo(PTransform<?, ?> transform);
+    public abstract boolean appliesTo(PCollection<?> collection, DirectGraph graph);
 
     ////////////////////////////////////////////////////////////////////////////////////////////////
     // Utilities for creating enforcements
@@ -224,13 +223,13 @@ public class DirectRunner extends PipelineRunner<DirectPipelineResult> {
       return Collections.unmodifiableSet(enabled);
     }
 
-    public static BundleFactory bundleFactoryFor(Set<Enforcement> enforcements) {
+    public static BundleFactory bundleFactoryFor(Set<Enforcement> enforcements, DirectGraph graph) {
       BundleFactory bundleFactory =
           enforcements.contains(Enforcement.ENCODABILITY)
               ? CloningBundleFactory.create()
               : ImmutableListBundleFactory.create();
       if (enforcements.contains(Enforcement.IMMUTABILITY)) {
-        bundleFactory = ImmutabilityCheckingBundleFactory.create(bundleFactory);
+        bundleFactory = ImmutabilityCheckingBundleFactory.create(bundleFactory, graph);
       }
       return bundleFactory;
     }
@@ -299,44 +298,40 @@ public class DirectRunner extends PipelineRunner<DirectPipelineResult> {
   @Override
   public DirectPipelineResult run(Pipeline pipeline) {
     MetricsEnvironment.setMetricsSupported(true);
-    ConsumerTrackingPipelineVisitor consumerTrackingVisitor = new ConsumerTrackingPipelineVisitor();
-    pipeline.traverseTopologically(consumerTrackingVisitor);
-    for (PValue unfinalized : consumerTrackingVisitor.getUnfinalizedPValues()) {
-      unfinalized.finishSpecifying();
-    }
+    DirectGraphVisitor graphVisitor = new DirectGraphVisitor();
+    pipeline.traverseTopologically(graphVisitor);
+    graphVisitor.finishSpecifyingRemainder();
+
     @SuppressWarnings("rawtypes")
     KeyedPValueTrackingVisitor keyedPValueVisitor =
         KeyedPValueTrackingVisitor.create(
-            ImmutableSet.<Class<? extends PTransform>>of(
-                GBKIntoKeyedWorkItems.class,
+            ImmutableSet.of(
+                SplittableParDo.GBKIntoKeyedWorkItems.class,
                 DirectGroupByKeyOnly.class,
                 DirectGroupAlsoByWindow.class));
     pipeline.traverseTopologically(keyedPValueVisitor);
 
     DisplayDataValidator.validatePipeline(pipeline);
 
+    DirectGraph graph = graphVisitor.getGraph();
     EvaluationContext context =
         EvaluationContext.create(
             getPipelineOptions(),
             clockSupplier.get(),
-            Enforcement.bundleFactoryFor(enabledEnforcements),
-            consumerTrackingVisitor.getRootTransforms(),
-            consumerTrackingVisitor.getValueToConsumers(),
-            consumerTrackingVisitor.getStepNames(),
-            consumerTrackingVisitor.getViews());
+            Enforcement.bundleFactoryFor(enabledEnforcements, graph),
+            graph);
 
     RootProviderRegistry rootInputProvider = RootProviderRegistry.defaultRegistry(context);
     TransformEvaluatorRegistry registry = TransformEvaluatorRegistry.defaultRegistry(context);
     PipelineExecutor executor =
         ExecutorServiceParallelExecutor.create(
-            options.getTargetParallelism(),
-            consumerTrackingVisitor.getValueToConsumers(),
+            options.getTargetParallelism(), graph,
             keyedPValueVisitor.getKeyedPValues(),
             rootInputProvider,
             registry,
             Enforcement.defaultModelEnforcements(enabledEnforcements),
             context);
-    executor.start(consumerTrackingVisitor.getRootTransforms());
+    executor.start(graph.getRootTransforms());
 
     Map<Aggregator<?, ?>, Collection<PTransform<?, ?>>> aggregatorSteps =
         pipeline.getAggregatorSteps();

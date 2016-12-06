@@ -119,7 +119,7 @@ import org.apache.beam.sdk.options.PipelineOptions;
 import org.apache.beam.sdk.options.PipelineOptionsValidator;
 import org.apache.beam.sdk.options.StreamingOptions;
 import org.apache.beam.sdk.runners.PipelineRunner;
-import org.apache.beam.sdk.runners.TransformTreeNode;
+import org.apache.beam.sdk.runners.TransformHierarchy;
 import org.apache.beam.sdk.transforms.Aggregator;
 import org.apache.beam.sdk.transforms.Combine;
 import org.apache.beam.sdk.transforms.Combine.CombineFn;
@@ -210,9 +210,9 @@ public class DataflowRunner extends PipelineRunner<DataflowPipelineJob> {
   // Default Docker container images that execute Dataflow worker harness, residing in Google
   // Container Registry, separately for Batch and Streaming.
   public static final String BATCH_WORKER_HARNESS_CONTAINER_IMAGE =
-      "dataflow.gcr.io/v1beta3/beam-java-batch:beam-master-20161129";
+      "dataflow.gcr.io/v1beta3/beam-java-batch:beam-master-20161205";
   public static final String STREAMING_WORKER_HARNESS_CONTAINER_IMAGE =
-      "dataflow.gcr.io/v1beta3/beam-java-streaming:beam-master-20161129";
+      "dataflow.gcr.io/v1beta3/beam-java-streaming:beam-master-20161205";
 
   // The limit of CreateJob request size.
   private static final int CREATE_JOB_REQUEST_LIMIT_BYTES = 10 * 1024 * 1024;
@@ -513,10 +513,14 @@ public class DataflowRunner extends PipelineRunner<DataflowPipelineJob> {
     Job newJob = jobSpecification.getJob();
     newJob.setClientRequestId(requestId);
 
-    String version = ReleaseInfo.getReleaseInfo().getVersion();
+    ReleaseInfo releaseInfo = ReleaseInfo.getReleaseInfo();
+    String version = releaseInfo.getVersion();
+    checkState(
+        !version.equals("${pom.version}"),
+        "Unable to submit a job to the Dataflow service with unset version ${pom.version}");
     System.out.println("Dataflow SDK version: " + version);
 
-    newJob.getEnvironment().setUserAgent(ReleaseInfo.getReleaseInfo());
+    newJob.getEnvironment().setUserAgent(releaseInfo);
     // The Dataflow Service may write to the temporary directory directly, so
     // must be verified.
     if (!isNullOrEmpty(options.getGcpTempLocation())) {
@@ -684,18 +688,18 @@ public class DataflowRunner extends PipelineRunner<DataflowPipelineJob> {
       final SortedSet<String> ptransformViewNamesWithNonDeterministicKeyCoders = new TreeSet<>();
       pipeline.traverseTopologically(new PipelineVisitor() {
         @Override
-        public void visitValue(PValue value, TransformTreeNode producer) {
+        public void visitValue(PValue value, TransformHierarchy.Node producer) {
         }
 
         @Override
-        public void visitPrimitiveTransform(TransformTreeNode node) {
+        public void visitPrimitiveTransform(TransformHierarchy.Node node) {
           if (ptransformViewsWithNonDeterministicKeyCoders.contains(node.getTransform())) {
             ptransformViewNamesWithNonDeterministicKeyCoders.add(node.getFullName());
           }
         }
 
         @Override
-        public CompositeBehavior enterCompositeTransform(TransformTreeNode node) {
+        public CompositeBehavior enterCompositeTransform(TransformHierarchy.Node node) {
           if (ptransformViewsWithNonDeterministicKeyCoders.contains(node.getTransform())) {
             ptransformViewNamesWithNonDeterministicKeyCoders.add(node.getFullName());
           }
@@ -703,7 +707,7 @@ public class DataflowRunner extends PipelineRunner<DataflowPipelineJob> {
         }
 
         @Override
-        public void leaveCompositeTransform(TransformTreeNode node) {
+        public void leaveCompositeTransform(TransformHierarchy.Node node) {
         }
       });
 
