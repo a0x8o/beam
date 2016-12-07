@@ -32,7 +32,6 @@ import com.google.api.services.clouddebugger.v2.Clouddebugger;
 import com.google.api.services.clouddebugger.v2.model.Debuggee;
 import com.google.api.services.clouddebugger.v2.model.RegisterDebuggeeRequest;
 import com.google.api.services.clouddebugger.v2.model.RegisterDebuggeeResponse;
-import com.google.api.services.dataflow.Dataflow;
 import com.google.api.services.dataflow.model.DataflowPackage;
 import com.google.api.services.dataflow.model.Job;
 import com.google.api.services.dataflow.model.ListJobsResponse;
@@ -118,6 +117,7 @@ import org.apache.beam.sdk.io.Write;
 import org.apache.beam.sdk.options.PipelineOptions;
 import org.apache.beam.sdk.options.PipelineOptionsValidator;
 import org.apache.beam.sdk.options.StreamingOptions;
+import org.apache.beam.sdk.options.ValueProvider.NestedValueProvider;
 import org.apache.beam.sdk.runners.PipelineRunner;
 import org.apache.beam.sdk.runners.TransformHierarchy;
 import org.apache.beam.sdk.transforms.Aggregator;
@@ -193,7 +193,7 @@ public class DataflowRunner extends PipelineRunner<DataflowPipelineJob> {
   private final DataflowPipelineOptions options;
 
   /** Client for the Dataflow service. This is used to actually submit jobs. */
-  private final Dataflow dataflowClient;
+  private final DataflowClient dataflowClient;
 
   /** Translator for this DataflowRunner, based on options. */
   private final DataflowPipelineTranslator translator;
@@ -320,7 +320,7 @@ public class DataflowRunner extends PipelineRunner<DataflowPipelineJob> {
 
   @VisibleForTesting protected DataflowRunner(DataflowPipelineOptions options) {
     this.options = options;
-    this.dataflowClient = options.getDataflowClient();
+    this.dataflowClient = DataflowClient.create(options);
     this.translator = DataflowPipelineTranslator.fromOptions(options);
     this.pcollectionsRequiringIndexedFormat = new HashSet<>();
     this.ptransformViewsWithNonDeterministicKeyCoders = new HashSet<>();
@@ -596,11 +596,7 @@ public class DataflowRunner extends PipelineRunner<DataflowPipelineJob> {
     }
     Job jobResult;
     try {
-      jobResult = dataflowClient
-              .projects()
-              .jobs()
-              .create(options.getProject(), newJob)
-              .execute();
+      jobResult = dataflowClient.createJob(newJob);
     } catch (GoogleJsonResponseException e) {
       String errorMessages = "Unexpected errors";
       if (e.getDetails() != null) {
@@ -628,8 +624,8 @@ public class DataflowRunner extends PipelineRunner<DataflowPipelineJob> {
 
     // Use a raw client for post-launch monitoring, as status calls may fail
     // regularly and need not be retried automatically.
-    DataflowPipelineJob dataflowPipelineJob = new DataflowPipelineJob(
-        options.getProject(), jobResult.getId(), options, aggregatorTransforms);
+    DataflowPipelineJob dataflowPipelineJob =
+        new DataflowPipelineJob(jobResult.getId(), options, aggregatorTransforms);
 
     // If the service returned client request id, the SDK needs to compare it
     // with the original id generated in the request, if they are not the same
@@ -2125,14 +2121,27 @@ public class DataflowRunner extends PipelineRunner<DataflowPipelineJob> {
       PubsubUnboundedSource<T> overriddenTransform = transform.getOverriddenTransform();
       context.addStep(transform, "ParallelRead");
       context.addInput(PropertyNames.FORMAT, "pubsub");
-      if (overriddenTransform.getTopic() != null) {
-        context.addInput(PropertyNames.PUBSUB_TOPIC,
-                         overriddenTransform.getTopic().getV1Beta1Path());
+      if (overriddenTransform.getTopicProvider() != null) {
+        if (overriddenTransform.getTopicProvider().isAccessible()) {
+          context.addInput(
+              PropertyNames.PUBSUB_TOPIC, overriddenTransform.getTopic().getV1Beta1Path());
+        } else {
+          context.addInput(
+              PropertyNames.PUBSUB_TOPIC_OVERRIDE,
+              ((NestedValueProvider) overriddenTransform.getTopicProvider()).propertyName());
+        }
       }
-      if (overriddenTransform.getSubscription() != null) {
-        context.addInput(
-            PropertyNames.PUBSUB_SUBSCRIPTION,
-            overriddenTransform.getSubscription().getV1Beta1Path());
+      if (overriddenTransform.getSubscriptionProvider() != null) {
+        if (overriddenTransform.getSubscriptionProvider().isAccessible()) {
+          context.addInput(
+              PropertyNames.PUBSUB_SUBSCRIPTION,
+              overriddenTransform.getSubscription().getV1Beta1Path());
+        } else {
+          context.addInput(
+              PropertyNames.PUBSUB_SUBSCRIPTION_OVERRIDE,
+              ((NestedValueProvider) overriddenTransform.getSubscriptionProvider())
+              .propertyName());
+        }
       }
       if (overriddenTransform.getTimestampLabel() != null) {
         context.addInput(PropertyNames.PUBSUB_TIMESTAMP_LABEL,
@@ -2195,7 +2204,14 @@ public class DataflowRunner extends PipelineRunner<DataflowPipelineJob> {
       PubsubUnboundedSink<T> overriddenTransform = transform.getOverriddenTransform();
       context.addStep(transform, "ParallelWrite");
       context.addInput(PropertyNames.FORMAT, "pubsub");
-      context.addInput(PropertyNames.PUBSUB_TOPIC, overriddenTransform.getTopic().getV1Beta1Path());
+      if (overriddenTransform.getTopicProvider().isAccessible()) {
+        context.addInput(
+            PropertyNames.PUBSUB_TOPIC, overriddenTransform.getTopic().getV1Beta1Path());
+      } else {
+        context.addInput(
+            PropertyNames.PUBSUB_TOPIC_OVERRIDE,
+            ((NestedValueProvider) overriddenTransform.getTopicProvider()).propertyName());
+      }
       if (overriddenTransform.getTimestampLabel() != null) {
         context.addInput(PropertyNames.PUBSUB_TIMESTAMP_LABEL,
                          overriddenTransform.getTimestampLabel());
@@ -2809,10 +2825,7 @@ public class DataflowRunner extends PipelineRunner<DataflowPipelineJob> {
       ListJobsResponse listResult;
       String token = null;
       do {
-        listResult = dataflowClient.projects().jobs()
-            .list(options.getProject())
-            .setPageToken(token)
-            .execute();
+        listResult = dataflowClient.listJobs(token);
         token = listResult.getNextPageToken();
         for (Job job : listResult.getJobs()) {
           if (job.getName().equals(jobName)

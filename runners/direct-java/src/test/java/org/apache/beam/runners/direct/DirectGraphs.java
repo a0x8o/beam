@@ -15,17 +15,21 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.beam.sdk.options;
+package org.apache.beam.runners.direct;
 
-/**
- * Options used to configure streaming.
- */
-public interface StreamingOptions extends
-    ApplicationNameOptions, PipelineOptions {
-  /**
-   * Set to true if running a streaming pipeline.
-   */
-  @Description("Set to true if running a streaming pipeline.")
-  boolean isStreaming();
-  void setStreaming(boolean value);
+import org.apache.beam.sdk.Pipeline;
+import org.apache.beam.sdk.transforms.AppliedPTransform;
+import org.apache.beam.sdk.values.PValue;
+
+/** Test utilities for the {@link DirectRunner}. */
+final class DirectGraphs {
+  public static DirectGraph getGraph(Pipeline p) {
+    DirectGraphVisitor visitor = new DirectGraphVisitor();
+    p.traverseTopologically(visitor);
+    return visitor.getGraph();
+  }
+
+  public static AppliedPTransform<?, ?, ?> getProducer(PValue value) {
+    return getGraph(value.getPipeline()).getProducer(value);
+  }
 }
