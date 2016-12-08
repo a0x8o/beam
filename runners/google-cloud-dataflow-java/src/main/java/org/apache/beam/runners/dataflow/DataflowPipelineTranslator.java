@@ -424,10 +424,6 @@ public class DataflowPipelineTranslator {
 
       WorkerPool workerPool = new WorkerPool();
 
-      if (options.getTeardownPolicy() != null) {
-        workerPool.setTeardownPolicy(options.getTeardownPolicy().getTeardownPolicyName());
-      }
-
       if (options.isStreaming()) {
         job.setType("JOB_TYPE_STREAMING");
       } else {
@@ -531,8 +527,7 @@ public class DataflowPipelineTranslator {
             "no translator registered for " + transform);
       }
       LOG.debug("Translating {}", transform);
-      currentTransform = AppliedPTransform.of(
-          node.getFullName(), node.getInput(), node.getOutput(), (PTransform) transform);
+      currentTransform = node.toAppliedPTransform();
       translator.translate(transform, this);
       currentTransform = null;
     }
