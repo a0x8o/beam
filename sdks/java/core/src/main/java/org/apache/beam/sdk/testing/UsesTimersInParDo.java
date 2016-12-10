@@ -15,29 +15,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.beam.runners.spark.translation;
+package org.apache.beam.sdk.testing;
 
-import org.apache.beam.sdk.coders.Coder;
-import org.apache.beam.sdk.coders.StringUtf8Coder;
-import org.apache.beam.sdk.transforms.PTransform;
-import org.apache.beam.sdk.util.WindowingStrategy;
-import org.apache.beam.sdk.values.PCollection;
+import org.apache.beam.sdk.transforms.ParDo;
 
 /**
- * Get RDD storage level for the input PCollection (mostly used for testing purpose).
+ * Category tag for validation tests which utilize timers in {@link ParDo}.
  */
-public final class StorageLevelPTransform extends PTransform<PCollection<?>, PCollection<String>> {
-
-  @Override
-  public PCollection<String> expand(PCollection<?> input) {
-    return PCollection.createPrimitiveOutputInternal(input.getPipeline(),
-        WindowingStrategy.globalDefault(),
-        PCollection.IsBounded.BOUNDED);
-  }
-
-  @Override
-  public Coder getDefaultOutputCoder() {
-    return StringUtf8Coder.of();
-  }
-
-}
+public interface UsesTimersInParDo {}

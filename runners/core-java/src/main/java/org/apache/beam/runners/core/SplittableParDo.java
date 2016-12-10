@@ -110,7 +110,7 @@ public class SplittableParDo<InputT, OutputT, RestrictionT>
   }
 
   @Override
-  public PCollectionTuple apply(PCollection<InputT> input) {
+  public PCollectionTuple expand(PCollection<InputT> input) {
     return applyTyped(input);
   }
 
@@ -179,7 +179,7 @@ public class SplittableParDo<InputT, OutputT, RestrictionT>
   public static class GBKIntoKeyedWorkItems<KeyT, InputT>
       extends PTransform<PCollection<KV<KeyT, InputT>>, PCollection<KeyedWorkItem<KeyT, InputT>>> {
     @Override
-    public PCollection<KeyedWorkItem<KeyT, InputT>> apply(PCollection<KV<KeyT, InputT>> input) {
+    public PCollection<KeyedWorkItem<KeyT, InputT>> expand(PCollection<KV<KeyT, InputT>> input) {
       return PCollection.createPrimitiveOutputInternal(
           input.getPipeline(), WindowingStrategy.globalDefault(), input.isBounded());
     }
@@ -247,7 +247,7 @@ public class SplittableParDo<InputT, OutputT, RestrictionT>
     }
 
     @Override
-    public PCollectionTuple apply(
+    public PCollectionTuple expand(
         PCollection<? extends KeyedWorkItem<String, ElementAndRestriction<InputT, RestrictionT>>>
             input) {
       DoFnSignature signature = DoFnSignatures.getSignature(fn.getClass());
@@ -590,9 +590,14 @@ public class SplittableParDo<InputT, OutputT, RestrictionT>
         }
 
         private void noteOutput() {
-          if (++numOutputs >= MAX_OUTPUTS_PER_BUNDLE) {
+          // Take the checkpoint only if it hasn't been taken yet, because:
+          // 1) otherwise we'd lose the previous checkpoint stored in residualRestrictionHolder
+          // 2) it's not allowed to checkpoint a RestrictionTracker twice, since the first call
+          // by definition already maximally narrows its restriction, so a second checkpoint would
+          // have produced a useless empty residual restriction anyway.
+          if (++numOutputs >= MAX_OUTPUTS_PER_BUNDLE && residualRestrictionHolder[0] == null) {
             // Request a checkpoint. The fn *may* produce more output, but hopefully not too much.
-            residualRestrictionHolder[0] = tracker.checkpoint();
+            residualRestrictionHolder[0] = checkNotNull(tracker.checkpoint());
           }
         }
 

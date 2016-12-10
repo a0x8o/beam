@@ -55,7 +55,9 @@ import org.apache.beam.sdk.testing.NeedsRunner;
 import org.apache.beam.sdk.testing.PAssert;
 import org.apache.beam.sdk.testing.RunnableOnService;
 import org.apache.beam.sdk.testing.TestPipeline;
+import org.apache.beam.sdk.testing.TestStream;
 import org.apache.beam.sdk.testing.UsesStatefulParDo;
+import org.apache.beam.sdk.testing.UsesTimersInParDo;
 import org.apache.beam.sdk.transforms.DoFn.OnTimer;
 import org.apache.beam.sdk.transforms.DoFn.ProcessElement;
 import org.apache.beam.sdk.transforms.ParDo.Bound;
@@ -69,6 +71,7 @@ import org.apache.beam.sdk.transforms.windowing.GlobalWindow;
 import org.apache.beam.sdk.transforms.windowing.IntervalWindow;
 import org.apache.beam.sdk.transforms.windowing.Window;
 import org.apache.beam.sdk.util.TimeDomain;
+import org.apache.beam.sdk.util.Timer;
 import org.apache.beam.sdk.util.TimerSpec;
 import org.apache.beam.sdk.util.TimerSpecs;
 import org.apache.beam.sdk.util.common.ElementByteSizeObserver;
@@ -272,7 +275,7 @@ public class ParDoTest implements Serializable {
     private static final TupleTag<Integer> BY3 = new TupleTag<Integer>("by3"){};
 
     @Override
-    public PCollectionTuple apply(PCollection<Integer> input) {
+    public PCollectionTuple expand(PCollection<Integer> input) {
       PCollection<Integer> by2 = input.apply("Filter2s", ParDo.of(new FilterFn(2)));
       PCollection<Integer> by3 = input.apply("Filter3s", ParDo.of(new FilterFn(3)));
       return PCollectionTuple.of(BY2, by2).and(BY3, by3);
@@ -840,7 +843,7 @@ public class ParDoTest implements Serializable {
         .apply(Create.of(inputs))
         .apply("CustomTransform", new PTransform<PCollection<Integer>, PCollection<String>>() {
             @Override
-            public PCollection<String> apply(PCollection<Integer> input) {
+            public PCollection<String> expand(PCollection<Integer> input) {
               return input.apply(ParDo.of(new TestDoFn()));
             }
           });
@@ -1571,6 +1574,52 @@ public class ParDoTest implements Serializable {
     p.run();
   }
 
+  /**
+   * Tests that an event time timer fires and results in supplementary output.
+   *
+   * <p>This test relies on two properties:
+   *
+   * <ol>
+   * <li>A timer that is set on time should always get a chance to fire. For this to be true, timers
+   *     per-key-and-window must be delivered in order so the timer is not wiped out until the
+   *     window is expired by the runner.
+   * <li>A {@link Create} transform sends its elements on time, and later advances the watermark to
+   *     infinity
+   * </ol>
+   *
+   * <p>Note that {@link TestStream} is not applicable because it requires very special runner hooks
+   * and is only supported by the direct runner.
+   */
+  @Test
+  @Category({RunnableOnService.class, UsesTimersInParDo.class})
+  public void testSimpleEventTimeTimer() throws Exception {
+    final String timerId = "foo";
+
+    DoFn<KV<String, Integer>, Integer> fn =
+        new DoFn<KV<String, Integer>, Integer>() {
+
+          @TimerId(timerId)
+          private final TimerSpec spec = TimerSpecs.timer(TimeDomain.EVENT_TIME);
+
+          @ProcessElement
+          public void processElement(ProcessContext context, @TimerId(timerId) Timer timer) {
+            timer.setForNowPlus(Duration.standardSeconds(1));
+            context.output(3);
+          }
+
+          @OnTimer(timerId)
+          public void onTimer(OnTimerContext context) {
+            context.output(42);
+          }
+        };
+
+    Pipeline p = TestPipeline.create();
+
+    PCollection<Integer> output = p.apply(Create.of(KV.of("hello", 37))).apply(ParDo.of(fn));
+    PAssert.that(output).containsInAnyOrder(3, 42);
+    p.run();
+  }
+
   @Test
   public void testWithOutputTagsDisplayData() {
     DoFn<String, String> fn = new DoFn<String, String>() {
@@ -1668,7 +1717,8 @@ public class ParDoTest implements Serializable {
     Pipeline p = TestPipeline.create();
 
     thrown.expect(IllegalArgumentException.class);
-    thrown.expectMessage("Splittable DoFn not supported by the current runner");
+    thrown.expectMessage(p.getRunner().getClass().getName());
+    thrown.expectMessage("does not support Splittable DoFn");
 
     p.apply(Create.of(1, 2, 3)).apply(ParDo.of(new TestSplittableDoFn()));
   }
@@ -1680,7 +1730,8 @@ public class ParDoTest implements Serializable {
     Pipeline p = TestPipeline.create();
 
     thrown.expect(IllegalArgumentException.class);
-    thrown.expectMessage("Splittable DoFn not supported by the current runner");
+    thrown.expectMessage(p.getRunner().getClass().getName());
+    thrown.expectMessage("does not support Splittable DoFn");
 
     p.apply(Create.of(1, 2, 3))
         .apply(

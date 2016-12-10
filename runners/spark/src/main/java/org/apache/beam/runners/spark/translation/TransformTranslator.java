@@ -23,6 +23,7 @@ import static org.apache.beam.runners.spark.io.hadoop.ShardNameBuilder.getOutput
 import static org.apache.beam.runners.spark.io.hadoop.ShardNameBuilder.getOutputFilePrefix;
 import static org.apache.beam.runners.spark.io.hadoop.ShardNameBuilder.getOutputFileTemplate;
 import static org.apache.beam.runners.spark.io.hadoop.ShardNameBuilder.replaceShardCount;
+import static org.apache.beam.runners.spark.translation.TranslationUtils.rejectStateAndTimers;
 
 import com.google.common.collect.Maps;
 import java.io.IOException;
@@ -32,7 +33,6 @@ import org.apache.avro.mapred.AvroKey;
 import org.apache.avro.mapreduce.AvroJob;
 import org.apache.avro.mapreduce.AvroKeyInputFormat;
 import org.apache.beam.runners.core.AssignWindowsDoFn;
-import org.apache.beam.runners.spark.SparkRunner;
 import org.apache.beam.runners.spark.aggregators.NamedAggregators;
 import org.apache.beam.runners.spark.aggregators.SparkAggregators;
 import org.apache.beam.runners.spark.coders.CoderHelpers;
@@ -58,7 +58,6 @@ import org.apache.beam.sdk.transforms.OldDoFn;
 import org.apache.beam.sdk.transforms.PTransform;
 import org.apache.beam.sdk.transforms.ParDo;
 import org.apache.beam.sdk.transforms.View;
-import org.apache.beam.sdk.transforms.reflect.DoFnSignatures;
 import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
 import org.apache.beam.sdk.transforms.windowing.Window;
 import org.apache.beam.sdk.transforms.windowing.WindowFn;
@@ -81,7 +80,6 @@ import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.JavaSparkContext;
 import org.apache.spark.api.java.function.Function;
 import org.apache.spark.api.java.function.PairFunction;
-
 import scala.Tuple2;
 
 
@@ -233,15 +231,7 @@ public final class TransformTranslator {
       @Override
       public void evaluate(ParDo.Bound<InputT, OutputT> transform, EvaluationContext context) {
         DoFn<InputT, OutputT> doFn = transform.getNewFn();
-        if (DoFnSignatures.getSignature(doFn.getClass()).stateDeclarations().size() > 0) {
-          throw new UnsupportedOperationException(
-              String.format(
-                  "Found %s annotations on %s, but %s cannot yet be used with state in the %s.",
-                  DoFn.StateId.class.getSimpleName(),
-                  doFn.getClass().getName(),
-                  DoFn.class.getSimpleName(),
-                  SparkRunner.class.getSimpleName()));
-        }
+        rejectStateAndTimers(doFn);
         @SuppressWarnings("unchecked")
         JavaRDD<WindowedValue<InputT>> inRDD =
             ((BoundedDataset<InputT>) context.borrowDataset(transform)).getRDD();
@@ -265,15 +255,7 @@ public final class TransformTranslator {
       @Override
       public void evaluate(ParDo.BoundMulti<InputT, OutputT> transform, EvaluationContext context) {
         DoFn<InputT, OutputT> doFn = transform.getNewFn();
-        if (DoFnSignatures.getSignature(doFn.getClass()).stateDeclarations().size() > 0) {
-          throw new UnsupportedOperationException(
-              String.format(
-                  "Found %s annotations on %s, but %s cannot yet be used with state in the %s.",
-                  DoFn.StateId.class.getSimpleName(),
-                  doFn.getClass().getName(),
-                  DoFn.class.getSimpleName(),
-                  SparkRunner.class.getSimpleName()));
-        }
+        rejectStateAndTimers(doFn);
         @SuppressWarnings("unchecked")
         JavaRDD<WindowedValue<InputT>> inRDD =
             ((BoundedDataset<InputT>) context.borrowDataset(transform)).getRDD();

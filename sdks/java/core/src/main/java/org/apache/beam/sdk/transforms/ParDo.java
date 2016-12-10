@@ -594,16 +594,6 @@ public class ParDo {
   private static <InputT, OutputT> void validate(DoFn<InputT, OutputT> fn) {
     DoFnSignature signature = DoFnSignatures.getSignature((Class) fn.getClass());
 
-    // To be removed when the features are complete and runners have their own adequate
-    // rejection logic
-    if (!signature.timerDeclarations().isEmpty()) {
-      throw new UnsupportedOperationException(
-          String.format("Found %s annotations on %s, but %s cannot yet be used with timers.",
-              DoFn.TimerId.class.getSimpleName(),
-              fn.getClass().getName(),
-              DoFn.class.getSimpleName()));
-    }
-
     // State is semantically incompatible with splitting
     if (!signature.stateDeclarations().isEmpty() && signature.processElement().isSplittable()) {
       throw new UnsupportedOperationException(
@@ -795,9 +785,11 @@ public class ParDo {
     }
 
     @Override
-    public PCollection<OutputT> apply(PCollection<? extends InputT> input) {
+    public PCollection<OutputT> expand(PCollection<? extends InputT> input) {
       checkArgument(
-          !isSplittable(getOldFn()), "Splittable DoFn not supported by the current runner");
+          !isSplittable(getOldFn()),
+          "%s does not support Splittable DoFn",
+          input.getPipeline().getOptions().getRunner().getName());
       validateWindowType(input, fn);
       return PCollection.<OutputT>createPrimitiveOutputInternal(
               input.getPipeline(),
@@ -1052,9 +1044,11 @@ public class ParDo {
 
 
     @Override
-    public PCollectionTuple apply(PCollection<? extends InputT> input) {
+    public PCollectionTuple expand(PCollection<? extends InputT> input) {
       checkArgument(
-          !isSplittable(getOldFn()), "Splittable DoFn not supported by the current runner");
+          !isSplittable(getOldFn()),
+          "%s does not support Splittable DoFn",
+          input.getPipeline().getOptions().getRunner().getName());
       validateWindowType(input, fn);
       PCollectionTuple outputs = PCollectionTuple.ofPrimitiveOutputsInternal(
           input.getPipeline(),

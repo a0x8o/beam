@@ -17,19 +17,22 @@
  */
 package org.apache.beam.runners.apex;
 
-import static com.google.common.base.Preconditions.checkArgument;
-
+import com.datatorrent.api.Attribute;
 import com.datatorrent.api.Context.DAGContext;
 import com.datatorrent.api.DAG;
-import com.datatorrent.api.LocalMode;
 import com.datatorrent.api.StreamingApplication;
 import com.google.common.base.Throwables;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
+import org.apache.apex.api.EmbeddedAppLauncher;
+import org.apache.apex.api.Launcher;
+import org.apache.apex.api.Launcher.AppHandle;
+import org.apache.apex.api.Launcher.LaunchMode;
 import org.apache.beam.runners.apex.translation.ApexPipelineTranslator;
 import org.apache.beam.runners.core.AssignWindows;
 import org.apache.beam.sdk.Pipeline;
@@ -122,33 +125,44 @@ public class ApexRunner extends PipelineRunner<ApexRunnerResult> {
   public ApexRunnerResult run(final Pipeline pipeline) {
 
     final ApexPipelineTranslator translator = new ApexPipelineTranslator(options);
+    final AtomicReference<DAG> apexDAG = new AtomicReference<>();
 
     StreamingApplication apexApp = new StreamingApplication() {
       @Override
       public void populateDAG(DAG dag, Configuration conf) {
+        apexDAG.set(dag);
         dag.setAttribute(DAGContext.APPLICATION_NAME, options.getApplicationName());
         translator.translate(pipeline, dag);
       }
     };
 
-    checkArgument(options.isEmbeddedExecution(),
-        "only embedded execution is supported at this time");
-    LocalMode lma = LocalMode.newInstance();
-    Configuration conf = new Configuration(false);
-    try {
-      lma.prepareDAG(apexApp, conf);
-      LocalMode.Controller lc = lma.getController();
+    if (options.isEmbeddedExecution()) {
+      Launcher<AppHandle> launcher = Launcher.getLauncher(LaunchMode.EMBEDDED);
+      Attribute.AttributeMap launchAttributes = new Attribute.AttributeMap.DefaultAttributeMap();
+      launchAttributes.put(EmbeddedAppLauncher.RUN_ASYNC, true);
       if (options.isEmbeddedExecutionDebugMode()) {
         // turns off timeout checking for operator progress
-        lc.setHeartbeatMonitoringEnabled(false);
+        launchAttributes.put(EmbeddedAppLauncher.HEARTBEAT_MONITORING, false);
       }
-      ApexRunner.ASSERTION_ERROR.set(null);
-      lc.runAsync();
-      return new ApexRunnerResult(lma.getDAG(), lc);
-    } catch (Exception e) {
-      Throwables.propagateIfPossible(e);
-      throw new RuntimeException(e);
+      Configuration conf = new Configuration(false);
+      try {
+        ApexRunner.ASSERTION_ERROR.set(null);
+        AppHandle apexAppResult = launcher.launchApp(apexApp, conf, launchAttributes);
+        return new ApexRunnerResult(apexDAG.get(), apexAppResult);
+      } catch (Exception e) {
+        Throwables.propagateIfPossible(e);
+        throw new RuntimeException(e);
+      }
+    } else {
+      try {
+        ApexYarnLauncher yarnLauncher = new ApexYarnLauncher();
+        AppHandle apexAppResult = yarnLauncher.launchApp(apexApp);
+        return new ApexRunnerResult(apexDAG.get(), apexAppResult);
+      } catch (IOException e) {
+        throw new RuntimeException("Failed to launch the application on YARN.", e);
+      }
     }
+
   }
 
   /**
@@ -165,7 +179,7 @@ public class ApexRunner extends PipelineRunner<ApexRunnerResult> {
     }
 
     @Override
-    public PCollection<T> apply(PCollection<T> input) {
+    public PCollection<T> expand(PCollection<T> input) {
       WindowingStrategy<?, ?> outputStrategy =
           wrapped.getOutputStrategyInternal(input.getWindowingStrategy());
 
@@ -226,7 +240,7 @@ public class ApexRunner extends PipelineRunner<ApexRunnerResult> {
     }
 
     @Override
-    public PCollectionView<ViewT> apply(PCollection<List<ElemT>> input) {
+    public PCollectionView<ViewT> expand(PCollection<List<ElemT>> input) {
       return view;
     }
   }
@@ -252,7 +266,7 @@ public class ApexRunner extends PipelineRunner<ApexRunnerResult> {
     }
 
     @Override
-    public PCollectionView<OutputT> apply(PCollection<InputT> input) {
+    public PCollectionView<OutputT> expand(PCollection<InputT> input) {
       PCollection<OutputT> combined = input
           .apply(Combine.globally(transform.getCombineFn())
               .withoutDefaults().withFanout(transform.getFanout()));
@@ -282,7 +296,7 @@ public class ApexRunner extends PipelineRunner<ApexRunnerResult> {
     }
 
     @Override
-    public PCollectionView<T> apply(PCollection<T> input) {
+    public PCollectionView<T> expand(PCollection<T> input) {
       Combine.Globally<T, T> combine = Combine
           .globally(new SingletonCombine<>(transform.hasDefaultValue(), transform.defaultValue()));
       if (!transform.hasDefaultValue()) {
@@ -335,7 +349,7 @@ public class ApexRunner extends PipelineRunner<ApexRunnerResult> {
     }
 
     @Override
-    public PCollectionView<Iterable<T>> apply(PCollection<T> input) {
+    public PCollectionView<Iterable<T>> expand(PCollection<T> input) {
       PCollectionView<Iterable<T>> view = PCollectionViews.iterableView(input.getPipeline(),
           input.getWindowingStrategy(), input.getCoder());
 
