@@ -17,8 +17,10 @@
  */
 package org.apache.beam.runners.direct;
 
+import org.apache.beam.sdk.runners.PTransformOverrideFactory;
 import org.apache.beam.sdk.transforms.PTransform;
 import org.apache.beam.sdk.transforms.ParDo;
+import org.apache.beam.sdk.transforms.ParDo.Bound;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.PCollectionTuple;
 import org.apache.beam.sdk.values.TupleTag;
@@ -30,12 +32,11 @@ import org.apache.beam.sdk.values.TupleTagList;
  */
 class ParDoSingleViaMultiOverrideFactory<InputT, OutputT>
     implements PTransformOverrideFactory<
-        PCollection<? extends InputT>, PCollection<OutputT>, ParDo.Bound<InputT, OutputT>> {
+        PCollection<? extends InputT>, PCollection<OutputT>, Bound<InputT, OutputT>>{
   @Override
-  @SuppressWarnings("unchecked")
-  public PTransform<PCollection<? extends InputT>, PCollection<OutputT>> override(
-      ParDo.Bound<InputT, OutputT> transform) {
-    return new ParDoSingleViaMulti(transform);
+  public PTransform<PCollection<? extends InputT>, PCollection<OutputT>> getReplacementTransform(
+      Bound<InputT, OutputT> transform) {
+    return new ParDoSingleViaMulti<>(transform);
   }
 
   static class ParDoSingleViaMulti<InputT, OutputT>
@@ -56,12 +57,12 @@ class ParDoSingleViaMultiOverrideFactory<InputT, OutputT>
 
       PCollectionTuple outputs =
           input.apply(
-              ParDo.of(underlyingParDo.getNewFn())
+              ParDo.of(underlyingParDo.getFn())
                   .withSideInputs(underlyingParDo.getSideInputs())
                   .withOutputTags(mainOutputTag, TupleTagList.empty()));
       PCollection<OutputT> output = outputs.get(mainOutputTag);
 
-      output.setTypeDescriptor(underlyingParDo.getNewFn().getOutputTypeDescriptor());
+      output.setTypeDescriptor(underlyingParDo.getFn().getOutputTypeDescriptor());
       return output;
     }
   }

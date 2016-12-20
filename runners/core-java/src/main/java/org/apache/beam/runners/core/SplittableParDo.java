@@ -105,7 +105,7 @@ public class SplittableParDo<InputT, OutputT, RestrictionT>
     checkNotNull(parDo, "parDo must not be null");
     this.parDo = parDo;
     checkArgument(
-        DoFnSignatures.getSignature(parDo.getNewFn().getClass()).processElement().isSplittable(),
+        DoFnSignatures.getSignature(parDo.getFn().getClass()).processElement().isSplittable(),
         "fn must be a splittable DoFn");
   }
 
@@ -115,7 +115,7 @@ public class SplittableParDo<InputT, OutputT, RestrictionT>
   }
 
   private PCollectionTuple applyTyped(PCollection<InputT> input) {
-    DoFn<InputT, OutputT> fn = parDo.getNewFn();
+    DoFn<InputT, OutputT> fn = parDo.getFn();
     Coder<RestrictionT> restrictionCoder =
         DoFnInvokers.invokerFor(fn)
             .invokeGetRestrictionCoder(input.getPipeline().getCoderRegistry());
