@@ -29,6 +29,7 @@ import static org.hamcrest.Matchers.allOf;
 import static org.hamcrest.Matchers.anyOf;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.not;
 import static org.hamcrest.collection.IsIterableContainingInAnyOrder.containsInAnyOrder;
 import static org.hamcrest.collection.IsIterableContainingInOrder.contains;
 import static org.junit.Assert.assertArrayEquals;
@@ -50,6 +51,7 @@ import java.util.List;
 import org.apache.beam.sdk.coders.AtomicCoder;
 import org.apache.beam.sdk.coders.CoderException;
 import org.apache.beam.sdk.coders.VarIntCoder;
+import org.apache.beam.sdk.io.CountingInput;
 import org.apache.beam.sdk.testing.NeedsRunner;
 import org.apache.beam.sdk.testing.PAssert;
 import org.apache.beam.sdk.testing.RunnableOnService;
@@ -86,6 +88,7 @@ import org.apache.beam.sdk.values.PCollectionView;
 import org.apache.beam.sdk.values.TimestampedValue;
 import org.apache.beam.sdk.values.TupleTag;
 import org.apache.beam.sdk.values.TupleTagList;
+import org.hamcrest.Matchers;
 import org.joda.time.Duration;
 import org.joda.time.Instant;
 import org.joda.time.MutableDateTime;
@@ -864,6 +867,37 @@ public class ParDoTest implements Serializable {
   }
 
   @Test
+  public void testMultiOutputAppliedMultipleTimesDifferentOutputs() {
+    pipeline.enableAbandonedNodeEnforcement(false);
+    PCollection<Long> longs = pipeline.apply(CountingInput.unbounded());
+
+    TupleTag<Long> mainOut = new TupleTag<>();
+    final TupleTag<String> sideOutOne = new TupleTag<>();
+    final TupleTag<Integer> sideOutTwo = new TupleTag<>();
+    DoFn<Long, Long> fn =
+        new DoFn<Long, Long>() {
+          @ProcessElement
+          public void processElement(ProcessContext cxt) {
+            cxt.output(cxt.element());
+            cxt.sideOutput(sideOutOne, Long.toString(cxt.element()));
+            cxt.sideOutput(sideOutTwo, Long.valueOf(cxt.element()).intValue());
+          }
+        };
+
+    ParDo.BoundMulti<Long, Long> parDo =
+        ParDo.of(fn).withOutputTags(mainOut, TupleTagList.of(sideOutOne).and(sideOutTwo));
+    PCollectionTuple firstApplication = longs.apply("first", parDo);
+    PCollectionTuple secondApplication = longs.apply("second", parDo);
+    assertThat(firstApplication, not(equalTo(secondApplication)));
+    assertThat(
+        firstApplication.getAll().keySet(),
+        Matchers.<TupleTag<?>>containsInAnyOrder(mainOut, sideOutOne, sideOutTwo));
+    assertThat(
+        secondApplication.getAll().keySet(),
+        Matchers.<TupleTag<?>>containsInAnyOrder(mainOut, sideOutOne, sideOutTwo));
+  }
+
+  @Test
   @Category(RunnableOnService.class)
   public void testParDoInCustomTransform() {
 
@@ -1113,15 +1147,16 @@ public class ParDoTest implements Serializable {
 
     final TupleTag<Integer> mainOutputTag = new TupleTag<Integer>("main");
     final TupleTag<TestDummy> sideOutputTag = new TupleTag<TestDummy>("unregisteredSide");
-    PCollectionTuple outputTuple = input.apply(ParDo.of(new SideOutputDummyFn(sideOutputTag))
-        .withOutputTags(mainOutputTag, TupleTagList.of(sideOutputTag)));
+    ParDo.BoundMulti<Integer, Integer> pardo = ParDo.of(new SideOutputDummyFn(sideOutputTag))
+        .withOutputTags(mainOutputTag, TupleTagList.of(sideOutputTag));
+    PCollectionTuple outputTuple = input.apply(pardo);
 
     outputTuple.get(sideOutputTag).setCoder(new TestDummyCoder());
 
     outputTuple.get(sideOutputTag).apply(View.<TestDummy>asSingleton());
 
     assertEquals(new TestDummyCoder(), outputTuple.get(sideOutputTag).getCoder());
-    outputTuple.get(sideOutputTag).finishSpecifyingOutput(); // Check for crashes
+    outputTuple.get(sideOutputTag).finishSpecifyingOutput(input, pardo); // Check for crashes
     assertEquals(new TestDummyCoder(),
         outputTuple.get(sideOutputTag).getCoder()); // Check for corruption
   }
