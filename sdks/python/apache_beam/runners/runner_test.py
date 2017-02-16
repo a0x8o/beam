@@ -66,12 +66,18 @@ class RunnerTest(unittest.TestCase):
         isinstance(create_runner('TestDataflowRunner'),
                    TestDataflowRunner))
     self.assertRaises(ValueError, create_runner, 'xyz')
-    # TODO(BEAM-1185): Remove when all references to PipelineRunners are gone.
+
+  def test_create_runner_shorthand(self):
     self.assertTrue(
-        isinstance(create_runner('DirectPipelineRunner'), DirectRunner))
+        isinstance(create_runner('DiReCtRuNnEr'), DirectRunner))
     self.assertTrue(
-        isinstance(create_runner('DataflowPipelineRunner'),
-                   DataflowRunner))
+        isinstance(create_runner('directrunner'), DirectRunner))
+    self.assertTrue(
+        isinstance(create_runner('direct'), DirectRunner))
+    self.assertTrue(
+        isinstance(create_runner('DiReCt'), DirectRunner))
+    self.assertTrue(
+        isinstance(create_runner('Direct'), DirectRunner))
 
   def test_remote_runner_translation(self):
     remote_runner = DataflowRunner()

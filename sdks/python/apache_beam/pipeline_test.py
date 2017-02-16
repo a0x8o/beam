@@ -229,11 +229,14 @@ class PipelineTest(unittest.TestCase):
     num_elements = 10
     num_maps = 100
 
-    pipeline = TestPipeline(runner='DirectRunner')
+    pipeline = TestPipeline()
 
     # Consumed memory should not be proportional to the number of maps.
     memory_threshold = (
         get_memory_usage_in_bytes() + (3 * len_elements * num_elements))
+
+    # Plus small additional slack for memory fluctuations during the test.
+    memory_threshold += 10 * (2 ** 20)
 
     biglist = pipeline | 'oom:create' >> Create(
         ['x' * len_elements] * num_elements)

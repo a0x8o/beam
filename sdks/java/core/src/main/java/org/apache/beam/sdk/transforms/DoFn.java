@@ -532,8 +532,10 @@ public abstract class DoFn<InputT, OutputT> implements Serializable, HasDisplayD
    *     href="https://s.apache.org/splittable-do-fn">splittable</a> {@link DoFn} subject to the
    *     separate requirements described below. Items below are assuming this is not a splittable
    *     {@link DoFn}.
-   * <li>If one of its arguments is {@link BoundedWindow}, this argument corresponds to the window
-   *     of the current element. If absent, a runner may perform additional optimizations.
+   * <li>If one of its arguments is a subtype of {@link BoundedWindow} then it will
+   *     be passed the window of the current element. When applied by {@link ParDo} the subtype
+   *     of {@link BoundedWindow} must match the type of windows on the input {@link PCollection}.
+   *     If the window is not accessed a runner may perform additional optimizations.
    * <li>It must return {@code void}.
    * </ul>
    *
@@ -808,7 +810,8 @@ public abstract class DoFn<InputT, OutputT> implements Serializable, HasDisplayD
    * Finalize the {@link DoFn} construction to prepare for processing.
    * This method should be called by runners before any processing methods.
    */
-  public void prepareForProcessing() {
+  @Deprecated
+  public final void prepareForProcessing() {
     aggregatorsAreFinal = true;
   }
 
