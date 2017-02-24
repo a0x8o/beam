@@ -86,6 +86,7 @@ class BoundedSource(HasDisplayData):
     ``RangeTracker``.
 
   A runner will perform reading the source in two steps.
+
   (1) Method ``get_range_tracker()`` will be invoked with start and end
       positions to obtain a ``RangeTracker`` for the range of positions the
       runner intends to read. Source must define a default initial start and end
@@ -137,6 +138,7 @@ class BoundedSource(HasDisplayData):
 
     Framework may invoke ``read()`` method with the RangeTracker object returned
     here to read data from the source.
+
     Args:
       start_position: starting position of the range. If 'None' default start
                       position of the source must be used.
@@ -716,7 +718,7 @@ class Write(ptransform.PTransform):
             'sink_dd': self.sink}
 
   def expand(self, pcoll):
-    from apache_beam.runners.google_cloud_dataflow.native_io import iobase as dataflow_io
+    from apache_beam.runners.dataflow.native_io import iobase as dataflow_io
     if isinstance(self.sink, dataflow_io.NativeSink):
       # A native sink
       return pcoll | 'NativeWrite' >> dataflow_io._NativeWrite(self.sink)
@@ -841,4 +843,4 @@ class _RoundRobinKeyFn(core.DoFn):
 
 # For backwards compatibility.
 # pylint: disable=wrong-import-position
-from apache_beam.runners.google_cloud_dataflow.native_io.iobase import *
+from apache_beam.runners.dataflow.native_io.iobase import *
