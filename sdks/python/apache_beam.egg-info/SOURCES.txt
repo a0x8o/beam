@@ -66,6 +66,7 @@ apache_beam/examples/cookbook/bigquery_schema.py
 apache_beam/examples/cookbook/bigquery_side_input.py
 apache_beam/examples/cookbook/bigquery_side_input_test.py
 apache_beam/examples/cookbook/bigquery_tornadoes.py
+apache_beam/examples/cookbook/bigquery_tornadoes_it_test.py
 apache_beam/examples/cookbook/bigquery_tornadoes_test.py
 apache_beam/examples/cookbook/bigshuffle.py
 apache_beam/examples/cookbook/bigshuffle_test.py
@@ -140,6 +141,9 @@ apache_beam/io/gcp/internal/clients/bigquery/bigquery_v2_messages.py
 apache_beam/io/gcp/internal/clients/storage/__init__.py
 apache_beam/io/gcp/internal/clients/storage/storage_v1_client.py
 apache_beam/io/gcp/internal/clients/storage/storage_v1_messages.py
+apache_beam/io/gcp/tests/__init__.py
+apache_beam/io/gcp/tests/bigquery_matcher.py
+apache_beam/io/gcp/tests/bigquery_matcher_test.py
 apache_beam/metrics/__init__.py
 apache_beam/metrics/cells.py
 apache_beam/metrics/cells_test.py

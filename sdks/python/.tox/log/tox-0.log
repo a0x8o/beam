@@ -40,6 +40,7 @@ creating apache-beam-0.6.0.dev0/apache_beam/io/gcp/internal
 creating apache-beam-0.6.0.dev0/apache_beam/io/gcp/internal/clients
 creating apache-beam-0.6.0.dev0/apache_beam/io/gcp/internal/clients/bigquery
 creating apache-beam-0.6.0.dev0/apache_beam/io/gcp/internal/clients/storage
+creating apache-beam-0.6.0.dev0/apache_beam/io/gcp/tests
 creating apache-beam-0.6.0.dev0/apache_beam/metrics
 creating apache-beam-0.6.0.dev0/apache_beam/runners
 creating apache-beam-0.6.0.dev0/apache_beam/runners/dataflow
@@ -123,6 +124,7 @@ copying apache_beam/examples/cookbook/bigquery_schema.py -> apache-beam-0.6.0.de
 copying apache_beam/examples/cookbook/bigquery_side_input.py -> apache-beam-0.6.0.dev0/apache_beam/examples/cookbook
 copying apache_beam/examples/cookbook/bigquery_side_input_test.py -> apache-beam-0.6.0.dev0/apache_beam/examples/cookbook
 copying apache_beam/examples/cookbook/bigquery_tornadoes.py -> apache-beam-0.6.0.dev0/apache_beam/examples/cookbook
+copying apache_beam/examples/cookbook/bigquery_tornadoes_it_test.py -> apache-beam-0.6.0.dev0/apache_beam/examples/cookbook
 copying apache_beam/examples/cookbook/bigquery_tornadoes_test.py -> apache-beam-0.6.0.dev0/apache_beam/examples/cookbook
 copying apache_beam/examples/cookbook/bigshuffle.py -> apache-beam-0.6.0.dev0/apache_beam/examples/cookbook
 copying apache_beam/examples/cookbook/bigshuffle_test.py -> apache-beam-0.6.0.dev0/apache_beam/examples/cookbook
@@ -197,6 +199,9 @@ copying apache_beam/io/gcp/internal/clients/bigquery/bigquery_v2_messages.py -> 
 copying apache_beam/io/gcp/internal/clients/storage/__init__.py -> apache-beam-0.6.0.dev0/apache_beam/io/gcp/internal/clients/storage
 copying apache_beam/io/gcp/internal/clients/storage/storage_v1_client.py -> apache-beam-0.6.0.dev0/apache_beam/io/gcp/internal/clients/storage
 copying apache_beam/io/gcp/internal/clients/storage/storage_v1_messages.py -> apache-beam-0.6.0.dev0/apache_beam/io/gcp/internal/clients/storage
+copying apache_beam/io/gcp/tests/__init__.py -> apache-beam-0.6.0.dev0/apache_beam/io/gcp/tests
+copying apache_beam/io/gcp/tests/bigquery_matcher.py -> apache-beam-0.6.0.dev0/apache_beam/io/gcp/tests
+copying apache_beam/io/gcp/tests/bigquery_matcher_test.py -> apache-beam-0.6.0.dev0/apache_beam/io/gcp/tests
 copying apache_beam/metrics/__init__.py -> apache-beam-0.6.0.dev0/apache_beam/metrics
 copying apache_beam/metrics/cells.py -> apache-beam-0.6.0.dev0/apache_beam/metrics
 copying apache_beam/metrics/cells_test.py -> apache-beam-0.6.0.dev0/apache_beam/metrics
@@ -367,6 +372,7 @@ adding 'apache-beam-0.6.0.dev0/apache_beam/examples/cookbook/bigquery_schema.py'
 adding 'apache-beam-0.6.0.dev0/apache_beam/examples/cookbook/bigquery_side_input.py'
 adding 'apache-beam-0.6.0.dev0/apache_beam/examples/cookbook/bigquery_side_input_test.py'
 adding 'apache-beam-0.6.0.dev0/apache_beam/examples/cookbook/bigquery_tornadoes.py'
+adding 'apache-beam-0.6.0.dev0/apache_beam/examples/cookbook/bigquery_tornadoes_it_test.py'
 adding 'apache-beam-0.6.0.dev0/apache_beam/examples/cookbook/bigquery_tornadoes_test.py'
 adding 'apache-beam-0.6.0.dev0/apache_beam/examples/cookbook/bigshuffle.py'
 adding 'apache-beam-0.6.0.dev0/apache_beam/examples/cookbook/bigshuffle_test.py'
@@ -441,6 +447,9 @@ adding 'apache-beam-0.6.0.dev0/apache_beam/io/gcp/internal/clients/bigquery/bigq
 adding 'apache-beam-0.6.0.dev0/apache_beam/io/gcp/internal/clients/storage/__init__.py'
 adding 'apache-beam-0.6.0.dev0/apache_beam/io/gcp/internal/clients/storage/storage_v1_client.py'
 adding 'apache-beam-0.6.0.dev0/apache_beam/io/gcp/internal/clients/storage/storage_v1_messages.py'
+adding 'apache-beam-0.6.0.dev0/apache_beam/io/gcp/tests/__init__.py'
+adding 'apache-beam-0.6.0.dev0/apache_beam/io/gcp/tests/bigquery_matcher.py'
+adding 'apache-beam-0.6.0.dev0/apache_beam/io/gcp/tests/bigquery_matcher_test.py'
 adding 'apache-beam-0.6.0.dev0/apache_beam/metrics/__init__.py'
 adding 'apache-beam-0.6.0.dev0/apache_beam/metrics/cells.py'
 adding 'apache-beam-0.6.0.dev0/apache_beam/metrics/cells_test.py'

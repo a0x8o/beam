@@ -27,7 +27,6 @@ import static org.apache.beam.runners.spark.io.hadoop.ShardNameBuilder.replaceSh
 import static org.apache.beam.runners.spark.translation.TranslationUtils.rejectSplittable;
 import static org.apache.beam.runners.spark.translation.TranslationUtils.rejectStateAndTimers;
 
-import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import java.io.IOException;
@@ -69,12 +68,12 @@ import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
 import org.apache.beam.sdk.transforms.windowing.Window;
 import org.apache.beam.sdk.transforms.windowing.WindowFn;
 import org.apache.beam.sdk.util.CombineFnUtil;
+import org.apache.beam.sdk.util.Reshuffle;
 import org.apache.beam.sdk.util.WindowedValue;
 import org.apache.beam.sdk.util.WindowingStrategy;
 import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.PCollectionView;
-import org.apache.beam.sdk.values.PValue;
 import org.apache.beam.sdk.values.TaggedPValue;
 import org.apache.beam.sdk.values.TupleTag;
 import org.apache.hadoop.conf.Configuration;
@@ -318,34 +317,17 @@ public final class TransformTranslator {
                         return sparkCombineFn.extractOutput(iter);
                       }
                 }).map(TranslationUtils.<K, WindowedValue<OutputT>>fromPairFunction())
-                  .map(new Function<KV<K, WindowedValue<OutputT>>,
-                      WindowedValue<KV<K, OutputT>>>() {
-                        @Override
-                          public WindowedValue<KV<K, OutputT>> call(
-                              KV<K, WindowedValue<OutputT>> kv) throws Exception {
-                                WindowedValue<OutputT> wv = kv.getValue();
-                                return wv.withValue(KV.of(kv.getKey(), wv.getValue()));
-                              }
-                      });
+                  .map(TranslationUtils.<K, OutputT>toKVByWindowInValue());
 
         context.putDataset(transform, new BoundedDataset<>(outRdd));
       }
     };
   }
 
-  private static <InputT, OutputT> TransformEvaluator<ParDo.BoundMulti<InputT, OutputT>> parDo() {
-    return new TransformEvaluator<ParDo.BoundMulti<InputT, OutputT>>() {
+  private static <InputT, OutputT> TransformEvaluator<ParDo.Bound<InputT, OutputT>> parDo() {
+    return new TransformEvaluator<ParDo.Bound<InputT, OutputT>>() {
       @Override
-      public void evaluate(ParDo.BoundMulti<InputT, OutputT> transform, EvaluationContext context) {
-        if (transform.getSideOutputTags().size() == 0) {
-          evaluateSingle(transform, context);
-        } else {
-          evaluateMulti(transform, context);
-        }
-      }
-
-      private void evaluateMulti(
-          ParDo.BoundMulti<InputT, OutputT> transform, EvaluationContext context) {
+      public void evaluate(ParDo.Bound<InputT, OutputT> transform, EvaluationContext context) {
         String stepName = context.getCurrentTransform().getFullName();
         DoFn<InputT, OutputT> doFn = transform.getFn();
         rejectSplittable(doFn);
@@ -356,21 +338,44 @@ public final class TransformTranslator {
         WindowingStrategy<?, ?> windowingStrategy =
             context.getInput(transform).getWindowingStrategy();
         JavaSparkContext jsc = context.getSparkContext();
-        Accumulator<NamedAggregators> aggAccum = SparkAggregators.getNamedAggregators(jsc);
-        Accumulator<SparkMetricsContainer> metricsAccum = MetricsAccumulator.getInstance();
-        JavaPairRDD<TupleTag<?>, WindowedValue<?>> all =
-            inRDD
-                .mapPartitionsToPair(
-                    new MultiDoFnFunction<>(
-                        aggAccum,
-                        metricsAccum,
-                        stepName,
-                        doFn,
-                        context.getRuntimeContext(),
-                        transform.getMainOutputTag(),
-                        TranslationUtils.getSideInputs(transform.getSideInputs(), context),
-                        windowingStrategy))
-                .cache();
+        Accumulator<NamedAggregators> aggAccum =
+            SparkAggregators.getNamedAggregators(jsc);
+        Accumulator<SparkMetricsContainer> metricsAccum =
+            MetricsAccumulator.getInstance();
+        Map<TupleTag<?>, KV<WindowingStrategy<?, ?>, SideInputBroadcast<?>>> sideInputs =
+            TranslationUtils.getSideInputs(transform.getSideInputs(), context);
+        context.putDataset(transform,
+            new BoundedDataset<>(inRDD.mapPartitions(new DoFnFunction<>(aggAccum, metricsAccum,
+                stepName, doFn, context.getRuntimeContext(), sideInputs, windowingStrategy))));
+      }
+    };
+  }
+
+  private static <InputT, OutputT> TransformEvaluator<ParDo.BoundMulti<InputT, OutputT>>
+  multiDo() {
+    return new TransformEvaluator<ParDo.BoundMulti<InputT, OutputT>>() {
+      @Override
+      public void evaluate(ParDo.BoundMulti<InputT, OutputT> transform, EvaluationContext context) {
+        String stepName = context.getCurrentTransform().getFullName();
+        DoFn<InputT, OutputT> doFn = transform.getFn();
+        rejectSplittable(doFn);
+        rejectStateAndTimers(doFn);
+        @SuppressWarnings("unchecked")
+        JavaRDD<WindowedValue<InputT>> inRDD =
+            ((BoundedDataset<InputT>) context.borrowDataset(transform)).getRDD();
+        WindowingStrategy<?, ?> windowingStrategy =
+            context.getInput(transform).getWindowingStrategy();
+        JavaSparkContext jsc = context.getSparkContext();
+        Accumulator<NamedAggregators> aggAccum =
+            SparkAggregators.getNamedAggregators(jsc);
+        Accumulator<SparkMetricsContainer> metricsAccum =
+            MetricsAccumulator.getInstance();
+        JavaPairRDD<TupleTag<?>, WindowedValue<?>> all = inRDD
+            .mapPartitionsToPair(
+                new MultiDoFnFunction<>(aggAccum, metricsAccum, stepName, doFn,
+                    context.getRuntimeContext(), transform.getMainOutputTag(),
+                    TranslationUtils.getSideInputs(transform.getSideInputs(), context),
+                    windowingStrategy)).cache();
         List<TaggedPValue> pct = context.getOutputs(transform);
         for (TaggedPValue e : pct) {
           @SuppressWarnings("unchecked")
@@ -382,37 +387,6 @@ public final class TransformTranslator {
               (JavaRDD<WindowedValue<Object>>) (JavaRDD<?>) filtered.values();
           context.putDataset(e.getValue(), new BoundedDataset<>(values));
         }
-      }
-
-      private void evaluateSingle(
-          ParDo.BoundMulti<InputT, OutputT> transform, EvaluationContext context) {
-        String stepName = context.getCurrentTransform().getFullName();
-        DoFn<InputT, OutputT> doFn = transform.getFn();
-        rejectSplittable(doFn);
-        rejectStateAndTimers(doFn);
-        @SuppressWarnings("unchecked")
-        JavaRDD<WindowedValue<InputT>> inRDD =
-            ((BoundedDataset<InputT>) context.borrowDataset(transform)).getRDD();
-        WindowingStrategy<?, ?> windowingStrategy =
-            context.getInput(transform).getWindowingStrategy();
-        JavaSparkContext jsc = context.getSparkContext();
-        Accumulator<NamedAggregators> aggAccum = SparkAggregators.getNamedAggregators(jsc);
-        Accumulator<SparkMetricsContainer> metricsAccum = MetricsAccumulator.getInstance();
-        Map<TupleTag<?>, KV<WindowingStrategy<?, ?>, SideInputBroadcast<?>>> sideInputs =
-            TranslationUtils.getSideInputs(transform.getSideInputs(), context);
-        PValue onlyOutput = Iterables.getOnlyElement(context.getOutputs(transform)).getValue();
-        context.putDataset(
-            onlyOutput,
-            new BoundedDataset<>(
-                inRDD.mapPartitions(
-                    new DoFnFunction<>(
-                        aggAccum,
-                        metricsAccum,
-                        stepName,
-                        doFn,
-                        context.getRuntimeContext(),
-                        sideInputs,
-                        windowingStrategy))));
       }
     };
   }
@@ -735,6 +709,32 @@ public final class TransformTranslator {
     };
   }
 
+  private static <K, V, W extends BoundedWindow> TransformEvaluator<Reshuffle<K, V>> reshuffle() {
+    return new TransformEvaluator<Reshuffle<K, V>>() {
+      @Override public void evaluate(Reshuffle<K, V> transform, EvaluationContext context) {
+        @SuppressWarnings("unchecked")
+        JavaRDD<WindowedValue<KV<K, V>>> inRDD =
+            ((BoundedDataset<KV<K, V>>) context.borrowDataset(transform)).getRDD();
+        @SuppressWarnings("unchecked")
+        final WindowingStrategy<?, W> windowingStrategy =
+            (WindowingStrategy<?, W>) context.getInput(transform).getWindowingStrategy();
+        @SuppressWarnings("unchecked")
+        final KvCoder<K, V> coder = (KvCoder<K, V>) context.getInput(transform).getCoder();
+        @SuppressWarnings("unchecked")
+        final WindowFn<Object, W> windowFn = (WindowFn<Object, W>) windowingStrategy.getWindowFn();
+
+        final Coder<K> keyCoder = coder.getKeyCoder();
+        final WindowedValue.WindowedValueCoder<V> wvCoder =
+            WindowedValue.FullWindowedValueCoder.of(coder.getValueCoder(), windowFn.windowCoder());
+
+        JavaRDD<WindowedValue<KV<K, V>>> reshuffled =
+            GroupCombineFunctions.reshuffle(inRDD, keyCoder, wvCoder);
+
+        context.putDataset(transform, new BoundedDataset<>(reshuffled));
+      }
+    };
+  }
+
   private static final Map<Class<? extends PTransform>, TransformEvaluator<?>> EVALUATORS = Maps
       .newHashMap();
 
@@ -742,7 +742,8 @@ public final class TransformTranslator {
     EVALUATORS.put(Read.Bounded.class, readBounded());
     EVALUATORS.put(HadoopIO.Read.Bound.class, readHadoop());
     EVALUATORS.put(HadoopIO.Write.Bound.class, writeHadoop());
-    EVALUATORS.put(ParDo.BoundMulti.class, parDo());
+    EVALUATORS.put(ParDo.Bound.class, parDo());
+    EVALUATORS.put(ParDo.BoundMulti.class, multiDo());
     EVALUATORS.put(GroupByKey.class, groupByKey());
     EVALUATORS.put(Combine.GroupedValues.class, combineGrouped());
     EVALUATORS.put(Combine.Globally.class, combineGlobally());
@@ -753,6 +754,7 @@ public final class TransformTranslator {
     EVALUATORS.put(View.AsIterable.class, viewAsIter());
     EVALUATORS.put(View.CreatePCollectionView.class, createPCollView());
     EVALUATORS.put(Window.Assign.class, window());
+    EVALUATORS.put(Reshuffle.class, reshuffle());
     // mostly test evaluators
     EVALUATORS.put(StorageLevelPTransform.class, storageLevel());
   }
