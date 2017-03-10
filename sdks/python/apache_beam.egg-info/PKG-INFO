@@ -1,6 +1,6 @@
 Metadata-Version: 1.1
 Name: apache-beam
-Version: 0.6.0.dev0
+Version: 0.7.0.dev0
 Summary: Apache Beam SDK for Python
 Home-page: https://beam.apache.org
 Author: Apache Software Foundation
