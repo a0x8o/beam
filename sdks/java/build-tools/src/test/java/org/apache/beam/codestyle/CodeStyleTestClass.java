@@ -15,37 +15,31 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+package org.apache.beam.codestyle;
 
-package org.apache.beam.runners.spark.metrics;
-
-import com.codahale.metrics.MetricRegistry;
-
-import org.apache.spark.metrics.source.Source;
-
+import java.util.List;
 
 /**
- * A Spark {@link Source} that is tailored to expose a {@link SparkBeamMetric},
- * wrapping an underlying {@link SparkMetricsContainer} instance.
+ * Class to be formatted using beam-codestyle.xml to test it is configured correctly.
  */
-public class SparkBeamMetricSource implements Source {
-  private static final String METRIC_NAME = "Metrics";
+public class CodeStyleTestClass {
 
-  private final String name;
-
-  private final MetricRegistry metricRegistry = new MetricRegistry();
-
-  public SparkBeamMetricSource(final String name) {
-    this.name = name;
-    metricRegistry.register(METRIC_NAME, new SparkBeamMetric());
+  public static MyClass withSideInputs(List<?>... sideInputs) {
+    return new MyClass().myMethod(sideInputs);
   }
 
-  @Override
-  public String sourceName() {
-    return name;
-  }
+  /**
+   * Fake Class.
+   */
+  public static class MyClass {
 
-  @Override
-  public MetricRegistry metricRegistry() {
-    return metricRegistry;
+    private static final String MY_CONSTANT = "";
+
+    MyClass() {
+    }
+
+    public MyClass myMethod(List<?>... sideInputs) {
+      return null;
+    }
   }
 }
