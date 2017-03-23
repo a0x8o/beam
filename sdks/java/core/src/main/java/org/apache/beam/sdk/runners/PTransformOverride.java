@@ -15,18 +15,30 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.beam.sdk.options;
+
+package org.apache.beam.sdk.runners;
+
+import com.google.auto.value.AutoValue;
+import org.apache.beam.sdk.transforms.PTransform;
 
 /**
- * Properties needed when using Google BigQuery with the Apache Beam SDK.
+ * A {@link PTransformMatcher} and associated {@link PTransformOverrideFactory} to replace all
+ * matching {@link PTransform PTransforms}.
  */
-@Description("Options that are used to configure Google BigQuery. See "
-    + "https://cloud.google.com/bigquery/what-is-bigquery for details on BigQuery.")
-public interface BigQueryOptions extends ApplicationNameOptions, GcpOptions,
-    PipelineOptions, StreamingOptions {
-  @Description("Temporary dataset for BigQuery table operations. "
-      + "Supported values are \"bigquery.googleapis.com/{dataset}\"")
-  @Default.String("bigquery.googleapis.com/cloud_dataflow")
-  String getTempDatasetId();
-  void setTempDatasetId(String value);
+@AutoValue
+public abstract class PTransformOverride {
+  public static PTransformOverride of(
+      PTransformMatcher matcher, PTransformOverrideFactory factory) {
+    return new AutoValue_PTransformOverride(matcher, factory);
+  }
+
+  /**
+   * Gets the {@link PTransformMatcher} to identify {@link PTransform PTransforms} to replace.
+   */
+  public abstract PTransformMatcher getMatcher();
+
+  /**
+   * Gets the {@link PTransformOverrideFactory} of this override.
+   */
+  public abstract PTransformOverrideFactory getOverrideFactory();
 }

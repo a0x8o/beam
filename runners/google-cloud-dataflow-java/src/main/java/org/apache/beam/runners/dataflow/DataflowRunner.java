@@ -51,7 +51,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -93,6 +92,7 @@ import org.apache.beam.sdk.options.PipelineOptions;
 import org.apache.beam.sdk.options.PipelineOptionsValidator;
 import org.apache.beam.sdk.options.ValueProvider.NestedValueProvider;
 import org.apache.beam.sdk.runners.PTransformMatcher;
+import org.apache.beam.sdk.runners.PTransformOverride;
 import org.apache.beam.sdk.runners.PTransformOverrideFactory;
 import org.apache.beam.sdk.runners.PipelineRunner;
 import org.apache.beam.sdk.runners.TransformHierarchy;
@@ -304,14 +304,12 @@ public class DataflowRunner extends PipelineRunner<DataflowPipelineJob> {
             PTransformMatchers.parDoWithFnType(unsupported),
             UnsupportedOverrideFactory.withMessage(getUnsupportedMessage(unsupported, true)));
       }
-      if (options.getExperiments() == null
-          || !options.getExperiments().contains("enable_custom_pubsub_source")) {
+      if (!hasExperiment(options, "enable_custom_pubsub_source")) {
         ptoverrides.put(
             PTransformMatchers.classEqualTo(PubsubUnboundedSource.class),
             new ReflectiveRootOverrideFactory(StreamingPubsubIORead.class, this));
       }
-      if (options.getExperiments() == null
-          || !options.getExperiments().contains("enable_custom_pubsub_sink")) {
+      if (!hasExperiment(options, "enable_custom_pubsub_sink")) {
         ptoverrides.put(
             PTransformMatchers.classEqualTo(PubsubUnboundedSink.class),
             new StreamingPubsubIOWriteOverrideFactory(this));
@@ -542,20 +540,7 @@ public class DataflowRunner extends PipelineRunner<DataflowPipelineJob> {
       workerPool.setWorkerHarnessContainerImage(workerHarnessContainerImage);
     }
 
-    // Requirements about the service.
-    Map<String, Object> environmentVersion = new HashMap<>();
-    environmentVersion.put(
-        PropertyNames.ENVIRONMENT_VERSION_MAJOR_KEY,
-        DataflowRunnerInfo.getDataflowRunnerInfo().getEnvironmentMajorVersion());
-    newJob.getEnvironment().setVersion(environmentVersion);
-    // Default jobType is JAVA_BATCH_AUTOSCALING: A Java job with workers that the job can
-    // autoscale if specified.
-    String jobType = "JAVA_BATCH_AUTOSCALING";
-
-    if (options.isStreaming()) {
-      jobType = "STREAMING";
-    }
-    environmentVersion.put(PropertyNames.ENVIRONMENT_VERSION_JOB_TYPE_KEY, jobType);
+    newJob.getEnvironment().setVersion(getEnvironmentVersion(options));
 
     if (hooks != null) {
       hooks.modifyEnvironmentBeforeSubmission(newJob.getEnvironment());
@@ -663,10 +648,34 @@ public class DataflowRunner extends PipelineRunner<DataflowPipelineJob> {
     return dataflowPipelineJob;
   }
 
+  /** Returns true if the specified experiment is enabled, handling null experiments. */
+  public static boolean hasExperiment(DataflowPipelineDebugOptions options, String experiment) {
+    List<String> experiments =
+        firstNonNull(options.getExperiments(), Collections.<String>emptyList());
+    return experiments.contains(experiment);
+  }
+
+  /** Helper to configure the Dataflow Job Environment based on the user's job options. */
+  private static Map<String, Object> getEnvironmentVersion(DataflowPipelineOptions options) {
+    DataflowRunnerInfo runnerInfo = DataflowRunnerInfo.getDataflowRunnerInfo();
+    String majorVersion;
+    String jobType;
+    if (hasExperiment(options, "beam_fn_api")) {
+      majorVersion = runnerInfo.getFnApiEnvironmentMajorVersion();
+      jobType = options.isStreaming() ? "FNAPI_STREAMING" : "FNAPI_BATCH";
+    } else {
+      majorVersion = runnerInfo.getLegacyEnvironmentMajorVersion();
+      jobType = options.isStreaming() ? "STREAMING" : "JAVA_BATCH_AUTOSCALING";
+    }
+    return ImmutableMap.<String, Object>of(
+        PropertyNames.ENVIRONMENT_VERSION_MAJOR_KEY, majorVersion,
+        PropertyNames.ENVIRONMENT_VERSION_JOB_TYPE_KEY, jobType);
+  }
+
   @VisibleForTesting
   void replaceTransforms(Pipeline pipeline) {
     for (Map.Entry<PTransformMatcher, PTransformOverrideFactory> override : overrides.entrySet()) {
-      pipeline.replace(override.getKey(), override.getValue());
+      pipeline.replace(PTransformOverride.of(override.getKey(), override.getValue()));
     }
   }
 
