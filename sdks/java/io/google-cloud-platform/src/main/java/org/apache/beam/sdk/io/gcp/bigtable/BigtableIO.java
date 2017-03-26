@@ -215,7 +215,8 @@ public class BigtableIO {
       // Set data channel count to one because there is only 1 scanner in this session
       BigtableOptions.Builder clonedBuilder = options.toBuilder()
           .setDataChannelCount(1);
-      BigtableOptions optionsWithAgent = clonedBuilder.setUserAgent(getUserAgent()).build();
+      BigtableOptions optionsWithAgent =
+          clonedBuilder.setUserAgent(getBeamSdkPartOfUserAgent()).build();
 
       return new Read(optionsWithAgent, tableId, keyRange, filter, bigtableService);
     }
@@ -449,7 +450,8 @@ public class BigtableIO {
               options.getBulkOptions().toBuilder()
                   .setUseBulkApi(true)
                   .build());
-      BigtableOptions optionsWithAgent = clonedBuilder.setUserAgent(getUserAgent()).build();
+      BigtableOptions optionsWithAgent =
+          clonedBuilder.setUserAgent(getBeamSdkPartOfUserAgent()).build();
       return new Write(optionsWithAgent, tableId, bigtableService);
     }
 
@@ -1005,7 +1007,7 @@ public class BigtableIO {
         splitKey = rangeTracker.getRange().interpolateKey(fraction);
       } catch (RuntimeException e) {
         LOG.info(
-            "%s: Failed to interpolate key for fraction %s.", rangeTracker.getRange(), fraction, e);
+            "{}: Failed to interpolate key for fraction {}.", rangeTracker.getRange(), fraction, e);
         return null;
       }
       LOG.debug(
@@ -1017,7 +1019,7 @@ public class BigtableIO {
          residual =  source.withStartKey(splitKey);
       } catch (RuntimeException e) {
         LOG.info(
-            "%s: Interpolating for fraction %s yielded invalid split key %s.",
+            "{}: Interpolating for fraction {} yielded invalid split key {}.",
             rangeTracker.getRange(),
             fraction,
             splitKey,
@@ -1047,16 +1049,16 @@ public class BigtableIO {
   }
 
   /**
-   * A helper function to produce a Cloud Bigtable user agent string.
+   * A helper function to produce a Cloud Bigtable user agent string. This need only include
+   * information about the Apache Beam SDK itself, because Bigtable will automatically append
+   * other relevant system and Bigtable client-specific version information.
+   *
+   * @see com.google.cloud.bigtable.config.BigtableVersionInfo
    */
-  private static String getUserAgent() {
-    String javaVersion = System.getProperty("java.specification.version");
+  private static String getBeamSdkPartOfUserAgent() {
     ReleaseInfo info = ReleaseInfo.getReleaseInfo();
-    return String.format(
-        "%s/%s (%s); %s",
-        info.getName(),
-        info.getVersion(),
-        javaVersion,
-        "0.3.0" /* TODO get Bigtable client version directly from jar. */);
+    return
+        String.format("%s/%s", info.getName(), info.getVersion())
+            .replace(" ", "_");
   }
 }
