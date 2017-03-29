@@ -339,9 +339,11 @@ public class DataflowRunner extends PipelineRunner<DataflowPipelineJob> {
       }
       ptoverrides
           // State and timer pardos are implemented by expansion to GBK-then-ParDo
-          .put(PTransformMatchers.stateOrTimerParDoMulti(),
+          .put(
+              PTransformMatchers.stateOrTimerParDoMulti(),
               BatchStatefulParDoOverrides.multiOutputOverrideFactory())
-          .put(PTransformMatchers.stateOrTimerParDoSingle(),
+          .put(
+              PTransformMatchers.stateOrTimerParDoSingle(),
               BatchStatefulParDoOverrides.singleOutputOverrideFactory())
 
           // Write uses views internally
@@ -353,6 +355,9 @@ public class DataflowRunner extends PipelineRunner<DataflowPipelineJob> {
               PTransformMatchers.classEqualTo(View.AsMultimap.class),
               new ReflectiveOneToOneOverrideFactory(
                   BatchViewOverrides.BatchViewAsMultimap.class, this))
+          .put(
+              PTransformMatchers.classEqualTo(Combine.GloballyAsSingletonView.class),
+              new BatchViewOverrides.BatchCombineGloballyAsSingletonViewFactory(this))
           .put(
               PTransformMatchers.classEqualTo(View.AsSingleton.class),
               new ReflectiveOneToOneOverrideFactory(
@@ -366,11 +371,14 @@ public class DataflowRunner extends PipelineRunner<DataflowPipelineJob> {
                   BatchViewOverrides.BatchViewAsIterable.class, this));
     }
     ptoverrides
+        .put(PTransformMatchers.classEqualTo(Reshuffle.class), new ReshuffleOverrideFactory())
         // Order is important. Streaming views almost all use Combine internally.
         .put(
             PTransformMatchers.classEqualTo(Combine.GroupedValues.class),
             new PrimitiveCombineGroupedValuesOverrideFactory())
-        .put(PTransformMatchers.classEqualTo(ParDo.Bound.class), new PrimitiveParDoSingleFactory());
+        .put(
+            PTransformMatchers.classEqualTo(ParDo.SingleOutput.class),
+            new PrimitiveParDoSingleFactory());
     return ptoverrides.build();
   }
 
