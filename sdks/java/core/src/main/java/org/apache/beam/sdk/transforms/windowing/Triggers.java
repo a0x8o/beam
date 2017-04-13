@@ -35,6 +35,7 @@ import org.joda.time.Instant;
 
 /** Utilities for working with {@link Triggers Triggers}. */
 @Experimental(Experimental.Kind.TRIGGER)
+@Deprecated
 public class Triggers implements Serializable {
 
   @VisibleForTesting static final ProtoConverter CONVERTER = new ProtoConverter();
@@ -287,6 +288,8 @@ public class Triggers implements Serializable {
         return trigger;
       case AFTER_SYNCHRONIZED_PROCESSING_TIME:
         return AfterSynchronizedProcessingTime.ofFirstElement();
+      case ALWAYS:
+        return new ReshuffleTrigger();
       case ELEMENT_COUNT:
         return AfterPane.elementCountAtLeast(triggerProto.getElementCount().getElementCount());
       case NEVER:
