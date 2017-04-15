@@ -113,7 +113,8 @@ public class ReduceFnTester<InputT, OutputT, W extends BoundedWindow> {
   private boolean autoAdvanceOutputWatermark = true;
 
   private final InMemoryLongSumAggregator droppedDueToClosedWindow =
-      new InMemoryLongSumAggregator(GroupAlsoByWindowsDoFn.DROPPED_DUE_TO_CLOSED_WINDOW_COUNTER);
+      new InMemoryLongSumAggregator(
+          GroupAlsoByWindowsAggregators.DROPPED_DUE_TO_CLOSED_WINDOW_COUNTER);
 
   /**
    * Creates a {@link ReduceFnTester} for the given {@link WindowingStrategy}, creating
@@ -574,13 +575,13 @@ public class ReduceFnTester<InputT, OutputT, W extends BoundedWindow> {
     }
 
     @Override
-    public <SideOutputT> void sideOutputWindowedValue(
-        TupleTag<SideOutputT> tag,
-        SideOutputT output,
+    public <AdditionalOutputT> void outputWindowedValue(
+        TupleTag<AdditionalOutputT> tag,
+        AdditionalOutputT output,
         Instant timestamp,
         Collection<? extends BoundedWindow> windows,
         PaneInfo pane) {
-      throw new UnsupportedOperationException("GroupAlsoByWindow should not use side outputs");
+      throw new UnsupportedOperationException("GroupAlsoByWindow should not use tagged outputs");
     }
   }
 

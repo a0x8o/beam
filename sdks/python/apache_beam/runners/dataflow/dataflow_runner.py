@@ -92,8 +92,7 @@ class DataflowRunner(PipelineRunner):
         return -1
       elif 'Traceback' in msg:
         return 1
-      else:
-        return 0
+      return 0
 
     job_id = result.job_id()
     while True:
@@ -152,8 +151,13 @@ class DataflowRunner(PipelineRunner):
   def run(self, pipeline):
     """Remotely executes entire pipeline or parts reachable from node."""
     # Import here to avoid adding the dependency for local running scenarios.
-    # pylint: disable=wrong-import-order, wrong-import-position
-    from apache_beam.runners.dataflow.internal import apiclient
+    try:
+      # pylint: disable=wrong-import-order, wrong-import-position
+      from apache_beam.runners.dataflow.internal import apiclient
+    except ImportError:
+      raise ImportError(
+          'Google Cloud Dataflow runner not available, '
+          'please install apache_beam[gcp]')
     self.job = apiclient.Job(pipeline.options)
 
     # The superclass's run will trigger a traversal of all reachable nodes.
@@ -189,8 +193,7 @@ class DataflowRunner(PipelineRunner):
       return coders.WindowedValueCoder(
           coders.registry.get_coder(typehint),
           window_coder=window_coder)
-    else:
-      return coders.registry.get_coder(typehint)
+    return coders.registry.get_coder(typehint)
 
   def _get_cloud_encoding(self, coder):
     """Returns an encoding based on a coder object."""
