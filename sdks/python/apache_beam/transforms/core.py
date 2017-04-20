@@ -1098,21 +1098,22 @@ class GroupByKey(PTransform):
 
       # pylint: disable=bad-continuation
       return (pcoll
-              | 'reify_windows' >> (ParDo(self.ReifyWindows())
+              | 'ReifyWindows' >> (ParDo(self.ReifyWindows())
                  .with_output_types(reify_output_type))
-              | 'group_by_key' >> (GroupByKeyOnly()
+              | 'GroupByKey' >> (GroupByKeyOnly()
                  .with_input_types(reify_output_type)
                  .with_output_types(gbk_input_type))
-              | ('group_by_window' >> ParDo(
+              | ('GroupByWindow' >> ParDo(
                      self.GroupAlsoByWindow(pcoll.windowing))
                  .with_input_types(gbk_input_type)
                  .with_output_types(gbk_output_type)))
-    # If the input_type is None, run the default
-    return (pcoll
-            | 'reify_windows' >> ParDo(self.ReifyWindows())
-            | 'group_by_key' >> GroupByKeyOnly()
-            | 'group_by_window' >> ParDo(
-                self.GroupAlsoByWindow(pcoll.windowing)))
+    else:
+      # The input_type is None, run the default
+      return (pcoll
+              | 'ReifyWindows' >> ParDo(self.ReifyWindows())
+              | 'GroupByKey' >> GroupByKeyOnly()
+              | 'GroupByWindow' >> ParDo(
+                    self.GroupAlsoByWindow(pcoll.windowing)))
 
 
 @typehints.with_input_types(typehints.KV[K, V])
@@ -1184,6 +1185,10 @@ class Windowing(object):
       else:
         raise ValueError(
             'accumulation_mode must be provided for non-trivial triggers')
+    if not windowfn.get_window_coder().is_deterministic():
+      raise ValueError(
+          'window fn (%s) does not have a determanistic coder (%s)' % (
+              window_fn, windowfn.get_window_coder()))
     self.windowfn = windowfn
     self.triggerfn = triggerfn
     self.accumulation_mode = accumulation_mode
@@ -1359,13 +1364,14 @@ class Create(PTransform):
     return Union[[trivial_inference.instance_to_type(v) for v in self.value]]
 
   def expand(self, pbegin):
+    from apache_beam.io import iobase
     assert isinstance(pbegin, pvalue.PBegin)
     self.pipeline = pbegin.pipeline
     ouput_type = (self.get_type_hints().simple_output_type(self.label) or
                   self.infer_output_type(None))
     coder = typecoders.registry.get_coder(ouput_type)
     source = self._create_source_from_iterable(self.value, coder)
-    return pbegin.pipeline | Read(source).with_output_types(ouput_type)
+    return pbegin.pipeline | iobase.Read(source).with_output_types(ouput_type)
 
   def get_windowing(self, unused_inputs):
     return Windowing(GlobalWindows())
@@ -1453,13 +1459,3 @@ class Create(PTransform):
         return self._total_size
 
     return _CreateSource(serialized_values, coder)
-
-
-def Read(*args, **kwargs):
-  from apache_beam import io
-  return io.Read(*args, **kwargs)
-
-
-def Write(*args, **kwargs):
-  from apache_beam import io
-  return io.Write(*args, **kwargs)
