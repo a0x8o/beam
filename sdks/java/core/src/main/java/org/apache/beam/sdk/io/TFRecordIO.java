@@ -36,6 +36,7 @@ import org.apache.beam.sdk.coders.ByteArrayCoder;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.coders.VoidCoder;
 import org.apache.beam.sdk.io.Read.Bounded;
+import org.apache.beam.sdk.io.fs.MatchResult.Metadata;
 import org.apache.beam.sdk.options.PipelineOptions;
 import org.apache.beam.sdk.options.ValueProvider;
 import org.apache.beam.sdk.options.ValueProvider.StaticValueProvider;
@@ -343,9 +344,9 @@ public class TFRecordIO {
       if (getFilenamePrefix() == null) {
         throw new IllegalStateException(
             "need to set the filename prefix of a TFRecordIO.Write transform");
-      }
-      org.apache.beam.sdk.io.Write<byte[]> write =
-          org.apache.beam.sdk.io.Write.to(
+     }
+      org.apache.beam.sdk.io.WriteFiles<byte[]> write =
+          org.apache.beam.sdk.io.WriteFiles.to(
               new TFRecordSink(
                   getFilenamePrefix(),
                   getFilenameSuffix(),
@@ -444,7 +445,7 @@ public class TFRecordIO {
   static class TFRecordSource extends FileBasedSource<byte[]> {
     @VisibleForTesting
     TFRecordSource(String fileSpec) {
-      super(fileSpec, 1L);
+      super(StaticValueProvider.of(fileSpec), 1L);
     }
 
     @VisibleForTesting
@@ -452,17 +453,17 @@ public class TFRecordIO {
       super(fileSpec, Long.MAX_VALUE);
     }
 
-    private TFRecordSource(String fileName, long start, long end) {
-      super(fileName, Long.MAX_VALUE, start, end);
+    private TFRecordSource(Metadata metadata, long start, long end) {
+      super(metadata, Long.MAX_VALUE, start, end);
     }
 
     @Override
     protected FileBasedSource<byte[]> createForSubrangeOfFile(
-        String fileName,
+        Metadata metadata,
         long start,
         long end) {
       checkArgument(start == 0, "TFRecordSource is not splittable");
-      return new TFRecordSource(fileName, start, end);
+      return new TFRecordSource(metadata, start, end);
     }
 
     @Override
@@ -498,6 +499,12 @@ public class TFRecordIO {
 
       private TFRecordReader(TFRecordSource source) {
         super(source);
+      }
+
+      @Override
+      public boolean allowsDynamicSplitting() {
+        /* TFRecords cannot be dynamically split. */
+        return false;
       }
 
       @Override
