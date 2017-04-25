@@ -358,6 +358,12 @@
 
       <dependency>
         <groupId>org.apache.beam</groupId>
+        <artifactId>beam-sdks-java-extensions-protobuf</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+
+      <dependency>
+        <groupId>org.apache.beam</groupId>
         <artifactId>beam-sdks-java-extensions-gcp-core</artifactId>
         <version>${project.version}</version>
       </dependency>
@@ -1193,6 +1199,9 @@
               <exclude>**/.factorypath</exclude>
               <exclude>**/.project</exclude>
               <exclude>**/.settings/**/*</exclude>
+
+              <!-- Proto/grpc generated wrappers -->
+              <exclude>**/sdks/python/apache_beam/runners/api/*.py</exclude>
             </excludes>
           </configuration>
         </plugin>
