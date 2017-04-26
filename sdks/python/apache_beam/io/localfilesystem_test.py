@@ -26,15 +26,15 @@ import shutil
 import tempfile
 import mock
 
-from apache_beam.io.filesystem import BeamIOError
 from apache_beam.io import localfilesystem
+from apache_beam.io.filesystem import BeamIOError
 
 
 def _gen_fake_join(separator):
   """Returns a callable that joins paths with the given separator."""
 
   def _join(first_path, *paths):
-    return separator.join((first_path,) + paths)
+    return separator.join((first_path.rstrip(separator),) + paths)
 
   return _join
 
