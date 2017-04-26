@@ -15,27 +15,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.beam.sdk.metrics;
 
-import org.apache.beam.sdk.annotations.Experimental;
-import org.apache.beam.sdk.annotations.Experimental.Kind;
+package org.apache.beam.sdk.testing;
 
 /**
- * A {@link MetricCell} is used for accumulating in-memory changes to a metric. It represents a
- * specific metric name in a single context.
- *
- * @param <DataT> The type of metric data stored (and extracted) from this cell.
+ * Category tag for validation tests which utilize {@link org.apache.beam.sdk.metrics.Gauge}.
+ * Tests tagged with {@link UsesGaugeMetrics} should be run for runners which support gauges.
  */
-@Experimental(Kind.METRICS)
-public interface MetricCell<DataT> {
-
-  /**
-   * Return the {@link DirtyState} tracking whether this metric cell contains uncommitted changes.
-   */
-  DirtyState getDirty();
-
-  /**
-   * Return the cumulative value of this metric.
-   */
-  DataT getCumulative();
-}
+public class UsesGaugeMetrics {}

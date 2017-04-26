@@ -15,27 +15,31 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.beam.sdk.metrics;
 
-import org.apache.beam.sdk.annotations.Experimental;
-import org.apache.beam.sdk.annotations.Experimental.Kind;
+package org.apache.beam.sdk.io.kafka.serialization;
+
+import java.util.Map;
+
+import org.apache.kafka.common.serialization.Deserializer;
+import org.apache.kafka.common.serialization.LongDeserializer;
+import org.joda.time.Instant;
 
 /**
- * A {@link MetricCell} is used for accumulating in-memory changes to a metric. It represents a
- * specific metric name in a single context.
+ * Kafka {@link Deserializer} for {@link Instant}.
  *
- * @param <DataT> The type of metric data stored (and extracted) from this cell.
+ * <p>This decodes the number of milliseconds since epoch using {@link LongDeserializer}.
  */
-@Experimental(Kind.METRICS)
-public interface MetricCell<DataT> {
+public class InstantDeserializer implements Deserializer<Instant> {
+  private static final LongDeserializer LONG_DESERIALIZER = new LongDeserializer();
 
-  /**
-   * Return the {@link DirtyState} tracking whether this metric cell contains uncommitted changes.
-   */
-  DirtyState getDirty();
+  @Override
+  public void configure(Map<String, ?> configs, boolean isKey) {}
 
-  /**
-   * Return the cumulative value of this metric.
-   */
-  DataT getCumulative();
+  @Override
+  public Instant deserialize(String topic, byte[] bytes) {
+    return new Instant(LONG_DESERIALIZER.deserialize(topic, bytes));
+  }
+
+  @Override
+  public void close() {}
 }

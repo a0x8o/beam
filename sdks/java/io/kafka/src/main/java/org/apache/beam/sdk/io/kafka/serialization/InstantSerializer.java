@@ -15,27 +15,31 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.beam.sdk.metrics;
 
-import org.apache.beam.sdk.annotations.Experimental;
-import org.apache.beam.sdk.annotations.Experimental.Kind;
+package org.apache.beam.sdk.io.kafka.serialization;
+
+import java.util.Map;
+
+import org.apache.kafka.common.serialization.LongSerializer;
+import org.apache.kafka.common.serialization.Serializer;
+import org.joda.time.Instant;
 
 /**
- * A {@link MetricCell} is used for accumulating in-memory changes to a metric. It represents a
- * specific metric name in a single context.
+ * Kafka {@link Serializer} for {@link Instant}.
  *
- * @param <DataT> The type of metric data stored (and extracted) from this cell.
+ * <p>This encodes the number of milliseconds since epoch using {@link LongSerializer}.
  */
-@Experimental(Kind.METRICS)
-public interface MetricCell<DataT> {
+public class InstantSerializer implements Serializer<Instant> {
+  private static final LongSerializer LONG_SERIALIZER = new LongSerializer();
 
-  /**
-   * Return the {@link DirtyState} tracking whether this metric cell contains uncommitted changes.
-   */
-  DirtyState getDirty();
+  @Override
+  public void configure(Map<String, ?> configs, boolean isKey) {}
 
-  /**
-   * Return the cumulative value of this metric.
-   */
-  DataT getCumulative();
-}
+  @Override
+  public byte[] serialize(String topic, Instant instant) {
+    return LONG_SERIALIZER.serialize(topic, instant.getMillis());
+  }
+
+  @Override
+  public void close() {}
+};
