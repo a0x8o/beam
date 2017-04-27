@@ -47,9 +47,9 @@ import org.apache.beam.sdk.transforms.Aggregator;
 import org.apache.beam.sdk.transforms.windowing.AfterWatermark;
 import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
 import org.apache.beam.sdk.transforms.windowing.GlobalWindow;
+import org.apache.beam.sdk.transforms.windowing.OutputTimeFn;
 import org.apache.beam.sdk.transforms.windowing.PaneInfo;
 import org.apache.beam.sdk.transforms.windowing.PaneInfo.Timing;
-import org.apache.beam.sdk.transforms.windowing.TimestampCombiner;
 import org.apache.beam.sdk.transforms.windowing.Window.ClosingBehavior;
 import org.apache.beam.sdk.transforms.windowing.WindowFn;
 import org.apache.beam.sdk.util.SideInputReader;
@@ -171,7 +171,7 @@ public class ReduceFnRunner<K, InputT, OutputT, W extends BoundedWindow> {
    * <ul>
    * <li>State: Bag of hold timestamps.
    * <li>State style: RENAMED
-   * <li>Merging: Depending on {@link TimestampCombiner}, may need to be recalculated on merging.
+   * <li>Merging: Depending on {@link OutputTimeFn}, may need to be recalculated on merging.
    * When a pane fires it may be necessary to add (back) an end-of-window or garbage collection
    * hold.
    * <li>Lifetime: Cleared when a pane fires or when the window is garbage collected.
@@ -264,7 +264,7 @@ public class ReduceFnRunner<K, InputT, OutputT, W extends BoundedWindow> {
     return activeWindows.getActiveAndNewWindows().isEmpty();
   }
 
-  private Set<W> openWindows(Collection<W> windows) {
+  private Set<W> windowsThatAreOpen(Collection<W> windows) {
     Set<W> result = new HashSet<>();
     for (W window : windows) {
       ReduceFn<K, InputT, OutputT, W>.Context directContext = contextFactory.base(
@@ -339,7 +339,7 @@ public class ReduceFnRunner<K, InputT, OutputT, W extends BoundedWindow> {
     prefetchWindowsForValues(windows);
 
     // All windows that are open before element processing may need to fire.
-    Set<W> windowsToConsider = openWindows(windows);
+    Set<W> windowsToConsider = windowsThatAreOpen(windows);
 
     // Process each element, using the updated activeWindows determined by mergeWindows.
     for (WindowedValue<InputT> value : values) {
