@@ -17,6 +17,7 @@
  */
 package org.apache.beam.examples;
 
+import org.apache.beam.examples.common.ExampleUtils;
 import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.io.TextIO;
 import org.apache.beam.sdk.metrics.Counter;
@@ -44,8 +45,8 @@ import org.apache.beam.sdk.values.PCollection;
  * pipeline, for introduction of additional concepts.
  *
  * <p>For a detailed walkthrough of this example, see
- *   <a href="http://beam.apache.org/use/walkthroughs/">
- *   http://beam.apache.org/use/walkthroughs/
+ *   <a href="https://beam.apache.org/get-started/wordcount-example/">
+ *   https://beam.apache.org/get-started/wordcount-example/
  *   </a>
  *
  * <p>Basic concepts, also in the MinimalWordCount example:
@@ -95,7 +96,7 @@ public class WordCount {
       }
 
       // Split the line into words.
-      String[] words = c.element().split("[^a-zA-Z']+");
+      String[] words = c.element().split(ExampleUtils.TOKENIZER_PATTERN);
 
       // Output each word encountered into the output PCollection.
       for (String word : words) {

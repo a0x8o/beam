@@ -61,6 +61,7 @@ import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.coders.CoderRegistry;
 import org.apache.beam.sdk.coders.CustomCoder;
 import org.apache.beam.sdk.coders.KvCoder;
+import org.apache.beam.sdk.coders.NullableCoder;
 import org.apache.beam.sdk.io.Read.Unbounded;
 import org.apache.beam.sdk.io.UnboundedSource;
 import org.apache.beam.sdk.io.UnboundedSource.CheckpointMark;
@@ -68,6 +69,10 @@ import org.apache.beam.sdk.io.UnboundedSource.UnboundedReader;
 import org.apache.beam.sdk.io.kafka.KafkaCheckpointMark.PartitionMark;
 import org.apache.beam.sdk.io.kafka.serialization.CoderBasedKafkaDeserializer;
 import org.apache.beam.sdk.io.kafka.serialization.CoderBasedKafkaSerializer;
+import org.apache.beam.sdk.metrics.Counter;
+import org.apache.beam.sdk.metrics.Gauge;
+import org.apache.beam.sdk.metrics.SinkMetrics;
+import org.apache.beam.sdk.metrics.SourceMetrics;
 import org.apache.beam.sdk.options.PipelineOptions;
 import org.apache.beam.sdk.options.ValueProvider;
 import org.apache.beam.sdk.transforms.DoFn;
@@ -270,7 +275,7 @@ public class KafkaIO {
    * deserializer argument using the {@link Coder} registry.
    */
   @VisibleForTesting
-  static <T> Coder<T> inferCoder(
+  static <T> NullableCoder<T> inferCoder(
       CoderRegistry coderRegistry, Class<? extends Deserializer<T>> deserializer) {
     checkNotNull(deserializer);
 
@@ -289,7 +294,7 @@ public class KafkaIO {
         try {
           @SuppressWarnings("unchecked")
           Class<T> clazz = (Class<T>) parameter;
-          return coderRegistry.getDefaultCoder(clazz);
+          return NullableCoder.of(coderRegistry.getDefaultCoder(clazz));
         } catch (CannotProvideCoderException e) {
           LOG.warn("Could not infer coder from deserializer type", e);
         }
@@ -612,30 +617,13 @@ public class KafkaIO {
     }
 
     @Override
-    public void validate(PBegin input)  {
+    public void validate(PipelineOptions options) {
       checkNotNull(getConsumerConfig().get(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG),
           "Kafka bootstrap servers should be set");
       checkArgument(getTopics().size() > 0 || getTopicPartitions().size() > 0,
           "Kafka topics or topic_partitions are required");
       checkNotNull(getKeyDeserializer(), "Key deserializer must be set");
       checkNotNull(getValueDeserializer(), "Value deserializer must be set");
-
-      if (input != null) {
-        CoderRegistry registry = input.getPipeline().getCoderRegistry();
-
-        checkNotNull(getKeyCoder() != null
-                        ? getKeyCoder()
-                        : inferCoder(registry, getKeyDeserializer()),
-                "Key coder must be set");
-
-        checkNotNull(getValueCoder() != null
-                        ? getValueCoder()
-                        : inferCoder(registry, getValueDeserializer()),
-                "Value coder must be set");
-      } else {
-        checkNotNull(getKeyCoder(), "Key coder must be set");
-        checkNotNull(getValueCoder(), "Value coder must be set");
-      }
     }
 
     @Override
@@ -643,13 +631,17 @@ public class KafkaIO {
       // Infer key/value coders if not specified explicitly
       CoderRegistry registry = input.getPipeline().getCoderRegistry();
 
-      Coder<K> keyCoder = getKeyCoder() != null
-              ? getKeyCoder()
-              : inferCoder(registry, getKeyDeserializer());
+      Coder<K> keyCoder =
+          checkNotNull(
+              getKeyCoder() != null ? getKeyCoder() : inferCoder(registry, getKeyDeserializer()),
+              "Key coder must be set");
 
-      Coder<V> valueCoder = getValueCoder() != null
-              ? getValueCoder()
-              : inferCoder(registry, getValueDeserializer());
+      Coder<V> valueCoder =
+          checkNotNull(
+              getValueCoder() != null
+                  ? getValueCoder()
+                  : inferCoder(registry, getValueDeserializer()),
+              "Value coder must be set");
 
       // Handles unbounded source to bounded conversion if maxNumRecords or maxReadTime is set.
       Unbounded<KafkaRecord<K, V>> unbounded =
@@ -949,6 +941,13 @@ public class KafkaIO {
     private Deserializer<K> keyDeserializerInstance = null;
     private Deserializer<V> valueDeserializerInstance = null;
 
+    private final Counter elementsRead = SourceMetrics.elementsRead();
+    private final Counter bytesRead = SourceMetrics.bytesRead();
+    private final Counter elementsReadBySplit;
+    private final Counter bytesReadBySplit;
+    private final Gauge backlogBytesOfSplit;
+    private final Gauge backlogElementsOfSplit;
+
     private static final Duration KAFKA_POLL_TIMEOUT = Duration.millis(1000);
     private static final Duration NEW_RECORDS_POLL_TIMEOUT = Duration.millis(10);
 
@@ -1022,10 +1021,18 @@ public class KafkaIO {
 
       synchronized long approxBacklogInBytes() {
         // Note that is an an estimate of uncompressed backlog.
+        long backlogMessageCount = backlogMessageCount();
+        if (backlogMessageCount == UnboundedReader.BACKLOG_UNKNOWN) {
+          return UnboundedReader.BACKLOG_UNKNOWN;
+        }
+        return (long) (backlogMessageCount * avgRecordSize);
+      }
+
+      synchronized long backlogMessageCount() {
         if (latestOffset < 0 || nextOffset < 0) {
           return UnboundedReader.BACKLOG_UNKNOWN;
         }
-        return Math.max(0, (long) ((latestOffset - nextOffset) * avgRecordSize));
+        return Math.max(0, (latestOffset - nextOffset));
       }
     }
 
@@ -1064,6 +1071,13 @@ public class KafkaIO {
           partitionStates.get(i).nextOffset = ckptMark.getNextOffset();
         }
       }
+
+      String splitId = String.valueOf(source.id);
+
+      elementsReadBySplit = SourceMetrics.elementsReadBySplit(splitId);
+      bytesReadBySplit = SourceMetrics.bytesReadBySplit(splitId);
+      backlogBytesOfSplit = SourceMetrics.backlogBytesOfSplit(splitId);
+      backlogElementsOfSplit = SourceMetrics.backlogElementsOfSplit(splitId);
     }
 
     private void consumerPollLoop() {
@@ -1193,6 +1207,9 @@ public class KafkaIO {
         if (curBatch.hasNext()) {
           PartitionState pState = curBatch.next();
 
+          elementsRead.inc();
+          elementsReadBySplit.inc();
+
           if (!pState.recordIter.hasNext()) { // -- (c)
             pState.recordIter = Collections.emptyIterator(); // drop ref
             curBatch.remove();
@@ -1240,6 +1257,8 @@ public class KafkaIO {
           int recordSize = (rawRecord.key() == null ? 0 : rawRecord.key().length)
               + (rawRecord.value() == null ? 0 : rawRecord.value().length);
           pState.recordConsumed(offset, recordSize);
+          bytesRead.inc(recordSize);
+          bytesReadBySplit.inc(recordSize);
           return true;
 
         } else { // -- (b)
@@ -1277,6 +1296,19 @@ public class KafkaIO {
       LOG.debug("{}:  backlog {}", this, getSplitBacklogBytes());
     }
 
+    private void reportBacklog() {
+      long splitBacklogBytes = getSplitBacklogBytes();
+      if (splitBacklogBytes < 0) {
+        splitBacklogBytes = UnboundedReader.BACKLOG_UNKNOWN;
+      }
+      backlogBytesOfSplit.set(splitBacklogBytes);
+      long splitBacklogMessages = getSplitBacklogMessageCount();
+      if (splitBacklogMessages < 0) {
+        splitBacklogMessages = UnboundedReader.BACKLOG_UNKNOWN;
+      }
+      backlogElementsOfSplit.set(splitBacklogMessages);
+    }
+
     @Override
     public Instant getWatermark() {
       if (curRecord == null) {
@@ -1290,6 +1322,7 @@ public class KafkaIO {
 
     @Override
     public CheckpointMark getCheckpointMark() {
+      reportBacklog();
       return new KafkaCheckpointMark(ImmutableList.copyOf(// avoid lazy (consumedOffset can change)
           Lists.transform(partitionStates,
               new Function<PartitionState, PartitionMark>() {
@@ -1333,6 +1366,20 @@ public class KafkaIO {
       }
 
       return backlogBytes;
+    }
+
+    private long getSplitBacklogMessageCount() {
+      long backlogCount = 0;
+
+      for (PartitionState p : partitionStates) {
+        long pBacklog = p.backlogMessageCount();
+        if (pBacklog == UnboundedReader.BACKLOG_UNKNOWN) {
+          return UnboundedReader.BACKLOG_UNKNOWN;
+        }
+        backlogCount += pBacklog;
+      }
+
+      return backlogCount;
     }
 
     @Override
@@ -1463,7 +1510,7 @@ public class KafkaIO {
     }
 
     @Override
-    public void validate(PCollection<KV<K, V>> input) {
+    public void validate(PipelineOptions options) {
       checkNotNull(getProducerConfig().get(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG),
           "Kafka bootstrap servers should be set");
       checkNotNull(getTopic(), "Kafka topic should be set");
@@ -1560,6 +1607,8 @@ public class KafkaIO {
       producer.send(
           new ProducerRecord<K, V>(spec.getTopic(), kv.getKey(), kv.getValue()),
           new SendCallback());
+
+      elementsWritten.inc();
     }
 
     @FinishBundle
@@ -1583,6 +1632,8 @@ public class KafkaIO {
     // first exception and number of failures since last invocation of checkForFailures():
     private transient Exception sendException = null;
     private transient long numSendFailures = 0;
+
+    private final Counter elementsWritten = SinkMetrics.elementsWritten();
 
     KafkaWriter(Write<K, V> spec) {
       this.spec = spec;

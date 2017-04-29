@@ -26,6 +26,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Objects;
 import java.util.UUID;
+import javax.annotation.Nullable;
 import org.apache.beam.sdk.io.fs.ResolveOptions;
 import org.apache.beam.sdk.io.fs.ResolveOptions.StandardResolveOptions;
 import org.apache.beam.sdk.io.fs.ResourceId;
@@ -92,6 +93,12 @@ class LocalResourceId implements ResourceId {
     }
   }
 
+  @Override
+  @Nullable public String getFilename() {
+    Path fileName = getPath().getFileName();
+    return fileName == null ? null : fileName.toString();
+  }
+
   private LocalResourceId resolveLocalPath(String other, ResolveOptions resolveOptions) {
     return new LocalResourceId(
         getPath().resolve(other),
@@ -113,7 +120,12 @@ class LocalResourceId implements ResourceId {
 
   @Override
   public String getScheme() {
-    return LocalFileSystemRegistrar.LOCAL_FILE_SCHEME;
+    return "file";
+  }
+
+  @Override
+  public boolean isDirectory() {
+    return isDirectory;
   }
 
   Path getPath() {

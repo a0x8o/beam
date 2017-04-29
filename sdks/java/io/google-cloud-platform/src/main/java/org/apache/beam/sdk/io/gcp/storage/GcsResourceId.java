@@ -21,6 +21,7 @@ import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
 
+import javax.annotation.Nullable;
 import org.apache.beam.sdk.io.fs.ResolveOptions;
 import org.apache.beam.sdk.io.fs.ResolveOptions.StandardResolveOptions;
 import org.apache.beam.sdk.io.fs.ResourceId;
@@ -82,13 +83,24 @@ public class GcsResourceId implements ResourceId {
     }
   }
 
-  private boolean isDirectory() {
+  @Override
+  public boolean isDirectory() {
     return gcsPath.endsWith("/");
   }
 
   @Override
   public String getScheme() {
-    return GcsFileSystemRegistrar.GCS_SCHEME;
+    return "gs";
+  }
+
+  @Override
+  @Nullable public String getFilename() {
+    if (gcsPath.getNameCount() <= 1) {
+      return null;
+    } else {
+      GcsPath gcsFilename = gcsPath.getFileName();
+      return gcsFilename == null ? null : gcsFilename.toString();
+    }
   }
 
   GcsPath getGcsPath() {

@@ -21,7 +21,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
-import java.io.ObjectStreamClass;
 import java.io.OutputStream;
 import java.io.Serializable;
 import org.apache.beam.sdk.values.TypeDescriptor;
@@ -123,13 +122,6 @@ public class SerializableCoder<T extends Serializable> extends CustomCoder<T> {
     }
   }
 
-  @Override
-  public String getEncodingId() {
-    return String.format("%s:%s",
-        type.getName(),
-        ObjectStreamClass.lookup(type).getSerialVersionUID());
-  }
-
   /**
    * {@inheritDoc}
    *
@@ -160,6 +152,6 @@ public class SerializableCoder<T extends Serializable> extends CustomCoder<T> {
 
   // This coder inherits isRegisterByteSizeObserverCheap,
   // getEncodedElementByteSize and registerByteSizeObserver
-  // from StandardCoder. Looks like we cannot do much better
+  // from StructuredCoder. Looks like we cannot do much better
   // in this case.
 }

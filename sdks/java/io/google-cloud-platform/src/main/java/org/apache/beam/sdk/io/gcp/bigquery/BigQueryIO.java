@@ -42,6 +42,7 @@ import javax.annotation.Nullable;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.coders.KvCoder;
 import org.apache.beam.sdk.coders.VoidCoder;
+import org.apache.beam.sdk.extensions.gcp.options.GcpOptions;
 import org.apache.beam.sdk.io.BoundedSource;
 import org.apache.beam.sdk.io.gcp.bigquery.BigQueryHelpers.BeamJobUuidToBigQueryJobUuid;
 import org.apache.beam.sdk.io.gcp.bigquery.BigQueryHelpers.CreateJsonTableRefFromUuid;
@@ -52,7 +53,6 @@ import org.apache.beam.sdk.io.gcp.bigquery.BigQueryHelpers.TableSchemaToJsonSche
 import org.apache.beam.sdk.io.gcp.bigquery.BigQueryHelpers.TableSpecToTableRef;
 import org.apache.beam.sdk.io.gcp.bigquery.BigQueryServices.DatasetService;
 import org.apache.beam.sdk.io.gcp.bigquery.BigQueryServices.JobService;
-import org.apache.beam.sdk.options.GcpOptions;
 import org.apache.beam.sdk.options.PipelineOptions;
 import org.apache.beam.sdk.options.ValueProvider;
 import org.apache.beam.sdk.options.ValueProvider.NestedValueProvider;
@@ -388,10 +388,10 @@ public class BigQueryIO {
     }
 
     @Override
-    public void validate(PBegin input) {
+    public void validate(PipelineOptions options) {
       // Even if existence validation is disabled, we need to make sure that the BigQueryIO
       // read is properly specified.
-      BigQueryOptions bqOptions = input.getPipeline().getOptions().as(BigQueryOptions.class);
+      BigQueryOptions bqOptions = options.as(BigQueryOptions.class);
 
       String tempLocation = bqOptions.getTempLocation();
       checkArgument(
@@ -905,8 +905,8 @@ public class BigQueryIO {
     }
 
     @Override
-    public void validate(PCollection<T> input) {
-      BigQueryOptions options = input.getPipeline().getOptions().as(BigQueryOptions.class);
+    public void validate(PipelineOptions pipelineOptions) {
+      BigQueryOptions options = pipelineOptions.as(BigQueryOptions.class);
 
       // We must have a destination to write to!
       checkState(getTableFunction() != null,
@@ -939,35 +939,13 @@ public class BigQueryIO {
           BigQueryHelpers.verifyTableNotExistOrEmpty(datasetService, table);
         }
       }
-
-      if (input.isBounded() == PCollection.IsBounded.UNBOUNDED) {
-        // We will use BigQuery's streaming write API -- validate supported dispositions.
-        checkArgument(
-            getWriteDisposition() != WriteDisposition.WRITE_TRUNCATE,
-            "WriteDisposition.WRITE_TRUNCATE is not supported for an unbounded"
-            + " PCollection.");
-      } else {
-        // We will use a BigQuery load job -- validate the temp location.
-        String tempLocation = options.getTempLocation();
-        checkArgument(
-            !Strings.isNullOrEmpty(tempLocation),
-            "BigQueryIO.Write needs a GCS temp location to store temp files.");
-        if (getBigQueryServices() == null) {
-          try {
-            GcsPath.fromUri(tempLocation);
-          } catch (IllegalArgumentException e) {
-            throw new IllegalArgumentException(
-                String.format(
-                    "BigQuery temp location expected a valid 'gs://' path, but was given '%s'",
-                    tempLocation),
-                e);
-          }
-        }
-      }
     }
 
     @Override
     public WriteResult expand(PCollection<T> input) {
+
+      validate(input.getPipeline().getOptions());
+
       PCollection<KV<TableDestination, TableRow>> rowsWithDestination =
           input.apply("PrepareWrite", new PrepareWrite<T>(
               getTableFunction(), getFormatFunction()))
@@ -977,6 +955,11 @@ public class BigQueryIO {
       // When writing an Unbounded PCollection, or when a tablespec function is defined, we use
       // StreamingInserts and BigQuery's streaming import API.
       if (input.isBounded() == IsBounded.UNBOUNDED) {
+        checkArgument(
+            getWriteDisposition() != WriteDisposition.WRITE_TRUNCATE,
+            "WriteDisposition.WRITE_TRUNCATE is not supported for an unbounded"
+                + " PCollection.");
+
         return rowsWithDestination.apply(new StreamingInserts(this));
       } else {
         return rowsWithDestination.apply(new BatchLoads(this));

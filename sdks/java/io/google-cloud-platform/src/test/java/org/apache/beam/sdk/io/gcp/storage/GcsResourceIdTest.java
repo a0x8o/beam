@@ -18,7 +18,9 @@
 package org.apache.beam.sdk.io.gcp.storage;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
+import static org.junit.Assert.assertTrue;
 
 import org.apache.beam.sdk.io.fs.ResolveOptions.StandardResolveOptions;
 import org.apache.beam.sdk.io.fs.ResourceId;
@@ -115,6 +117,15 @@ public class GcsResourceIdTest {
   }
 
   @Test
+  public void testIsDirectory() throws Exception {
+    assertTrue(toResourceIdentifier("gs://my_bucket/tmp dir/").isDirectory());
+    assertTrue(toResourceIdentifier("gs://my_bucket/").isDirectory());
+    assertTrue(toResourceIdentifier("gs://my_bucket").isDirectory());
+
+    assertFalse(toResourceIdentifier("gs://my_bucket/file").isDirectory());
+  }
+
+  @Test
   public void testInvalidGcsPath() throws Exception {
     thrown.expect(IllegalArgumentException.class);
     thrown.expectMessage("Invalid GCS URI: gs://");
@@ -139,6 +150,17 @@ public class GcsResourceIdTest {
     assertNotEquals(
         toResourceIdentifier("gs://my_bucket/tmp"),
         toResourceIdentifier("gs://my_bucket/tmp/"));
+  }
+
+  @Test
+  public void testGetFilename() throws Exception {
+    assertEquals(toResourceIdentifier("gs://my_bucket/").getFilename(), null);
+    assertEquals(toResourceIdentifier("gs://my_bucket/abc").getFilename(),
+        "abc");
+    assertEquals(toResourceIdentifier("gs://my_bucket/abc/").getFilename(),
+        "abc");
+    assertEquals(toResourceIdentifier("gs://my_bucket/abc/xyz.txt").getFilename(),
+        "xyz.txt");
   }
 
   private GcsResourceId toResourceIdentifier(String str) throws Exception {

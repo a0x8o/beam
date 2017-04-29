@@ -767,7 +767,7 @@ class CombineTest(unittest.TestCase):
   def test_custom_average(self):
     pc = [2, 3, 5, 7]
 
-    # [START combine_custom_average]
+    # [START combine_custom_average_define]
     class AverageFn(beam.CombineFn):
       def create_accumulator(self):
         return (0.0, 0)
@@ -781,8 +781,10 @@ class CombineTest(unittest.TestCase):
 
       def extract_output(self, (sum, count)):
         return sum / count if count else float('NaN')
+    # [END combine_custom_average_define]
+    # [START combine_custom_average_execute]
     average = pc | beam.CombineGlobally(AverageFn())
-    # [END combine_custom_average]
+    # [END combine_custom_average_execute]
     self.assertEqual([4.25], average)
 
   def test_keys(self):
@@ -898,6 +900,24 @@ class CombineTest(unittest.TestCase):
               | 'combine' >> beam.CombineValues(sum))
     unkeyed = summed | 'unkey' >> beam.Map(lambda x: x[1])
     beam.assert_that(unkeyed, beam.equal_to([42, 187]))
+    p.run()
+
+
+class PTransformTest(unittest.TestCase):
+  """Tests for PTransform."""
+
+  def test_composite(self):
+
+    # [START model_composite_transform]
+    class ComputeWordLengths(beam.PTransform):
+      def expand(self, pcoll):
+        # transform logic goes here
+        return pcoll | beam.Map(lambda x: len(x))
+    # [END model_composite_transform]
+
+    p = TestPipeline()
+    lengths = p | beam.Create(["a", "ab", "abc"]) | ComputeWordLengths()
+    beam.assert_that(lengths, beam.equal_to([1, 2, 3]))
     p.run()
 
 

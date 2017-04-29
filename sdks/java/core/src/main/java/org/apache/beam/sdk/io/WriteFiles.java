@@ -122,11 +122,14 @@ public class WriteFiles<T> extends PTransform<PCollection<T>, PDone> {
     checkArgument(IsBounded.BOUNDED == input.isBounded() || windowedWrites,
         "%s can only be applied to an unbounded PCollection if doing windowed writes",
         WriteFiles.class.getSimpleName());
-    PipelineOptions options = input.getPipeline().getOptions();
-    sink.validate(options);
-    this.writeOperation = sink.createWriteOperation(options);
+    this.writeOperation = sink.createWriteOperation();
     this.writeOperation.setWindowedWrites(windowedWrites);
     return createWrite(input);
+  }
+
+  @Override
+  public void validate(PipelineOptions options) {
+    sink.validate(options);
   }
 
   @Override
@@ -534,8 +537,8 @@ public class WriteFiles<T> extends PTransform<PCollection<T>, PDone> {
               int extraShardsNeeded = minShardsNeeded - results.size();
               if (extraShardsNeeded > 0) {
                 LOG.info(
-                    "Creating {} empty output shards in addition to {} written for a total of "
-                        + " {}.", extraShardsNeeded, results.size(), minShardsNeeded);
+                    "Creating {} empty output shards in addition to {} written for a total of {}.",
+                    extraShardsNeeded, results.size(), minShardsNeeded);
                 for (int i = 0; i < extraShardsNeeded; ++i) {
                   FileBasedWriter<T> writer = writeOperation.createWriter(c.getPipelineOptions());
                   writer.openUnwindowed(UUID.randomUUID().toString(), UNKNOWN_SHARDNUM,

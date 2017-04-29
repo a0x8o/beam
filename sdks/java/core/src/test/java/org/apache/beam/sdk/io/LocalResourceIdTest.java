@@ -22,8 +22,10 @@ import static org.hamcrest.Matchers.endsWith;
 import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.startsWith;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertThat;
+import static org.junit.Assert.assertTrue;
 
 import java.io.File;
 import java.nio.file.Paths;
@@ -224,6 +226,13 @@ public class LocalResourceIdTest {
   }
 
   @Test
+  public void testIsDirectory() throws Exception {
+    assertTrue(toResourceIdentifier("/").isDirectory());
+    assertTrue(toResourceIdentifier("/root/tmp/").isDirectory());
+    assertFalse(toResourceIdentifier("/root").isDirectory());
+  }
+
+  @Test
   public void testToString() throws Exception {
     File someFile = tmpFolder.newFile("somefile");
     LocalResourceId fileResource =
@@ -237,6 +246,17 @@ public class LocalResourceIdTest {
     assertThat(dirResource.toString(), endsWith(File.separator));
     assertThat(dirResource.toString(), containsString("somefile"));
     assertThat(dirResource.toString(), startsWith(tmpFolder.getRoot().getAbsolutePath()));
+  }
+
+  @Test
+  public void testGetFilename() throws Exception {
+    assertEquals(toResourceIdentifier("/").getFilename(), null);
+    assertEquals(toResourceIdentifier("/root/tmp").getFilename(),
+        "tmp");
+    assertEquals(toResourceIdentifier("/root/tmp/").getFilename(),
+        "tmp");
+    assertEquals(toResourceIdentifier("/root/tmp/xyz.txt").getFilename(),
+        "xyz.txt");
   }
 
   private LocalResourceId toResourceIdentifier(String str) throws Exception {
