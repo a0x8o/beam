@@ -621,7 +621,11 @@ public class DataflowRunner extends PipelineRunner<DataflowPipelineJob> {
     // Use a raw client for post-launch monitoring, as status calls may fail
     // regularly and need not be retried automatically.
     DataflowPipelineJob dataflowPipelineJob =
-        new DataflowPipelineJob(jobResult.getId(), options, jobSpecification.getStepNames());
+        new DataflowPipelineJob(
+            DataflowClient.create(options),
+            jobResult.getId(),
+            options,
+            jobSpecification.getStepNames());
 
     // If the service returned client request id, the SDK needs to compare it
     // with the original id generated in the request, if they are not the same
@@ -837,13 +841,11 @@ public class DataflowRunner extends PipelineRunner<DataflowPipelineJob> {
 
     @Override
     public PDone expand(PCollection<T> input) {
-      if (transform.getSink() instanceof FileBasedSink) {
-        FileBasedSink<?> sink = (FileBasedSink<?>) transform.getSink();
-        if (sink.getBaseOutputFilenameProvider().isAccessible()) {
-          PathValidator validator = runner.options.getPathValidator();
-          validator.validateOutputFilePrefixSupported(
-              sink.getBaseOutputFilenameProvider().get());
-        }
+      FileBasedSink<T> sink = transform.getSink();
+      if (sink.getBaseOutputFilenameProvider().isAccessible()) {
+        PathValidator validator = runner.options.getPathValidator();
+        validator.validateOutputFilePrefixSupported(
+            sink.getBaseOutputFilenameProvider().get());
       }
       return transform.expand(input);
     }

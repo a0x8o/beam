@@ -16,33 +16,29 @@
  * limitations under the License.
  */
 
-package org.apache.beam.runners.dataflow.util;
+package org.apache.beam.runners.core.construction;
 
-import org.apache.beam.sdk.util.CloudObject;
+import java.util.List;
+import org.apache.beam.sdk.annotations.Experimental;
+import org.apache.beam.sdk.annotations.Experimental.Kind;
+import org.apache.beam.sdk.coders.Coder;
 
 /**
- * A translator that takes an object and creates a {@link CloudObject} which can be converted back
- * to the original object.
+ * An interface that translates coders to components and back.
+ *
+ * <p>This interface is highly experimental, and incomplete. Coders must in the general case have
+ * the capability to encode an additional payload, which is not currently supported. This exists as
+ * a temporary measure.
  */
-public interface CloudObjectTranslator<T> {
+@Experimental(Kind.CORE_RUNNERS_ONLY)
+public interface CoderTranslator<T extends Coder<?>> {
   /**
-   * Converts the provided object into an equivalent {@link CloudObject}.
+  * Extract all component {@link Coder coders} within a coder.
    */
-  CloudObject toCloudObject(T target);
+  List<? extends Coder<?>> getComponents(T from);
 
   /**
-   * Converts back into the original object from a provided {@link CloudObject}.
+   * Create a {@link Coder} from its component {@link Coder coders}.
    */
-  T fromCloudObject(CloudObject cloudObject);
-
-  /**
-   * Gets the class this {@link CloudObjectTranslator} is capable of converting.
-   */
-  Class<? extends T> getSupportedClass();
-
-  /**
-   * Gets the class name that will represent the {@link CloudObject} created by this {@link
-   * CloudObjectTranslator}.
-   */
-  String cloudObjectClassName();
+  T fromComponents(List<Coder<?>> components);
 }

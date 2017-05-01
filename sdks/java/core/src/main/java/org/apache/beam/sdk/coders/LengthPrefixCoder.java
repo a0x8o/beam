@@ -92,6 +92,13 @@ public class LengthPrefixCoder<T> extends StructuredCoder<T> {
   }
 
   /**
+   * Gets the value coder that will be prefixed by the length.
+   */
+  public Coder<T> getValueCoder() {
+    return valueCoder;
+  }
+
+  /**
    * {@code LengthPrefixCoder} is deterministic if the nested {@code Coder} is.
    *
    * {@inheritDoc}
