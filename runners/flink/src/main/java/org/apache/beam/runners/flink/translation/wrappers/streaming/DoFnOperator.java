@@ -299,8 +299,7 @@ public class DoFnOperator<InputT, FnOutputT, OutputT>
       doFnRunner = DoFnRunners.lateDataDroppingRunner(
           (DoFnRunner) doFnRunner,
           stepContext,
-          windowingStrategy,
-          ((GroupAlsoByWindowViaWindowSetNewDoFn) doFn).getDroppedDueToLatenessAggregator());
+          windowingStrategy);
     } else if (keyCoder != null) {
       // It is a stateful DoFn
 
@@ -320,8 +319,6 @@ public class DoFnOperator<InputT, FnOutputT, OutputT>
       doFnRunner = DoFnRunners.defaultStatefulDoFnRunner(
           doFn,
           doFnRunner,
-          stepContext,
-          aggregatorFactory,
           windowingStrategy,
           cleanupTimer,
           stateCleaner);

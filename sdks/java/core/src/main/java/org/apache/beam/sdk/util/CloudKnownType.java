@@ -22,7 +22,12 @@ import java.util.HashMap;
 import java.util.Map;
 import javax.annotation.Nullable;
 
-/** A utility for manipulating well-known cloud types. */
+/**
+ * A utility for manipulating well-known cloud types.
+ *
+ * @deprecated replaced by {@code org.apache.beam.runners.dataflow.CloudKnownType}
+ */
+@Deprecated
 enum CloudKnownType {
   TEXT("http://schema.org/Text", String.class) {
     @Override

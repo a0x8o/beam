@@ -24,9 +24,7 @@ import org.apache.beam.runners.core.SplittableParDo.ProcessFn;
 import org.apache.beam.runners.core.StatefulDoFnRunner.CleanupTimer;
 import org.apache.beam.runners.core.StatefulDoFnRunner.StateCleaner;
 import org.apache.beam.sdk.options.PipelineOptions;
-import org.apache.beam.sdk.transforms.Aggregator;
 import org.apache.beam.sdk.transforms.DoFn;
-import org.apache.beam.sdk.transforms.Sum;
 import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
 import org.apache.beam.sdk.util.ReadyCheckingSideInputReader;
 import org.apache.beam.sdk.util.SideInputReader;
@@ -115,13 +113,11 @@ public class DoFnRunners {
       DoFnRunner<KeyedWorkItem<K, InputT>, KV<K, OutputT>> lateDataDroppingRunner(
           DoFnRunner<KeyedWorkItem<K, InputT>, KV<K, OutputT>> wrappedRunner,
           StepContext stepContext,
-          WindowingStrategy<?, W> windowingStrategy,
-          Aggregator<Long, Long> droppedDueToLatenessAggregator) {
+          WindowingStrategy<?, W> windowingStrategy) {
     return new LateDataDroppingDoFnRunner<>(
         wrappedRunner,
         windowingStrategy,
-        stepContext.timerInternals(),
-        droppedDueToLatenessAggregator);
+        stepContext.timerInternals());
   }
 
   /**
@@ -134,21 +130,14 @@ public class DoFnRunners {
       DoFnRunner<InputT, OutputT> defaultStatefulDoFnRunner(
           DoFn<InputT, OutputT> fn,
           DoFnRunner<InputT, OutputT> doFnRunner,
-          StepContext stepContext,
-          AggregatorFactory aggregatorFactory,
           WindowingStrategy<?, ?> windowingStrategy,
           CleanupTimer cleanupTimer,
           StateCleaner<W> stateCleaner) {
-    Aggregator<Long, Long> droppedDueToLateness = aggregatorFactory.createAggregatorForDoFn(
-        fn.getClass(), stepContext, StatefulDoFnRunner.DROPPED_DUE_TO_LATENESS_COUNTER,
-        Sum.ofLongs());
-
     return new StatefulDoFnRunner<>(
         doFnRunner,
         windowingStrategy,
         cleanupTimer,
-        stateCleaner,
-        droppedDueToLateness);
+        stateCleaner);
   }
 
   public static <InputT, OutputT, RestrictionT>
