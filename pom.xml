@@ -141,6 +141,7 @@
     <groovy-maven-plugin.version>2.0</groovy-maven-plugin.version>
     <surefire-plugin.version>2.20</surefire-plugin.version>
     <failsafe-plugin.version>2.20</failsafe-plugin.version>
+    <maven-resources-plugin.version>3.0.2</maven-resources-plugin.version>
     
     <compiler.error.flag>-Werror</compiler.error.flag>
     <compiler.default.pkginfo.flag>-Xpkginfo:always</compiler.default.pkginfo.flag>
@@ -215,6 +216,11 @@
                   </goals>
                 </execution>
               </executions>
+            </plugin>
+            <plugin>
+              <groupId>org.apache.maven.plugins</groupId>
+              <artifactId>maven-resources-plugin</artifactId>
+              <version>${maven-resources-plugin.version}</version>
             </plugin>
           </plugins>
         </pluginManagement>
@@ -360,13 +366,13 @@
 
       <dependency>
         <groupId>org.apache.beam</groupId>
-        <artifactId>beam-sdks-java-extensions-gcp-core</artifactId>
+        <artifactId>beam-sdks-java-extensions-google-cloud-platform-core</artifactId>
         <version>${project.version}</version>
       </dependency>
 
       <dependency>
         <groupId>org.apache.beam</groupId>
-        <artifactId>beam-sdks-java-extensions-gcp-core</artifactId>
+        <artifactId>beam-sdks-java-extensions-google-cloud-platform-core</artifactId>
         <classifier>tests</classifier>
         <version>${project.version}</version>
       </dependency>
@@ -423,13 +429,13 @@
 
       <dependency>
         <groupId>org.apache.beam</groupId>
-        <artifactId>beam-sdks-java-io-hbase</artifactId>
+        <artifactId>beam-sdks-java-io-hadoop-file-system</artifactId>
         <version>${project.version}</version>
       </dependency>
 
       <dependency>
         <groupId>org.apache.beam</groupId>
-        <artifactId>beam-sdks-java-io-hdfs</artifactId>
+        <artifactId>beam-sdks-java-io-hbase</artifactId>
         <version>${project.version}</version>
       </dependency>
 
@@ -1502,6 +1508,8 @@
                 <includes>
                   <include>**/*.pyc</include>
                   <include>**/*.egg-info/</include>
+                  <include>**/sdks/python/LICENSE</include>
+                  <include>**/sdks/python/NOTICE</include>
                 </includes>
                 <followSymlinks>false</followSymlinks>
               </fileset>
@@ -1606,6 +1614,33 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-shade-plugin</artifactId>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-resources-plugin</artifactId>
+        <version>3.0.2</version>
+        <inherited>false</inherited>
+        <executions>
+          <execution>
+            <id>python-copy-resources</id>
+            <phase>prepare-package</phase>
+            <goals>
+              <goal>copy-resources</goal>
+            </goals>
+            <configuration>
+              <outputDirectory>${basedir}/sdks/python</outputDirectory>
+              <resources>          
+                <resource>
+                  <directory>${basedir}</directory>
+                  <includes>
+                    <include>LICENSE</include>
+                    <include>NOTICE</include>
+                  </includes>
+                </resource>
+              </resources>              
+            </configuration>            
+          </execution>
+        </executions>
       </plugin>
     </plugins>
   </build>

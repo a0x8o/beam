@@ -123,7 +123,7 @@ public class FlinkStatefulDoFnFunction<K, V, OutputT>
         Collections.<TupleTag<?>>emptyList(),
         new FlinkNoOpStepContext() {
           @Override
-          public StateInternals<?> stateInternals() {
+          public StateInternals stateInternals() {
             return stateInternals;
           }
           @Override
@@ -131,7 +131,7 @@ public class FlinkStatefulDoFnFunction<K, V, OutputT>
             return timerInternals;
           }
         },
-        new FlinkAggregatorFactory(runtimeContext),
+        null,
         windowingStrategy);
 
     if ((serializedOptions.getPipelineOptions().as(FlinkPipelineOptions.class))

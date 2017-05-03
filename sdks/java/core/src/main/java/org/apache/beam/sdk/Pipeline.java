@@ -24,7 +24,6 @@ import com.google.common.base.Joiner;
 import com.google.common.collect.HashMultimap;
 import com.google.common.collect.SetMultimap;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -40,7 +39,6 @@ import org.apache.beam.sdk.runners.PTransformOverrideFactory.ReplacementOutput;
 import org.apache.beam.sdk.runners.PipelineRunner;
 import org.apache.beam.sdk.runners.TransformHierarchy;
 import org.apache.beam.sdk.runners.TransformHierarchy.Node;
-import org.apache.beam.sdk.transforms.Aggregator;
 import org.apache.beam.sdk.transforms.AppliedPTransform;
 import org.apache.beam.sdk.transforms.Create;
 import org.apache.beam.sdk.transforms.PTransform;
@@ -79,11 +77,11 @@ import org.slf4j.LoggerFactory;
  * // A root PTransform, like TextIO.Read or Create, gets added
  * // to the Pipeline by being applied:
  * PCollection<String> lines =
- *     p.apply(TextIO.Read.from("gs://bucket/dir/file*.txt"));
+ *     p.apply(TextIO.read().from("gs://bucket/dir/file*.txt"));
  *
  * // A Pipeline can have multiple root transforms:
  * PCollection<String> moreLines =
- *     p.apply(TextIO.Read.from("gs://bucket/other/dir/file*.txt"));
+ *     p.apply(TextIO.read().from("gs://bucket/other/dir/file*.txt"));
  * PCollection<String> yetMoreLines =
  *     p.apply(Create.of("yet", "more", "lines").withCoder(StringUtf8Coder.of()));
  *
@@ -99,7 +97,7 @@ import org.slf4j.LoggerFactory;
  *     .apply(new Count<String>());
  * PCollection<String> formattedWordCounts =
  *     wordCounts.apply(ParDo.of(new FormatCounts()));
- * formattedWordCounts.apply(TextIO.Write.to("gs://bucket/dir/counts.txt"));
+ * formattedWordCounts.apply(TextIO.write().to("gs://bucket/dir/counts.txt"));
  *
  * // PTransforms aren't executed when they're applied, rather they're
  * // just added to the Pipeline.  Once the whole Pipeline of PTransforms
@@ -148,6 +146,9 @@ public class Pipeline {
    * @return The newly created pipeline.
    */
   public static Pipeline create(PipelineOptions options) {
+    // TODO: fix runners that mutate PipelineOptions in this method, then remove this line
+    PipelineRunner.fromOptions(options);
+
     Pipeline pipeline = new Pipeline(options);
     LOG.debug("Creating {}", pipeline);
     return pipeline;
@@ -565,14 +566,6 @@ public class Pipeline {
       // A duplicate!  Retry.
       name = origName + suffixNum++;
     }
-  }
-
-  /**
-   * Returns a {@link Map} from each {@link Aggregator} in the {@link Pipeline} to the {@link
-   * PTransform PTransforms} in which it is used.
-   */
-  public Map<Aggregator<?, ?>, Collection<PTransform<?, ?>>> getAggregatorSteps() {
-    return new AggregatorPipelineExtractor(this).getAggregatorSteps();
   }
 
   /**

@@ -30,7 +30,6 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import javax.annotation.Nullable;
-import org.apache.beam.runners.core.AggregatorFactory;
 import org.apache.beam.runners.core.DoFnRunner;
 import org.apache.beam.runners.core.DoFnRunners;
 import org.apache.beam.runners.core.ExecutionContext;
@@ -51,7 +50,6 @@ import org.apache.beam.runners.flink.FlinkPipelineOptions;
 import org.apache.beam.runners.flink.metrics.DoFnRunnerWithMetricsUpdate;
 import org.apache.beam.runners.flink.translation.types.CoderTypeSerializer;
 import org.apache.beam.runners.flink.translation.utils.SerializedPipelineOptions;
-import org.apache.beam.runners.flink.translation.wrappers.SerializableFnAggregatorWrapper;
 import org.apache.beam.runners.flink.translation.wrappers.streaming.state.FlinkBroadcastStateInternals;
 import org.apache.beam.runners.flink.translation.wrappers.streaming.state.FlinkKeyGroupStateInternals;
 import org.apache.beam.runners.flink.translation.wrappers.streaming.state.FlinkSplitStateInternals;
@@ -59,8 +57,6 @@ import org.apache.beam.runners.flink.translation.wrappers.streaming.state.FlinkS
 import org.apache.beam.runners.flink.translation.wrappers.streaming.state.KeyGroupCheckpointedOperator;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.options.PipelineOptions;
-import org.apache.beam.sdk.transforms.Aggregator;
-import org.apache.beam.sdk.transforms.Combine;
 import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.join.RawUnionValue;
 import org.apache.beam.sdk.transforms.reflect.DoFnInvoker;
@@ -137,7 +133,7 @@ public class DoFnOperator<InputT, FnOutputT, OutputT>
 
   protected transient long currentOutputWatermark;
 
-  private transient StateTag<Object, BagState<WindowedValue<InputT>>> pushedBackTag;
+  private transient StateTag<BagState<WindowedValue<InputT>>> pushedBackTag;
 
   protected transient FlinkStateInternals<?> stateInternals;
 
@@ -153,7 +149,7 @@ public class DoFnOperator<InputT, FnOutputT, OutputT>
 
   protected transient FlinkTimerInternals timerInternals;
 
-  private transient StateInternals<?> pushbackStateInternals;
+  private transient StateInternals pushbackStateInternals;
 
   private transient Optional<Long> pushedBackWatermark;
 
@@ -204,27 +200,6 @@ public class DoFnOperator<InputT, FnOutputT, OutputT>
 
     currentInputWatermark = Long.MIN_VALUE;
     currentOutputWatermark = Long.MIN_VALUE;
-
-    AggregatorFactory aggregatorFactory = new AggregatorFactory() {
-      @Override
-      public <InputT, AccumT, OutputT> Aggregator<InputT, OutputT> createAggregatorForDoFn(
-          Class<?> fnClass,
-          ExecutionContext.StepContext stepContext,
-          String aggregatorName,
-          Combine.CombineFn<InputT, AccumT, OutputT> combine) {
-
-        @SuppressWarnings("unchecked")
-        SerializableFnAggregatorWrapper<InputT, OutputT> result =
-            (SerializableFnAggregatorWrapper<InputT, OutputT>)
-                getRuntimeContext().getAccumulator(aggregatorName);
-
-        if (result == null) {
-          result = new SerializableFnAggregatorWrapper<>(combine);
-          getRuntimeContext().addAccumulator(aggregatorName, result);
-        }
-        return result;
-      }
-    };
 
     sideInputReader = NullSideInputReader.of(sideInputs);
 
@@ -285,7 +260,7 @@ public class DoFnOperator<InputT, FnOutputT, OutputT>
         mainOutputTag,
         additionalOutputTags,
         stepContext,
-        aggregatorFactory,
+        null,
         windowingStrategy);
 
     if (doFn instanceof GroupAlsoByWindowViaWindowSetNewDoFn) {
@@ -698,7 +673,7 @@ public class DoFnOperator<InputT, FnOutputT, OutputT>
     }
 
     @Override
-    public StateInternals<?> stateInternals() {
+    public StateInternals stateInternals() {
       return stateInternals;
     }
 
@@ -720,13 +695,17 @@ public class DoFnOperator<InputT, FnOutputT, OutputT>
     @Override
     public void setTimer(TimerData timerKey) {
       long time = timerKey.getTimestamp().getMillis();
-      if (timerKey.getDomain().equals(TimeDomain.EVENT_TIME)) {
-        timerService.registerEventTimeTimer(timerKey, time);
-      } else if (timerKey.getDomain().equals(TimeDomain.PROCESSING_TIME)) {
-        timerService.registerProcessingTimeTimer(timerKey, time);
-      } else {
-        throw new UnsupportedOperationException(
-            "Unsupported time domain: " + timerKey.getDomain());
+      switch (timerKey.getDomain()) {
+        case EVENT_TIME:
+          timerService.registerEventTimeTimer(timerKey, time);
+          break;
+        case PROCESSING_TIME:
+        case SYNCHRONIZED_PROCESSING_TIME:
+          timerService.registerProcessingTimeTimer(timerKey, time);
+          break;
+        default:
+          throw new UnsupportedOperationException(
+              "Unsupported time domain: " + timerKey.getDomain());
       }
     }
 
@@ -747,13 +726,17 @@ public class DoFnOperator<InputT, FnOutputT, OutputT>
     @Override
     public void deleteTimer(TimerData timerKey) {
       long time = timerKey.getTimestamp().getMillis();
-      if (timerKey.getDomain().equals(TimeDomain.EVENT_TIME)) {
-        timerService.deleteEventTimeTimer(timerKey, time);
-      } else if (timerKey.getDomain().equals(TimeDomain.PROCESSING_TIME)) {
-        timerService.deleteProcessingTimeTimer(timerKey, time);
-      } else {
-        throw new UnsupportedOperationException(
-            "Unsupported time domain: " + timerKey.getDomain());
+      switch (timerKey.getDomain()) {
+        case EVENT_TIME:
+          timerService.deleteEventTimeTimer(timerKey, time);
+          break;
+        case PROCESSING_TIME:
+        case SYNCHRONIZED_PROCESSING_TIME:
+          timerService.deleteProcessingTimeTimer(timerKey, time);
+          break;
+        default:
+          throw new UnsupportedOperationException(
+              "Unsupported time domain: " + timerKey.getDomain());
       }
     }
 
