@@ -39,24 +39,20 @@ import org.apache.beam.runners.spark.stateful.SparkTimerInternals;
 import org.apache.beam.runners.spark.util.GlobalWatermarkHolder;
 import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.PipelineResult;
+import org.apache.beam.sdk.PipelineRunner;
 import org.apache.beam.sdk.io.BoundedReadFromUnboundedSource;
-import org.apache.beam.sdk.metrics.MetricNameFilter;
-import org.apache.beam.sdk.metrics.MetricResult;
-import org.apache.beam.sdk.metrics.MetricsFilter;
 import org.apache.beam.sdk.options.PipelineOptions;
 import org.apache.beam.sdk.options.PipelineOptionsValidator;
+import org.apache.beam.sdk.runners.AppliedPTransform;
 import org.apache.beam.sdk.runners.PTransformOverride;
 import org.apache.beam.sdk.runners.PTransformOverrideFactory;
-import org.apache.beam.sdk.runners.PipelineRunner;
-import org.apache.beam.sdk.testing.PAssert;
-import org.apache.beam.sdk.transforms.AppliedPTransform;
 import org.apache.beam.sdk.transforms.PTransform;
 import org.apache.beam.sdk.transforms.ParDo;
-import org.apache.beam.sdk.util.ValueWithRecordId;
 import org.apache.beam.sdk.values.PBegin;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.PValue;
 import org.apache.beam.sdk.values.TupleTag;
+import org.apache.beam.sdk.values.ValueWithRecordId;
 import org.apache.commons.io.FileUtils;
 import org.joda.time.Duration;
 import org.joda.time.Instant;
@@ -87,6 +83,7 @@ import org.slf4j.LoggerFactory;
 public final class TestSparkRunner extends PipelineRunner<SparkPipelineResult> {
 
   private static final Logger LOG = LoggerFactory.getLogger(TestSparkRunner.class);
+  private final TestSparkPipelineOptions testSparkPipelineOptions;
 
   private SparkRunner delegate;
   private boolean isForceStreaming;
@@ -94,6 +91,7 @@ public final class TestSparkRunner extends PipelineRunner<SparkPipelineResult> {
   private TestSparkRunner(TestSparkPipelineOptions options) {
     this.delegate = SparkRunner.fromOptions(options);
     this.isForceStreaming = options.isForceStreaming();
+    this.testSparkPipelineOptions = options;
   }
 
   public static TestSparkRunner fromOptions(PipelineOptions options) {
@@ -105,9 +103,6 @@ public final class TestSparkRunner extends PipelineRunner<SparkPipelineResult> {
 
   @Override
   public SparkPipelineResult run(Pipeline pipeline) {
-    TestSparkPipelineOptions testSparkPipelineOptions =
-        pipeline.getOptions().as(TestSparkPipelineOptions.class);
-    //
     // if the pipeline forces execution as a streaming pipeline,
     // and the source is an adapted unbounded source (as bounded),
     // read it as unbounded source via UnboundedReadFromBoundedSource.
@@ -115,8 +110,6 @@ public final class TestSparkRunner extends PipelineRunner<SparkPipelineResult> {
       adaptBoundedReads(pipeline);
     }
     SparkPipelineResult result = null;
-
-    int expectedNumberOfAssertions = PAssert.countAsserts(pipeline);
 
     // clear state of Aggregators, Metrics and Watermarks if exists.
     AggregatorsAccumulator.clear();
@@ -137,47 +130,6 @@ public final class TestSparkRunner extends PipelineRunner<SparkPipelineResult> {
             String.format("Finish state %s is not allowed.", finishState),
             finishState,
             isOneOf(PipelineResult.State.STOPPED, PipelineResult.State.DONE));
-
-        // validate assertion succeeded (at least once).
-        long successAssertions = 0;
-        Iterable<MetricResult<Long>> counterResults = result.metrics().queryMetrics(
-            MetricsFilter.builder()
-                .addNameFilter(MetricNameFilter.named(PAssert.class, PAssert.SUCCESS_COUNTER))
-                .build()).counters();
-        for (MetricResult<Long> counter : counterResults) {
-          if (counter.attempted().longValue() > 0) {
-            successAssertions++;
-          }
-        }
-        Integer expectedAssertions = testSparkPipelineOptions.getExpectedAssertions() != null
-            ? testSparkPipelineOptions.getExpectedAssertions() : expectedNumberOfAssertions;
-        assertThat(
-            String.format(
-                "Expected %d successful assertions, but found %d.",
-                expectedAssertions, successAssertions),
-            successAssertions,
-            is(expectedAssertions.longValue()));
-        // validate assertion didn't fail.
-        long failedAssertions = 0;
-        Iterable<MetricResult<Long>> failCounterResults = result.metrics().queryMetrics(
-            MetricsFilter.builder()
-                .addNameFilter(MetricNameFilter.named(PAssert.class, PAssert.FAILURE_COUNTER))
-                .build()).counters();
-        for (MetricResult<Long> counter : failCounterResults) {
-          if (counter.attempted().longValue() > 0) {
-            failedAssertions++;
-          }
-        }
-        assertThat(
-            String.format("Found %d failed assertions.", failedAssertions),
-            failedAssertions,
-            is(0L));
-
-        LOG.info(
-            String.format(
-                "Successfully asserted pipeline %s with %d successful assertions.",
-                testSparkPipelineOptions.getJobName(),
-                successAssertions));
       } finally {
         try {
           // cleanup checkpoint dir.

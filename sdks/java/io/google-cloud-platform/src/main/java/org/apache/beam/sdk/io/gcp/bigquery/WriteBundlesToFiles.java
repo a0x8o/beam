@@ -18,21 +18,25 @@
 
 package org.apache.beam.sdk.io.gcp.bigquery;
 
+import static org.apache.beam.sdk.io.gcp.bigquery.BigQueryHelpers.resolveTempLocation;
+
 import com.google.api.services.bigquery.model.TableRow;
 import com.google.common.collect.Maps;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.Serializable;
+import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.coders.CoderException;
-import org.apache.beam.sdk.coders.CustomCoder;
 import org.apache.beam.sdk.coders.StringUtf8Coder;
+import org.apache.beam.sdk.coders.StructuredCoder;
 import org.apache.beam.sdk.coders.VarLongCoder;
 import org.apache.beam.sdk.transforms.DoFn;
-import org.apache.beam.sdk.transforms.display.DisplayData;
+import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
 import org.apache.beam.sdk.values.KV;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -47,7 +51,9 @@ class WriteBundlesToFiles<DestinationT>
 
   // Map from tablespec to a writer for that table.
   private transient Map<DestinationT, TableRowWriter> writers;
-  private final String tempFilePrefix;
+  private transient Map<DestinationT, BoundedWindow> writerWindows;
+  private final String stepUuid;
+
 
   /**
    * The result of the {@link WriteBundlesToFiles} transform. Corresponds to a single output file,
@@ -67,7 +73,7 @@ class WriteBundlesToFiles<DestinationT>
   }
 
   /** a coder for the {@link Result} class. */
-  public static class ResultCoder<DestinationT> extends CustomCoder<Result<DestinationT>> {
+  public static class ResultCoder<DestinationT> extends StructuredCoder<Result<DestinationT>> {
     private static final StringUtf8Coder stringCoder = StringUtf8Coder.of();
     private static final VarLongCoder longCoder = VarLongCoder.of();
     private final Coder<DestinationT> destinationCoder;
@@ -101,27 +107,36 @@ class WriteBundlesToFiles<DestinationT>
     }
 
     @Override
+    public List<? extends Coder<?>> getCoderArguments() {
+      return Collections.singletonList(destinationCoder);
+    }
+
+    @Override
     public void verifyDeterministic() {}
   }
 
-  WriteBundlesToFiles(String tempFilePrefix) {
-    this.tempFilePrefix = tempFilePrefix;
+  WriteBundlesToFiles(String stepUuid) {
+    this.stepUuid = stepUuid;
   }
 
   @StartBundle
-  public void startBundle(Context c) {
+  public void startBundle() {
     // This must be done each bundle, as by default the {@link DoFn} might be reused between
     // bundles.
     this.writers = Maps.newHashMap();
+    this.writerWindows = Maps.newHashMap();
   }
 
   @ProcessElement
-  public void processElement(ProcessContext c) throws Exception {
+  public void processElement(ProcessContext c, BoundedWindow window) throws Exception {
+    String tempFilePrefix = resolveTempLocation(
+        c.getPipelineOptions().getTempLocation(), "BigQueryWriteTemp", stepUuid);
     TableRowWriter writer = writers.get(c.element().getKey());
     if (writer == null) {
       writer = new TableRowWriter(tempFilePrefix);
       writer.open(UUID.randomUUID().toString());
       writers.put(c.element().getKey(), writer);
+      writerWindows.put(c.element().getKey(), window);
       LOG.debug("Done opening writer {}", writer);
     }
     try {
@@ -140,19 +155,15 @@ class WriteBundlesToFiles<DestinationT>
   }
 
   @FinishBundle
-  public void finishBundle(Context c) throws Exception {
+  public void finishBundle(FinishBundleContext c) throws Exception {
     for (Map.Entry<DestinationT, TableRowWriter> entry : writers.entrySet()) {
       TableRowWriter.Result result = entry.getValue().close();
-      c.output(new Result<>(result.resourceId.toString(), result.byteSize, entry.getKey()));
+      c.output(
+          new Result<>(result.resourceId.toString(), result.byteSize, entry.getKey()),
+          writerWindows.get(entry.getKey()).maxTimestamp(),
+          writerWindows.get(entry.getKey()));
     }
     writers.clear();
-  }
-
-  @Override
-  public void populateDisplayData(DisplayData.Builder builder) {
-    super.populateDisplayData(builder);
-
-    builder.addIfNotNull(
-        DisplayData.item("tempFilePrefix", tempFilePrefix).withLabel("Temporary File Prefix"));
+    writerWindows.clear();
   }
 }

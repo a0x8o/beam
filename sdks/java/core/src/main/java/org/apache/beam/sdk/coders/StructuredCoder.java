@@ -17,18 +17,21 @@
  */
 package org.apache.beam.sdk.coders;
 
-import com.google.common.io.ByteStreams;
-import com.google.common.io.CountingOutputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
-import org.apache.beam.sdk.util.common.ElementByteSizeObserver;
 import org.apache.beam.sdk.values.TypeDescriptor;
 
 /**
  * An abstract base class to implement a {@link Coder} that defines equality, hashing, and printing
  * via the class name and recursively using {@link #getComponents}.
+ *
+ * <p>A {@link StructuredCoder} should be defined purely in terms of its component coders, and
+ * contain no additional configuration.
  *
  * <p>To extend {@link StructuredCoder}, override the following methods as appropriate:
  *
@@ -40,7 +43,7 @@ import org.apache.beam.sdk.values.TypeDescriptor;
  *       expensive.</li>
  * </ul>
  */
-public abstract class StructuredCoder<T> implements Coder<T> {
+public abstract class StructuredCoder<T> extends Coder<T> {
   protected StructuredCoder() {}
 
   /**
@@ -98,43 +101,48 @@ public abstract class StructuredCoder<T> implements Coder<T> {
     return builder.toString();
   }
 
-  /**
-   * {@inheritDoc}
-   *
-   * @return {@code false} unless it is overridden. {@link StructuredCoder#registerByteSizeObserver}
-   *         invokes {@link #getEncodedElementByteSize} which requires re-encoding an element
-   *         unless it is overridden. This is considered expensive.
-   */
   @Override
-  public boolean isRegisterByteSizeObserverCheap(T value, Context context) {
-    return false;
+  public void encode(T value, OutputStream outStream)
+      throws CoderException, IOException {
+    encode(value, outStream, Coder.Context.NESTED);
   }
 
-  /**
-   * Returns the size in bytes of the encoded value using this coder.
-   */
-  protected long getEncodedElementByteSize(T value, Context context)
-      throws Exception {
-    try (CountingOutputStream os = new CountingOutputStream(ByteStreams.nullOutputStream())) {
-      encode(value, os, context);
-      return os.getCount();
-    } catch (Exception exn) {
-      throw new IllegalArgumentException(
-          "Unable to encode element '" + value + "' with coder '" + this + "'.", exn);
+  @Deprecated
+  @Override
+  public void encodeOuter(T value, OutputStream outStream)
+      throws CoderException, IOException {
+    encode(value, outStream, Coder.Context.OUTER);
+  }
+
+  @Deprecated
+  public void encode(T value, OutputStream outStream, Coder.Context context)
+      throws CoderException, IOException {
+    if (context == Coder.Context.NESTED) {
+      encode(value, outStream);
+    } else {
+      encodeOuter(value, outStream);
     }
   }
 
-  /**
-   * {@inheritDoc}
-   *
-   * <p>For {@link StructuredCoder} subclasses, this notifies {@code observer} about the byte size
-   * of the encoded value using this coder as returned by {@link #getEncodedElementByteSize}.
-   */
   @Override
-  public void registerByteSizeObserver(
-      T value, ElementByteSizeObserver observer, Context context)
-      throws Exception {
-    observer.update(getEncodedElementByteSize(value, context));
+  public T decode(InputStream inStream) throws CoderException, IOException {
+    return decode(inStream, Coder.Context.NESTED);
+  }
+
+  @Deprecated
+  @Override
+  public T decodeOuter(InputStream inStream) throws CoderException, IOException {
+    return decode(inStream, Coder.Context.OUTER);
+  }
+
+  @Deprecated
+  public T decode(InputStream inStream, Coder.Context context)
+      throws CoderException, IOException {
+    if (context == Coder.Context.NESTED) {
+      return decode(inStream);
+    } else {
+      return decodeOuter(inStream);
+    }
   }
 
   protected void verifyDeterministic(String message, Iterable<Coder<?>> coders)

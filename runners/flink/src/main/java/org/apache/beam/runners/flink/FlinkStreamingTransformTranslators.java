@@ -56,6 +56,7 @@ import org.apache.beam.sdk.transforms.Flatten;
 import org.apache.beam.sdk.transforms.GroupByKey;
 import org.apache.beam.sdk.transforms.PTransform;
 import org.apache.beam.sdk.transforms.ParDo;
+import org.apache.beam.sdk.transforms.Reshuffle;
 import org.apache.beam.sdk.transforms.join.RawUnionValue;
 import org.apache.beam.sdk.transforms.join.UnionCoder;
 import org.apache.beam.sdk.transforms.reflect.DoFnSignature;
@@ -66,14 +67,13 @@ import org.apache.beam.sdk.transforms.windowing.GlobalWindow;
 import org.apache.beam.sdk.transforms.windowing.Window;
 import org.apache.beam.sdk.transforms.windowing.WindowFn;
 import org.apache.beam.sdk.util.AppliedCombineFn;
-import org.apache.beam.sdk.util.Reshuffle;
 import org.apache.beam.sdk.util.WindowedValue;
-import org.apache.beam.sdk.util.WindowingStrategy;
 import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.PCollectionView;
 import org.apache.beam.sdk.values.PValue;
 import org.apache.beam.sdk.values.TupleTag;
+import org.apache.beam.sdk.values.WindowingStrategy;
 import org.apache.flink.api.common.functions.FlatMapFunction;
 import org.apache.flink.api.common.functions.MapFunction;
 import org.apache.flink.api.common.functions.RichFlatMapFunction;
@@ -966,10 +966,36 @@ class FlinkStreamingTransformTranslators {
 
       } else {
         DataStream<T> result = null;
+
+        // Determine DataStreams that we use as input several times. For those, we need to uniquify
+        // input streams because Flink seems to swallow watermarks when we have a union of one and
+        // the same stream.
+        Map<DataStream<T>, Integer> duplicates = new HashMap<>();
         for (PValue input : allInputs.values()) {
           DataStream<T> current = context.getInputDataStream(input);
+          Integer oldValue = duplicates.put(current, 1);
+          if (oldValue != null) {
+            duplicates.put(current, oldValue + 1);
+          }
+        }
+
+        for (PValue input : allInputs.values()) {
+          DataStream<T> current = context.getInputDataStream(input);
+
+          final Integer timesRequired = duplicates.get(current);
+          if (timesRequired > 1) {
+            current = current.flatMap(new FlatMapFunction<T, T>() {
+              private static final long serialVersionUID = 1L;
+
+              @Override
+              public void flatMap(T t, Collector<T> collector) throws Exception {
+                collector.collect(t);
+              }
+            });
+          }
           result = (result == null) ? current : result.union(current);
         }
+
         context.setOutputDataStream(context.getOutput(transform), result);
       }
     }

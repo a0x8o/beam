@@ -24,30 +24,23 @@ import com.google.api.services.bigquery.model.JobReference;
 import com.google.api.services.bigquery.model.TableReference;
 import com.google.api.services.bigquery.model.TableSchema;
 import com.google.common.base.Strings;
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Paths;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import javax.annotation.Nullable;
-
+import org.apache.beam.sdk.io.FileSystems;
+import org.apache.beam.sdk.io.fs.MoveOptions;
+import org.apache.beam.sdk.io.fs.ResourceId;
 import org.apache.beam.sdk.io.gcp.bigquery.BigQueryHelpers.Status;
 import org.apache.beam.sdk.io.gcp.bigquery.BigQueryIO.Write;
 import org.apache.beam.sdk.io.gcp.bigquery.BigQueryIO.Write.CreateDisposition;
 import org.apache.beam.sdk.io.gcp.bigquery.BigQueryIO.Write.WriteDisposition;
 import org.apache.beam.sdk.io.gcp.bigquery.BigQueryServices.DatasetService;
 import org.apache.beam.sdk.io.gcp.bigquery.BigQueryServices.JobService;
-import org.apache.beam.sdk.options.PipelineOptions;
 import org.apache.beam.sdk.transforms.DoFn;
-import org.apache.beam.sdk.transforms.display.DisplayData;
-import org.apache.beam.sdk.util.FileIOChannelFactory;
-import org.apache.beam.sdk.util.GcsIOChannelFactory;
-import org.apache.beam.sdk.util.GcsUtil;
-import org.apache.beam.sdk.util.GcsUtil.GcsUtilFactory;
-import org.apache.beam.sdk.util.IOChannelFactory;
-import org.apache.beam.sdk.util.IOChannelUtils;
 import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollectionView;
 import org.slf4j.Logger;
@@ -73,7 +66,6 @@ class WriteTables<DestinationT>
   private final BigQueryServices bqServices;
   private final PCollectionView<String> jobIdToken;
   private final PCollectionView<Map<DestinationT, String>> schemasView;
-  private final String tempFilePrefix;
   private final WriteDisposition writeDisposition;
   private final CreateDisposition createDisposition;
   private final DynamicDestinations<?, DestinationT> dynamicDestinations;
@@ -83,7 +75,6 @@ class WriteTables<DestinationT>
       BigQueryServices bqServices,
       PCollectionView<String> jobIdToken,
       PCollectionView<Map<DestinationT, String>> schemasView,
-      String tempFilePrefix,
       WriteDisposition writeDisposition,
       CreateDisposition createDisposition,
       DynamicDestinations<?, DestinationT> dynamicDestinations) {
@@ -91,7 +82,6 @@ class WriteTables<DestinationT>
     this.bqServices = bqServices;
     this.jobIdToken = jobIdToken;
     this.schemasView = schemasView;
-    this.tempFilePrefix = tempFilePrefix;
     this.writeDisposition = writeDisposition;
     this.createDisposition = createDisposition;
     this.dynamicDestinations = dynamicDestinations;
@@ -134,7 +124,7 @@ class WriteTables<DestinationT>
         tableDestination.getTableDescription());
     c.output(KV.of(tableDestination, BigQueryHelpers.toJsonString(tableReference)));
 
-    removeTemporaryFiles(c.getPipelineOptions(), tempFilePrefix, partitionFiles);
+    removeTemporaryFiles(partitionFiles);
   }
 
   private void load(
@@ -195,30 +185,11 @@ class WriteTables<DestinationT>
             BigQueryHelpers.jobToPrettyString(lastFailedLoadJob)));
   }
 
-  static void removeTemporaryFiles(
-      PipelineOptions options, String tempFilePrefix, Collection<String> files) throws IOException {
-    IOChannelFactory factory = IOChannelUtils.getFactory(tempFilePrefix);
-    if (factory instanceof GcsIOChannelFactory) {
-      GcsUtil gcsUtil = new GcsUtilFactory().create(options);
-      gcsUtil.remove(files);
-    } else if (factory instanceof FileIOChannelFactory) {
-      for (String filename : files) {
-        LOG.debug("Removing file {}", filename);
-        boolean exists = Files.deleteIfExists(Paths.get(filename));
-        if (!exists) {
-          LOG.debug("{} does not exist.", filename);
-        }
-      }
-    } else {
-      throw new IOException("Unrecognized file system.");
+  static void removeTemporaryFiles(Collection<String> files) throws IOException {
+    ImmutableList.Builder<ResourceId> fileResources = ImmutableList.builder();
+    for (String file: files) {
+      fileResources.add(FileSystems.matchNewResource(file, false/* isDirectory */));
     }
-  }
-
-  @Override
-  public void populateDisplayData(DisplayData.Builder builder) {
-    super.populateDisplayData(builder);
-
-    builder.addIfNotNull(
-        DisplayData.item("tempFilePrefix", tempFilePrefix).withLabel("Temporary File Prefix"));
+    FileSystems.delete(fileResources.build(), MoveOptions.StandardMoveOptions.IGNORE_MISSING_FILES);
   }
 }

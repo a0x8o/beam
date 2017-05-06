@@ -38,8 +38,8 @@ import org.apache.beam.runners.dataflow.util.MonitoringUtil;
 import org.apache.beam.runners.dataflow.util.MonitoringUtil.JobMessagesHandler;
 import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.PipelineResult.State;
+import org.apache.beam.sdk.PipelineRunner;
 import org.apache.beam.sdk.options.PipelineOptions;
-import org.apache.beam.sdk.runners.PipelineRunner;
 import org.apache.beam.sdk.testing.PAssert;
 import org.apache.beam.sdk.testing.TestPipeline;
 import org.apache.beam.sdk.testing.TestPipelineOptions;
@@ -98,7 +98,7 @@ public class TestDataflowRunner extends PipelineRunner<DataflowPipelineJob> {
   DataflowPipelineJob run(Pipeline pipeline, DataflowRunner runner) {
     updatePAssertCount(pipeline);
 
-    TestPipelineOptions testPipelineOptions = pipeline.getOptions().as(TestPipelineOptions.class);
+    TestPipelineOptions testPipelineOptions = options.as(TestPipelineOptions.class);
     final DataflowPipelineJob job;
     job = runner.run(pipeline);
 
@@ -188,7 +188,6 @@ public class TestDataflowRunner extends PipelineRunner<DataflowPipelineJob> {
 
   @VisibleForTesting
   void updatePAssertCount(Pipeline pipeline) {
-    DataflowPipelineOptions options = pipeline.getOptions().as(DataflowPipelineOptions.class);
     if (DataflowRunner.hasExperiment(options, "beam_fn_api")) {
       // TODO[BEAM-1866]: FnAPI does not support metrics, so expect 0 assertions.
       expectedNumberOfAssertions = 0;

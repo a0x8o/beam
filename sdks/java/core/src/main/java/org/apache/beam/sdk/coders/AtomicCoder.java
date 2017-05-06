@@ -15,6 +15,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.beam.sdk.coders;
 
 import java.util.Collections;
@@ -23,33 +24,49 @@ import java.util.List;
 /**
  * A {@link Coder} that has no component {@link Coder Coders} or other state.
  *
- * <p>Note that, unless the behavior is overridden, atomic coders are presumed to be deterministic
- * and all instances are considered equal.
+ * <p>Note that, unless the behavior is overridden, atomic coders are presumed to be deterministic.
+ *
+ * <p>All atomic coders of the same class are considered to be equal to each other. As a result,
+ * an {@link AtomicCoder} should have no associated state.
  *
  * @param <T> the type of the values being transcoded
  */
-public abstract class AtomicCoder<T> extends StandardCoder<T> {
-  protected AtomicCoder() { }
+public abstract class AtomicCoder<T> extends StructuredCoder<T> {
+  /**
+   * {@inheritDoc}.
+   *
+   * @throws NonDeterministicException
+   */
+  @Override
+  public void verifyDeterministic() throws NonDeterministicException {}
 
   @Override
-  public void verifyDeterministic() throws NonDeterministicException { }
-
-  @Override
-  public final List<Coder<?>> getCoderArguments() {
+  public List<? extends Coder<?>> getCoderArguments() {
     return null;
   }
 
   /**
-   * Returns a list of values contained in the provided example
-   * value, one per type parameter. If there are no type parameters,
-   * returns an empty list.
+   * {@inheritDoc}.
    *
-   * <p>Because {@link AtomicCoder} has no components, always returns an empty list.
-   *
-   * @param exampleValue unused, but part of the latent interface expected by
-   * {@link CoderFactories#fromStaticMethods}
+   * @return the empty {@link List}.
    */
-  public static <T> List<Object> getInstanceComponents(T exampleValue) {
+  @Override
+  public final List<? extends Coder<?>> getComponents() {
     return Collections.emptyList();
+  }
+
+  /**
+   * {@inheritDoc}.
+   *
+   * @return true if the other object has the same class as this {@link AtomicCoder}.
+   */
+  @Override
+  public final boolean equals(Object other) {
+    return other != null && this.getClass().equals(other.getClass());
+  }
+
+  @Override
+  public final int hashCode() {
+    return this.getClass().hashCode();
   }
 }

@@ -28,18 +28,18 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.apache.beam.sdk.annotations.Internal;
 import org.apache.beam.sdk.coders.CoderRegistry;
 import org.apache.beam.sdk.io.Read;
 import org.apache.beam.sdk.options.PipelineOptions;
 import org.apache.beam.sdk.options.PipelineOptionsFactory;
+import org.apache.beam.sdk.runners.AppliedPTransform;
 import org.apache.beam.sdk.runners.PTransformOverride;
 import org.apache.beam.sdk.runners.PTransformOverrideFactory;
 import org.apache.beam.sdk.runners.PTransformOverrideFactory.PTransformReplacement;
 import org.apache.beam.sdk.runners.PTransformOverrideFactory.ReplacementOutput;
-import org.apache.beam.sdk.runners.PipelineRunner;
 import org.apache.beam.sdk.runners.TransformHierarchy;
 import org.apache.beam.sdk.runners.TransformHierarchy.Node;
-import org.apache.beam.sdk.transforms.AppliedPTransform;
 import org.apache.beam.sdk.transforms.Create;
 import org.apache.beam.sdk.transforms.PTransform;
 import org.apache.beam.sdk.util.UserCodeException;
@@ -190,12 +190,15 @@ public class Pipeline {
   }
 
   /**
-   * Replaces all nodes that match a {@link PTransformOverride} in this pipeline. Overrides are
+   * <b><i>For internal use only; no backwards-compatibility guarantees.</i></b>
+   *
+   * <p>Replaces all nodes that match a {@link PTransformOverride} in this pipeline. Overrides are
    * applied in the order they are present within the list.
    *
    * <p>After all nodes are replaced, ensures that no nodes in the updated graph match any of the
    * overrides.
    */
+  @Internal
   public void replaceAll(List<PTransformOverride> overrides) {
     for (PTransformOverride override : overrides) {
       replace(override);
@@ -334,10 +337,12 @@ public class Pipeline {
   }
 
   /**
-   * A {@link PipelineVisitor} can be passed into
-   * {@link Pipeline#traverseTopologically} to be called for each of the
-   * transforms and values in the {@link Pipeline}.
+   * <b><i>For internal use only; no backwards-compatibility guarantees.</i></b>
+   *
+   * <p>A {@link PipelineVisitor} can be passed into {@link Pipeline#traverseTopologically} to be
+   * called for each of the transforms and values in the {@link Pipeline}.
    */
+  @Internal
   public interface PipelineVisitor {
     /**
      * Called for each composite transform after all topological predecessors have been visited
@@ -396,7 +401,9 @@ public class Pipeline {
   }
 
   /**
-   * Invokes the {@link PipelineVisitor PipelineVisitor's}
+   * <b><i>For internal use only; no backwards-compatibility guarantees.</i></b>
+   *
+   * <p>Invokes the {@link PipelineVisitor PipelineVisitor's}
    * {@link PipelineVisitor#visitPrimitiveTransform} and
    * {@link PipelineVisitor#visitValue} operations on each of this
    * {@link Pipeline Pipeline's} transform and value nodes, in forward
@@ -408,14 +415,18 @@ public class Pipeline {
    *
    * <p>Typically invoked by {@link PipelineRunner} subclasses.
    */
+  @Internal
   public void traverseTopologically(PipelineVisitor visitor) {
     transforms.visit(visitor);
   }
 
   /**
-   * Like {@link #applyTransform(String, PInput, PTransform)} but defaulting to the name
+   * <b><i>For internal use only; no backwards-compatibility guarantees.</i></b>
+   *
+   * <p>Like {@link #applyTransform(String, PInput, PTransform)} but defaulting to the name
    * provided by the {@link PTransform}.
    */
+  @Internal
   public static <InputT extends PInput, OutputT extends POutput>
   OutputT applyTransform(InputT input,
       PTransform<? super InputT, OutputT> transform) {
@@ -423,7 +434,9 @@ public class Pipeline {
   }
 
   /**
-   * Applies the given {@code PTransform} to this input {@code InputT} and returns
+   * <b><i>For internal use only; no backwards-compatibility guarantees.</i></b>
+   *
+   * <p>Applies the given {@code PTransform} to this input {@code InputT} and returns
    * its {@code OutputT}. This uses {@code name} to identify this specific application
    * of the transform. This name is used in various places, including the monitoring UI,
    * logging, and to stably identify this application node in the {@link Pipeline} graph during
@@ -432,6 +445,7 @@ public class Pipeline {
    * <p>Each {@link PInput} subclass that provides an {@code apply} method should delegate to
    * this method to ensure proper registration with the {@link PipelineRunner}.
    */
+  @Internal
   public static <InputT extends PInput, OutputT extends POutput>
   OutputT applyTransform(String name, InputT input,
       PTransform<? super InputT, OutputT> transform) {
@@ -455,18 +469,6 @@ public class Pipeline {
   public String toString() {
     return "Pipeline#" + hashCode();
   }
-
-  /**
-   * Returns the default {@link PipelineOptions} provided to {@link #create(PipelineOptions)}.
-   *
-   * @deprecated see BEAM-818 Remove Pipeline.getPipelineOptions. Configuration should be explicitly
-   *     provided to a transform if it is required.
-   */
-  @Deprecated
-  public PipelineOptions getOptions() {
-    return defaultOptions;
-  }
-
 
   /**
    * Applies a {@link PTransform} to the given {@link PInput}.
