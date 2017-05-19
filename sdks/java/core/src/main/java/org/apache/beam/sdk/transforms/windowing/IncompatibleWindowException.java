@@ -15,12 +15,24 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.beam.runners.core;
+package org.apache.beam.sdk.transforms.windowing;
 
 /**
- * Common aggregator names for {@link GroupByKeyViaGroupByKeyOnly.GroupAlsoByWindow}.
+ * Exception thrown by {@link WindowFn#verifyCompatibility(WindowFn)} if two compared
+ * WindowFns are not compatible, including the explanation of incompatibility.
  */
-public abstract class GroupAlsoByWindowsAggregators {
-  public static final String DROPPED_DUE_TO_CLOSED_WINDOW_COUNTER = "DroppedDueToClosedWindow";
-  public static final String DROPPED_DUE_TO_LATENESS_COUNTER = "DroppedDueToLateness";
+public class IncompatibleWindowException extends Exception {
+  private WindowFn<?, ?> givenWindowFn;
+  private String reason;
+
+  public IncompatibleWindowException(WindowFn<?, ?> windowFn, String reason) {
+    this.givenWindowFn = windowFn;
+    this.reason = reason;
+  }
+
+  @Override
+  public String getMessage() {
+    String windowFn = givenWindowFn == null ? "null" : givenWindowFn.getClass().getSimpleName();
+    return String.format("The given WindowFn is %s. %s", windowFn, reason);
+  }
 }
