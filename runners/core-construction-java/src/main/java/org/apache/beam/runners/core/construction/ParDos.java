@@ -20,14 +20,18 @@ package org.apache.beam.runners.core.construction;
 
 import static com.google.common.base.Preconditions.checkArgument;
 
+import com.google.auto.service.AutoService;
 import com.google.auto.value.AutoValue;
 import com.google.common.base.Optional;
+import com.google.common.collect.Iterables;
+import com.google.common.collect.Sets;
 import com.google.protobuf.Any;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.BytesValue;
 import com.google.protobuf.InvalidProtocolBufferException;
 import java.io.IOException;
 import java.io.Serializable;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import org.apache.beam.runners.core.construction.PTransforms.TransformPayloadTranslator;
@@ -46,6 +50,7 @@ import org.apache.beam.sdk.common.runner.v1.RunnerApi.TimerSpec;
 import org.apache.beam.sdk.runners.AppliedPTransform;
 import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.Materializations;
+import org.apache.beam.sdk.transforms.PTransform;
 import org.apache.beam.sdk.transforms.ParDo;
 import org.apache.beam.sdk.transforms.ParDo.MultiOutput;
 import org.apache.beam.sdk.transforms.ViewFn;
@@ -107,6 +112,18 @@ public class ParDos {
           .setParameter(Any.pack(payload))
           .build();
     }
+
+    /**
+     * Registers {@link ParDoPayloadTranslator}.
+     */
+    @AutoService(TransformPayloadTranslatorRegistrar.class)
+    public static class Registrar implements TransformPayloadTranslatorRegistrar {
+      @Override
+      public Map<? extends Class<? extends PTransform>, ? extends TransformPayloadTranslator>
+          getTransformPayloadTranslators() {
+        return Collections.singletonMap(ParDo.MultiOutput.class, new ParDoPayloadTranslator());
+      }
+    }
   }
 
   public static ParDoPayload toProto(ParDo.MultiOutput<?, ?> parDo, SdkComponents components) {
@@ -144,6 +161,20 @@ public class ParDos {
   public static TupleTag<?> getMainOutputTag(ParDoPayload payload)
       throws InvalidProtocolBufferException {
     return doFnAndMainOutputTagFromProto(payload.getDoFn()).getMainOutputTag();
+  }
+
+  public static RunnerApi.PCollection getMainInput(
+      RunnerApi.PTransform ptransform, Components components) throws IOException {
+    checkArgument(
+        ptransform.getSpec().getUrn().equals(PAR_DO_PAYLOAD_URN),
+        "Unexpected payload type %s",
+        ptransform.getSpec().getUrn());
+    ParDoPayload payload = ptransform.getSpec().getParameter().unpack(ParDoPayload.class);
+    String mainInputId =
+        Iterables.getOnlyElement(
+            Sets.difference(
+                ptransform.getInputsMap().keySet(), payload.getSideInputsMap().keySet()));
+    return components.getPcollectionsOrThrow(ptransform.getInputsOrThrow(mainInputId));
   }
 
   // TODO: Implement
