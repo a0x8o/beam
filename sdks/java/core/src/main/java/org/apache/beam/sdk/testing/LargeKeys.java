@@ -15,15 +15,34 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+package org.apache.beam.sdk.testing;
 
-package org.apache.beam.runners.core.construction;
+/**
+ * Category tags for tests which validate that a Beam runner can handle keys up to a given size.
+ */
+public interface LargeKeys {
+  /**
+   * Tests if a runner supports 10KB keys.
+   */
+  public interface Above10KB {}
 
-import java.util.Map;
-import org.apache.beam.runners.core.construction.PTransformTranslation.TransformPayloadTranslator;
-import org.apache.beam.sdk.transforms.PTransform;
+  /**
+   * Tests if a runner supports 100KB keys.
+   */
+  public interface Above100KB extends Above10KB {}
 
-/** A registrar of TransformPayloadTranslator. */
-public interface TransformPayloadTranslatorRegistrar {
-  Map<? extends Class<? extends PTransform>, ? extends TransformPayloadTranslator>
-      getTransformPayloadTranslators();
+  /**
+   * Tests if a runner supports 1MB keys.
+   */
+  public interface Above1MB extends Above100KB {}
+
+  /**
+   * Tests if a runner supports 10MB keys.
+   */
+  public interface Above10MB extends Above1MB {}
+
+  /**
+   * Tests if a runner supports 100MB keys.
+   */
+  public interface Above100MB extends Above10MB {}
 }

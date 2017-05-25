@@ -16,14 +16,8 @@
  * limitations under the License.
  */
 
-package org.apache.beam.runners.core.construction;
-
-import java.util.Map;
-import org.apache.beam.runners.core.construction.PTransformTranslation.TransformPayloadTranslator;
-import org.apache.beam.sdk.transforms.PTransform;
-
-/** A registrar of TransformPayloadTranslator. */
-public interface TransformPayloadTranslatorRegistrar {
-  Map<? extends Class<? extends PTransform>, ? extends TransformPayloadTranslator>
-      getTransformPayloadTranslators();
-}
+/**
+ * <p>Provides an API for reading from and writing to
+ * <a href="https://developers.google.com/spanner/">Google Cloud Spanner</a>.
+ */
+package org.apache.beam.sdk.io.gcp.spanner;
