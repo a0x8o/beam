@@ -17,8 +17,7 @@
  */
 package org.apache.beam.runners.flink.translation.functions;
 
-import com.google.common.collect.Lists;
-import java.util.List;
+import java.util.Collections;
 import java.util.Map;
 import org.apache.beam.runners.core.DoFnRunner;
 import org.apache.beam.runners.core.DoFnRunners;
@@ -90,7 +89,7 @@ public class FlinkDoFnFunction<InputT, OutputT>
     RuntimeContext runtimeContext = getRuntimeContext();
 
     DoFnRunners.OutputManager outputManager;
-    if (outputMap.size() == 1) {
+    if (outputMap == null) {
       outputManager = new FlinkDoFnFunction.DoFnOutputManager(out);
     } else {
       // it has some additional outputs
@@ -98,14 +97,13 @@ public class FlinkDoFnFunction<InputT, OutputT>
           new FlinkDoFnFunction.MultiDoFnOutputManager((Collector) out, outputMap);
     }
 
-    List<TupleTag<?>> additionalOutputTags = Lists.newArrayList(outputMap.keySet());
-
     DoFnRunner<InputT, OutputT> doFnRunner = DoFnRunners.simpleRunner(
         serializedOptions.getPipelineOptions(), doFn,
         new FlinkSideInputReader(sideInputs, runtimeContext),
         outputManager,
         mainOutputTag,
-        additionalOutputTags,
+        // see SimpleDoFnRunner, just use it to limit number of additional outputs
+        Collections.<TupleTag<?>>emptyList(),
         new FlinkNoOpStepContext(),
         windowingStrategy);
 
@@ -146,9 +144,7 @@ public class FlinkDoFnFunction<InputT, OutputT>
     @Override
     @SuppressWarnings("unchecked")
     public <T> void output(TupleTag<T> tag, WindowedValue<T> output) {
-      collector.collect(
-          WindowedValue.of(new RawUnionValue(0 /* single output */, output.getValue()),
-          output.getTimestamp(), output.getWindows(), output.getPane()));
+      collector.collect(output);
     }
   }
 

@@ -28,9 +28,6 @@ import org.apache.beam.sdk.transforms.windowing.GlobalWindows;
 import org.apache.beam.sdk.transforms.windowing.Window;
 import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollection;
-import org.apache.beam.sdk.values.PCollectionTuple;
-import org.apache.beam.sdk.values.TupleTag;
-import org.apache.beam.sdk.values.TupleTagList;
 
 /**
  * This transform takes in key-value pairs of {@link TableRow} entries and the
@@ -43,23 +40,17 @@ import org.apache.beam.sdk.values.TupleTagList;
 public class StreamingWriteTables extends PTransform<
     PCollection<KV<TableDestination, TableRow>>, WriteResult> {
   private BigQueryServices bigQueryServices;
-  private InsertRetryPolicy retryPolicy;
 
   public StreamingWriteTables() {
-    this(new BigQueryServicesImpl(), InsertRetryPolicy.alwaysRetry());
+    this(new BigQueryServicesImpl());
   }
 
-  private StreamingWriteTables(BigQueryServices bigQueryServices, InsertRetryPolicy retryPolicy) {
+  private StreamingWriteTables(BigQueryServices bigQueryServices) {
     this.bigQueryServices = bigQueryServices;
-    this.retryPolicy = retryPolicy;
   }
 
   StreamingWriteTables withTestServices(BigQueryServices bigQueryServices) {
-    return new StreamingWriteTables(bigQueryServices, retryPolicy);
-  }
-
-  StreamingWriteTables withInsertRetryPolicy(InsertRetryPolicy retryPolicy) {
-    return new StreamingWriteTables(bigQueryServices, retryPolicy);
+    return new StreamingWriteTables(bigQueryServices);
   }
 
   @Override
@@ -86,9 +77,7 @@ public class StreamingWriteTables extends PTransform<
     // different unique ids, this implementation relies on "checkpointing", which is
     // achieved as a side effect of having StreamingWriteFn immediately follow a GBK,
     // performed by Reshuffle.
-    TupleTag<Void> mainOutputTag = new TupleTag<>("mainOutput");
-    TupleTag<TableRow> failedInsertsTag = new TupleTag<>("failedInserts");
-    PCollectionTuple tuple = tagged
+    tagged
         .setCoder(KvCoder.of(ShardedKeyCoder.of(StringUtf8Coder.of()), TableRowInfoCoder.of()))
         .apply(Reshuffle.<ShardedKey<String>, TableRowInfo>of())
         // Put in the global window to ensure that DynamicDestinations side inputs are accessed
@@ -98,10 +87,7 @@ public class StreamingWriteTables extends PTransform<
             .triggering(DefaultTrigger.of()).discardingFiredPanes())
         .apply("StreamingWrite",
             ParDo.of(
-                new StreamingWriteFn(bigQueryServices, retryPolicy, failedInsertsTag))
-            .withOutputTags(mainOutputTag, TupleTagList.of(failedInsertsTag)));
-    PCollection<TableRow> failedInserts = tuple.get(failedInsertsTag);
-    failedInserts.setCoder(TableRowJsonCoder.of());
-    return WriteResult.in(input.getPipeline(), failedInsertsTag, failedInserts);
+                new StreamingWriteFn(bigQueryServices)));
+    return WriteResult.in(input.getPipeline());
   }
 }

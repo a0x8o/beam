@@ -227,9 +227,7 @@ class FlinkPipelineExecutionEnvironment {
       if (checkpointInterval < 1) {
         throw new IllegalArgumentException("The checkpoint interval must be positive");
       }
-      flinkStreamEnv.enableCheckpointing(checkpointInterval, options.getCheckpointingMode());
-      flinkStreamEnv.getCheckpointConfig().setCheckpointTimeout(
-          options.getCheckpointTimeoutMillis());
+      flinkStreamEnv.enableCheckpointing(checkpointInterval);
       boolean externalizedCheckpoint = options.isExternalizedCheckpointsEnabled();
       boolean retainOnCancellation = options.getRetainExternalizedCheckpointsOnCancellation();
       if (externalizedCheckpoint) {

@@ -23,8 +23,8 @@ import logging
 import Queue as queue
 import threading
 
-from concurrent import futures
 import grpc
+from concurrent import futures
 
 import apache_beam as beam
 from apache_beam.coders import WindowedValueCoder

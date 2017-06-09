@@ -33,7 +33,6 @@ import java.io.Serializable;
 import java.util.List;
 import java.util.NoSuchElementException;
 import javax.annotation.Nullable;
-import org.apache.beam.sdk.values.ValueInSingleWindow;
 
 /** An interface for real, mock, or fake implementations of Cloud BigQuery services. */
 interface BigQueryServices extends Serializable {
@@ -162,14 +161,9 @@ interface BigQueryServices extends Serializable {
     /**
      * Inserts {@link TableRow TableRows} with the specified insertIds if not null.
      *
-     * <p>If any insert fail permanently according to the retry policy, those rows are added
-     * to failedInserts.
-     *
      * <p>Returns the total bytes count of {@link TableRow TableRows}.
      */
-    long insertAll(TableReference ref, List<ValueInSingleWindow<TableRow>> rowList,
-                   @Nullable List<String> insertIdList, InsertRetryPolicy retryPolicy,
-                   List<ValueInSingleWindow<TableRow>> failedInserts)
+    long insertAll(TableReference ref, List<TableRow> rowList, @Nullable List<String> insertIdList)
         throws IOException, InterruptedException;
 
     /** Patch BigQuery {@link Table} description. */

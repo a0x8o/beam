@@ -99,7 +99,7 @@ public class GroupIntoBatches<K, InputT>
   static class GroupIntoBatchesDoFn<K, InputT>
       extends DoFn<KV<K, InputT>, KV<K, Iterable<InputT>>> {
 
-    private static final Logger LOG = LoggerFactory.getLogger(GroupIntoBatchesDoFn.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(GroupIntoBatchesDoFn.class);
     private static final String END_OF_WINDOW_ID = "endOFWindow";
     private static final String BATCH_ID = "batch";
     private static final String NUM_ELEMENTS_IN_BATCH_ID = "numElementsInBatch";
@@ -160,13 +160,13 @@ public class GroupIntoBatches<K, InputT>
         BoundedWindow window) {
       Instant windowExpires = window.maxTimestamp().plus(allowedLateness);
 
-      LOG.debug(
+      LOGGER.debug(
           "*** SET TIMER *** to point in time {} for window {}",
           windowExpires.toString(), window.toString());
       timer.set(windowExpires);
       key.write(c.element().getKey());
       batch.add(c.element().getValue());
-      LOG.debug("*** BATCH *** Add element for window {} ", window.toString());
+      LOGGER.debug("*** BATCH *** Add element for window {} ", window.toString());
       // blind add is supported with combiningState
       numElementsInBatch.add(1L);
       Long num = numElementsInBatch.read();
@@ -175,7 +175,7 @@ public class GroupIntoBatches<K, InputT>
         batch.readLater();
       }
       if (num >= batchSize) {
-        LOG.debug("*** END OF BATCH *** for window {}", window.toString());
+        LOGGER.debug("*** END OF BATCH *** for window {}", window.toString());
         flushBatch(c, key, batch, numElementsInBatch);
       }
     }
@@ -188,7 +188,7 @@ public class GroupIntoBatches<K, InputT>
         @StateId(NUM_ELEMENTS_IN_BATCH_ID)
             CombiningState<Long, long[], Long> numElementsInBatch,
         BoundedWindow window) {
-      LOG.debug(
+      LOGGER.debug(
           "*** END OF WINDOW *** for timer timestamp {} in windows {}",
           context.timestamp(), window.toString());
       flushBatch(context, key, batch, numElementsInBatch);
@@ -205,7 +205,7 @@ public class GroupIntoBatches<K, InputT>
         c.output(KV.of(key.read(), values));
       }
       batch.clear();
-      LOG.debug("*** BATCH *** clear");
+      LOGGER.debug("*** BATCH *** clear");
       numElementsInBatch.clear();
     }
   }

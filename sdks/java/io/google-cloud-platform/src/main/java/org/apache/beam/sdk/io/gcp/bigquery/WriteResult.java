@@ -17,12 +17,10 @@
  */
 package org.apache.beam.sdk.io.gcp.bigquery;
 
-import com.google.api.services.bigquery.model.TableRow;
-import com.google.common.collect.ImmutableMap;
+import java.util.Collections;
 import java.util.Map;
 import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.transforms.PTransform;
-import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.PInput;
 import org.apache.beam.sdk.values.POutput;
 import org.apache.beam.sdk.values.PValue;
@@ -32,30 +30,23 @@ import org.apache.beam.sdk.values.TupleTag;
  * The result of a {@link BigQueryIO.Write} transform.
  */
 public final class WriteResult implements POutput {
-  private final Pipeline pipeline;
-  private final TupleTag<TableRow> failedInsertsTag;
-  private final PCollection<TableRow> failedInserts;
 
-  /** Creates a {@link WriteResult} in the given {@link Pipeline}. */
-  static WriteResult in(
-      Pipeline pipeline, TupleTag<TableRow> failedInsertsTag, PCollection<TableRow> failedInserts) {
-    return new WriteResult(pipeline, failedInsertsTag, failedInserts);
+  private final Pipeline pipeline;
+
+  /**
+   * Creates a {@link WriteResult} in the given {@link Pipeline}.
+   */
+  static WriteResult in(Pipeline pipeline) {
+    return new WriteResult(pipeline);
   }
 
   @Override
   public Map<TupleTag<?>, PValue> expand() {
-    return ImmutableMap.<TupleTag<?>, PValue>of(failedInsertsTag, failedInserts);
+    return Collections.emptyMap();
   }
 
-  private WriteResult(
-      Pipeline pipeline, TupleTag<TableRow> failedInsertsTag, PCollection<TableRow> failedInserts) {
+  private WriteResult(Pipeline pipeline) {
     this.pipeline = pipeline;
-    this.failedInsertsTag = failedInsertsTag;
-    this.failedInserts = failedInserts;
-  }
-
-  public PCollection<TableRow> getFailedInserts() {
-    return failedInserts;
   }
 
   @Override

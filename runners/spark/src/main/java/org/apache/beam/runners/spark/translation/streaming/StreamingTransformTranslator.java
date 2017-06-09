@@ -413,8 +413,7 @@ public final class StreamingTransformTranslator {
                             transform.getMainOutputTag(),
                             transform.getAdditionalOutputTags().getAll(),
                             sideInputs,
-                            windowingStrategy,
-                            false));
+                            windowingStrategy));
                   }
                 });
         Map<TupleTag<?>, PValue> outputs = context.getOutputs(transform);

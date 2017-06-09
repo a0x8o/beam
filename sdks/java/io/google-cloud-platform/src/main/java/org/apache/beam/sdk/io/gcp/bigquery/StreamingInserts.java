@@ -35,38 +35,18 @@ public class StreamingInserts<DestinationT>
   private BigQueryServices bigQueryServices;
   private final CreateDisposition createDisposition;
   private final DynamicDestinations<?, DestinationT> dynamicDestinations;
-  private InsertRetryPolicy retryPolicy;
 
   /** Constructor. */
-  public StreamingInserts(CreateDisposition createDisposition,
+  StreamingInserts(CreateDisposition createDisposition,
                    DynamicDestinations<?, DestinationT> dynamicDestinations) {
-    this(createDisposition, dynamicDestinations, new BigQueryServicesImpl(),
-        InsertRetryPolicy.alwaysRetry());
-  }
-
-  /** Constructor. */
-  private StreamingInserts(CreateDisposition createDisposition,
-                          DynamicDestinations<?, DestinationT> dynamicDestinations,
-                          BigQueryServices bigQueryServices,
-                          InsertRetryPolicy retryPolicy) {
     this.createDisposition = createDisposition;
     this.dynamicDestinations = dynamicDestinations;
+    this.bigQueryServices = new BigQueryServicesImpl();
+  }
+
+  void setTestServices(BigQueryServices bigQueryServices) {
     this.bigQueryServices = bigQueryServices;
-    this.retryPolicy = retryPolicy;
   }
-
-  /**
-   * Specify a retry policy for failed inserts.
-   */
-  public StreamingInserts<DestinationT> withInsertRetryPolicy(InsertRetryPolicy retryPolicy) {
-    return new StreamingInserts<>(
-        createDisposition, dynamicDestinations, bigQueryServices, retryPolicy);
-  }
-
-  StreamingInserts<DestinationT> withTestServices(BigQueryServices bigQueryServices) {
-    return new StreamingInserts<>(
-        createDisposition, dynamicDestinations, bigQueryServices, retryPolicy);  }
-
 
   @Override
   protected Coder<Void> getDefaultOutputCoder() {
@@ -78,12 +58,9 @@ public class StreamingInserts<DestinationT>
     PCollection<KV<TableDestination, TableRow>> writes =
         input.apply(
             "CreateTables",
-            new CreateTables<>(createDisposition, dynamicDestinations)
+            new CreateTables<DestinationT>(createDisposition, dynamicDestinations)
                 .withTestServices(bigQueryServices));
 
-    return writes.apply(
-        new StreamingWriteTables()
-            .withTestServices(bigQueryServices)
-            .withInsertRetryPolicy(retryPolicy));
+    return writes.apply(new StreamingWriteTables().withTestServices(bigQueryServices));
   }
 }

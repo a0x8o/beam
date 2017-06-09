@@ -101,10 +101,6 @@ public class EvaluationContextTest {
     view = created.apply(View.<Integer>asIterable());
     unbounded = p.apply(GenerateSequence.from(0));
 
-    p.replaceAll(
-        DirectRunner.fromOptions(TestPipeline.testingPipelineOptions())
-            .defaultTransformOverrides());
-
     KeyedPValueTrackingVisitor keyedPValueTrackingVisitor = KeyedPValueTrackingVisitor.create();
     p.traverseTopologically(keyedPValueTrackingVisitor);
 
@@ -120,7 +116,7 @@ public class EvaluationContextTest {
 
     createdProducer = graph.getProducer(created);
     downstreamProducer = graph.getProducer(downstream);
-    viewProducer = graph.getWriter(view);
+    viewProducer = graph.getProducer(view);
     unboundedProducer = graph.getProducer(unbounded);
   }
 

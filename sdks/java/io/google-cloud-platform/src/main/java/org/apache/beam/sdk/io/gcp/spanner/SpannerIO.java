@@ -149,6 +149,14 @@ public class SpannerIO {
       abstract Write build();
     }
 
+    SpannerOptions getSpannerOptions() {
+      SpannerOptions.Builder builder = SpannerOptions.newBuilder();
+      if (getServiceFactory() != null) {
+        builder.setServiceFactory(getServiceFactory());
+      }
+      return builder.build();
+    }
+
     /**
      * Returns a new {@link SpannerIO.Write} that will write to the specified Cloud Spanner project.
      *
@@ -251,10 +259,10 @@ public class SpannerIO {
 
     @Setup
     public void setup() throws Exception {
-      SpannerOptions spannerOptions = getSpannerOptions();
-      spanner = spannerOptions.getService();
-      dbClient = spanner.getDatabaseClient(
-          DatabaseId.of(projectId(), spec.getInstanceId(), spec.getDatabaseId()));
+      spanner = spec.getSpannerOptions().getService();
+      dbClient =
+          spanner.getDatabaseClient(
+              DatabaseId.of(projectId(), spec.getInstanceId(), spec.getDatabaseId()));
       mutations = new ArrayList<>();
       batchSizeBytes = 0;
     }
@@ -289,17 +297,6 @@ public class SpannerIO {
       }
       spanner.closeAsync().get();
       spanner = null;
-    }
-
-    private SpannerOptions getSpannerOptions() {
-      SpannerOptions.Builder spannerOptionsBuider = SpannerOptions.newBuilder();
-      if (spec.getServiceFactory() != null) {
-        spannerOptionsBuider.setServiceFactory(spec.getServiceFactory());
-      }
-      if (spec.getProjectId() != null) {
-        spannerOptionsBuider.setProjectId(spec.getProjectId());
-      }
-      return spannerOptionsBuider.build();
     }
 
     /**

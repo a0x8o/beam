@@ -51,12 +51,10 @@ from __future__ import absolute_import
 
 import abc
 
-from google.protobuf import duration_pb2
-from google.protobuf import timestamp_pb2
+from google.protobuf import struct_pb2
 
 from apache_beam.coders import coders
 from apache_beam.runners.api import beam_runner_api_pb2
-from apache_beam.runners.api import standard_window_fns_pb2
 from apache_beam.transforms import timeutil
 from apache_beam.utils import proto_utils
 from apache_beam.utils import urns
@@ -343,18 +341,14 @@ class FixedWindows(NonMergingWindowFn):
 
   def to_runner_api_parameter(self, context):
     return (urns.FIXED_WINDOWS_FN,
-            standard_window_fns_pb2.FixedWindowsPayload(
-                size=proto_utils.from_micros(
-                    duration_pb2.Duration, self.size.micros),
-                offset=proto_utils.from_micros(
-                    timestamp_pb2.Timestamp, self.offset.micros)))
+            proto_utils.pack_Struct(size=self.size.micros,
+                                    offset=self.offset.micros))
 
-  @urns.RunnerApiFn.register_urn(
-      urns.FIXED_WINDOWS_FN, standard_window_fns_pb2.FixedWindowsPayload)
+  @urns.RunnerApiFn.register_urn(urns.FIXED_WINDOWS_FN, struct_pb2.Struct)
   def from_runner_api_parameter(fn_parameter, unused_context):
     return FixedWindows(
-        size=Duration(micros=fn_parameter.size.ToMicroseconds()),
-        offset=Timestamp(micros=fn_parameter.offset.ToMicroseconds()))
+        size=Duration(micros=fn_parameter['size']),
+        offset=Timestamp(micros=fn_parameter['offset']))
 
 
 class SlidingWindows(NonMergingWindowFn):
@@ -398,22 +392,17 @@ class SlidingWindows(NonMergingWindowFn):
 
   def to_runner_api_parameter(self, context):
     return (urns.SLIDING_WINDOWS_FN,
-            standard_window_fns_pb2.SlidingWindowsPayload(
-                size=proto_utils.from_micros(
-                    duration_pb2.Duration, self.size.micros),
-                offset=proto_utils.from_micros(
-                    timestamp_pb2.Timestamp, self.offset.micros),
-                period=proto_utils.from_micros(
-                    duration_pb2.Duration, self.period.micros)))
+            proto_utils.pack_Struct(
+                size=self.size.micros,
+                offset=self.offset.micros,
+                period=self.period.micros))
 
-  @urns.RunnerApiFn.register_urn(
-      urns.SLIDING_WINDOWS_FN,
-      standard_window_fns_pb2.SlidingWindowsPayload)
+  @urns.RunnerApiFn.register_urn(urns.SLIDING_WINDOWS_FN, struct_pb2.Struct)
   def from_runner_api_parameter(fn_parameter, unused_context):
     return SlidingWindows(
-        size=Duration(micros=fn_parameter.size.ToMicroseconds()),
-        offset=Timestamp(micros=fn_parameter.offset.ToMicroseconds()),
-        period=Duration(micros=fn_parameter.period.ToMicroseconds()))
+        size=Duration(micros=fn_parameter['size']),
+        offset=Timestamp(micros=fn_parameter['offset']),
+        period=Duration(micros=fn_parameter['period']))
 
 
 class Sessions(WindowFn):
@@ -463,14 +452,10 @@ class Sessions(WindowFn):
     if type(self) == type(other) == Sessions:
       return self.gap_size == other.gap_size
 
+  @urns.RunnerApiFn.register_urn(urns.SESSION_WINDOWS_FN, struct_pb2.Struct)
+  def from_runner_api_parameter(fn_parameter, unused_context):
+    return Sessions(gap_size=Duration(micros=fn_parameter['gap_size']))
+
   def to_runner_api_parameter(self, context):
     return (urns.SESSION_WINDOWS_FN,
-            standard_window_fns_pb2.SessionsPayload(
-                gap_size=proto_utils.from_micros(
-                    duration_pb2.Duration, self.gap_size.micros)))
-
-  @urns.RunnerApiFn.register_urn(
-      urns.SESSION_WINDOWS_FN, standard_window_fns_pb2.SessionsPayload)
-  def from_runner_api_parameter(fn_parameter, unused_context):
-    return Sessions(
-        gap_size=Duration(micros=fn_parameter.gap_size.ToMicroseconds()))
+            proto_utils.pack_Struct(gap_size=self.gap_size.micros))

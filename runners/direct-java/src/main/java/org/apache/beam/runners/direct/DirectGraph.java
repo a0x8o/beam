@@ -24,9 +24,9 @@ import java.util.Map;
 import java.util.Set;
 import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.runners.AppliedPTransform;
-import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.PCollectionView;
 import org.apache.beam.sdk.values.PInput;
+import org.apache.beam.sdk.values.POutput;
 import org.apache.beam.sdk.values.PValue;
 
 /**
@@ -34,41 +34,37 @@ import org.apache.beam.sdk.values.PValue;
  * executed with the {@link DirectRunner}.
  */
 class DirectGraph {
-  private final Map<PCollection<?>, AppliedPTransform<?, ?, ?>> producers;
-  private final Map<PCollectionView<?>, AppliedPTransform<?, ?, ?>> viewWriters;
+  private final Map<POutput, AppliedPTransform<?, ?, ?>> producers;
   private final ListMultimap<PInput, AppliedPTransform<?, ?, ?>> primitiveConsumers;
+  private final Set<PCollectionView<?>> views;
 
   private final Set<AppliedPTransform<?, ?, ?>> rootTransforms;
   private final Map<AppliedPTransform<?, ?, ?>, String> stepNames;
 
   public static DirectGraph create(
-      Map<PCollection<?>, AppliedPTransform<?, ?, ?>> producers,
-      Map<PCollectionView<?>, AppliedPTransform<?, ?, ?>> viewWriters,
+      Map<POutput, AppliedPTransform<?, ?, ?>> producers,
       ListMultimap<PInput, AppliedPTransform<?, ?, ?>> primitiveConsumers,
+      Set<PCollectionView<?>> views,
       Set<AppliedPTransform<?, ?, ?>> rootTransforms,
       Map<AppliedPTransform<?, ?, ?>, String> stepNames) {
-    return new DirectGraph(producers, viewWriters, primitiveConsumers, rootTransforms, stepNames);
+    return new DirectGraph(producers, primitiveConsumers, views, rootTransforms, stepNames);
   }
 
   private DirectGraph(
-      Map<PCollection<?>, AppliedPTransform<?, ?, ?>> producers,
-      Map<PCollectionView<?>, AppliedPTransform<?, ?, ?>> viewWriters,
+      Map<POutput, AppliedPTransform<?, ?, ?>> producers,
       ListMultimap<PInput, AppliedPTransform<?, ?, ?>> primitiveConsumers,
+      Set<PCollectionView<?>> views,
       Set<AppliedPTransform<?, ?, ?>> rootTransforms,
       Map<AppliedPTransform<?, ?, ?>, String> stepNames) {
     this.producers = producers;
-    this.viewWriters = viewWriters;
     this.primitiveConsumers = primitiveConsumers;
+    this.views = views;
     this.rootTransforms = rootTransforms;
     this.stepNames = stepNames;
   }
 
-  AppliedPTransform<?, ?, ?> getProducer(PCollection<?> produced) {
+  AppliedPTransform<?, ?, ?> getProducer(PValue produced) {
     return producers.get(produced);
-  }
-
-  AppliedPTransform<?, ?, ?> getWriter(PCollectionView<?> view) {
-    return viewWriters.get(view);
   }
 
   List<AppliedPTransform<?, ?, ?>> getPrimitiveConsumers(PValue consumed) {
@@ -80,7 +76,7 @@ class DirectGraph {
   }
 
   Set<PCollectionView<?>> getViews() {
-    return viewWriters.keySet();
+    return views;
   }
 
   String getStepName(AppliedPTransform<?, ?, ?> step) {
