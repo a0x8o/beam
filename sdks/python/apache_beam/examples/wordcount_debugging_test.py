@@ -23,7 +23,6 @@ import tempfile
 import unittest
 
 from apache_beam.examples import wordcount_debugging
-from apache_beam.testing.util import open_shards
 
 
 class WordCountTest(unittest.TestCase):
@@ -37,7 +36,7 @@ class WordCountTest(unittest.TestCase):
 
   def get_results(self, temp_path):
     results = []
-    with open_shards(temp_path + '.result-*-of-*') as result_file:
+    with open(temp_path + '.result-00000-of-00001') as result_file:
       for line in result_file:
         match = re.search(r'([A-Za-z]+): ([0-9]+)', line)
         if match is not None:

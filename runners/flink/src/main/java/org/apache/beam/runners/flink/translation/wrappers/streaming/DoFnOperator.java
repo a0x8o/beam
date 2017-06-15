@@ -86,28 +86,27 @@ import org.apache.flink.streaming.api.operators.Triggerable;
 import org.apache.flink.streaming.api.operators.TwoInputStreamOperator;
 import org.apache.flink.streaming.api.watermark.Watermark;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
-import org.apache.flink.util.OutputTag;
 import org.joda.time.Instant;
 
 /**
  * Flink operator for executing {@link DoFn DoFns}.
  *
  * @param <InputT> the input type of the {@link DoFn}
- * @param <OutputT> the output type of the {@link DoFn}
+ * @param <FnOutputT> the output type of the {@link DoFn}
  * @param <OutputT> the output type of the operator, this can be different from the fn output
  *                 type when we have additional tagged outputs
  */
-public class DoFnOperator<InputT, OutputT>
-    extends AbstractStreamOperator<WindowedValue<OutputT>>
-    implements OneInputStreamOperator<WindowedValue<InputT>, WindowedValue<OutputT>>,
-      TwoInputStreamOperator<WindowedValue<InputT>, RawUnionValue, WindowedValue<OutputT>>,
+public class DoFnOperator<InputT, FnOutputT, OutputT>
+    extends AbstractStreamOperator<OutputT>
+    implements OneInputStreamOperator<WindowedValue<InputT>, OutputT>,
+      TwoInputStreamOperator<WindowedValue<InputT>, RawUnionValue, OutputT>,
     KeyGroupCheckpointedOperator, Triggerable<Object, TimerData> {
 
-  protected DoFn<InputT, OutputT> doFn;
+  protected DoFn<InputT, FnOutputT> doFn;
 
   protected final SerializedPipelineOptions serializedOptions;
 
-  protected final TupleTag<OutputT> mainOutputTag;
+  protected final TupleTag<FnOutputT> mainOutputTag;
   protected final List<TupleTag<?>> additionalOutputTags;
 
   protected final Collection<PCollectionView<?>> sideInputs;
@@ -117,8 +116,8 @@ public class DoFnOperator<InputT, OutputT>
 
   protected final OutputManagerFactory<OutputT> outputManagerFactory;
 
-  protected transient DoFnRunner<InputT, OutputT> doFnRunner;
-  protected transient PushbackSideInputDoFnRunner<InputT, OutputT> pushbackDoFnRunner;
+  protected transient DoFnRunner<InputT, FnOutputT> doFnRunner;
+  protected transient PushbackSideInputDoFnRunner<InputT, FnOutputT> pushbackDoFnRunner;
 
   protected transient SideInputHandler sideInputHandler;
 
@@ -126,7 +125,7 @@ public class DoFnOperator<InputT, OutputT>
 
   protected transient DoFnRunners.OutputManager outputManager;
 
-  private transient DoFnInvoker<InputT, OutputT> doFnInvoker;
+  private transient DoFnInvoker<InputT, FnOutputT> doFnInvoker;
 
   protected transient long currentInputWatermark;
 
@@ -153,10 +152,10 @@ public class DoFnOperator<InputT, OutputT>
   private transient Optional<Long> pushedBackWatermark;
 
   public DoFnOperator(
-      DoFn<InputT, OutputT> doFn,
+      DoFn<InputT, FnOutputT> doFn,
       String stepName,
       Coder<WindowedValue<InputT>> inputCoder,
-      TupleTag<OutputT> mainOutputTag,
+      TupleTag<FnOutputT> mainOutputTag,
       List<TupleTag<?>> additionalOutputTags,
       OutputManagerFactory<OutputT> outputManagerFactory,
       WindowingStrategy<?, ?> windowingStrategy,
@@ -189,7 +188,7 @@ public class DoFnOperator<InputT, OutputT>
 
   // allow overriding this in WindowDoFnOperator because this one dynamically creates
   // the DoFn
-  protected DoFn<InputT, OutputT> getDoFn() {
+  protected DoFn<InputT, FnOutputT> getDoFn() {
     return doFn;
   }
 
@@ -620,7 +619,7 @@ public class DoFnOperator<InputT, OutputT>
    * a Flink {@link Output}.
    */
   interface OutputManagerFactory<OutputT> extends Serializable {
-    DoFnRunners.OutputManager create(Output<StreamRecord<WindowedValue<OutputT>>> output);
+    DoFnRunners.OutputManager create(Output<StreamRecord<OutputT>> output);
   }
 
   /**
@@ -631,15 +630,14 @@ public class DoFnOperator<InputT, OutputT>
   public static class DefaultOutputManagerFactory<OutputT>
       implements OutputManagerFactory<OutputT> {
     @Override
-    public DoFnRunners.OutputManager create(
-        final Output<StreamRecord<WindowedValue<OutputT>>> output) {
+    public DoFnRunners.OutputManager create(final Output<StreamRecord<OutputT>> output) {
       return new DoFnRunners.OutputManager() {
         @Override
         public <T> void output(TupleTag<T> tag, WindowedValue<T> value) {
           // with tagged outputs we can't get around this because we don't
           // know our own output type...
           @SuppressWarnings("unchecked")
-          WindowedValue<OutputT> castValue = (WindowedValue<OutputT>) value;
+          OutputT castValue = (OutputT) value;
           output.collect(new StreamRecord<>(castValue));
         }
       };
@@ -651,34 +649,22 @@ public class DoFnOperator<InputT, OutputT>
    * {@link DoFnRunners.OutputManager} that can write to multiple logical
    * outputs by unioning them in a {@link RawUnionValue}.
    */
-  public static class MultiOutputOutputManagerFactory<OutputT>
-      implements OutputManagerFactory<OutputT> {
+  public static class MultiOutputOutputManagerFactory
+      implements OutputManagerFactory<RawUnionValue> {
 
-    private TupleTag<?> mainTag;
-    Map<TupleTag<?>, OutputTag<WindowedValue<?>>> mapping;
+    Map<TupleTag<?>, Integer> mapping;
 
-    public MultiOutputOutputManagerFactory(
-        TupleTag<?> mainTag,
-        Map<TupleTag<?>, OutputTag<WindowedValue<?>>> mapping) {
-      this.mainTag = mainTag;
+    public MultiOutputOutputManagerFactory(Map<TupleTag<?>, Integer> mapping) {
       this.mapping = mapping;
     }
 
     @Override
-    public DoFnRunners.OutputManager create(
-        final Output<StreamRecord<WindowedValue<OutputT>>> output) {
+    public DoFnRunners.OutputManager create(final Output<StreamRecord<RawUnionValue>> output) {
       return new DoFnRunners.OutputManager() {
         @Override
         public <T> void output(TupleTag<T> tag, WindowedValue<T> value) {
-          if (tag.equals(mainTag)) {
-            @SuppressWarnings("unchecked")
-            WindowedValue<OutputT> outputValue = (WindowedValue<OutputT>) value;
-            output.collect(new StreamRecord<>(outputValue));
-          } else {
-            @SuppressWarnings("unchecked")
-            OutputTag<WindowedValue<T>> outputTag = (OutputTag) mapping.get(tag);
-            output.<WindowedValue<T>>collect(outputTag, new StreamRecord<>(value));
-          }
+          int intTag = mapping.get(tag);
+          output.collect(new StreamRecord<>(new RawUnionValue(intTag, value)));
         }
       };
     }

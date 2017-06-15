@@ -28,7 +28,7 @@ import Queue as queue
 import threading
 
 from apache_beam.coders import coder_impl
-from apache_beam.portability.runners.api import beam_fn_api_pb2
+from apache_beam.runners.api import beam_fn_api_pb2
 import grpc
 
 # This module is experimental. No backwards-compatibility guarantees.
@@ -167,18 +167,12 @@ class _GrpcDataChannel(DataChannel):
         yield data
 
   def output_stream(self, instruction_id, target):
-    # TODO: Return an output stream that sends data
-    # to the Runner once a fixed size buffer is full.
-    # Currently we buffer all the data before sending
-    # any messages.
     def add_to_send_queue(data):
-      if data:
-        self._to_send.put(
-            beam_fn_api_pb2.Elements.Data(
-                instruction_reference=instruction_id,
-                target=target,
-                data=data))
-      # End of stream marker.
+      self._to_send.put(
+          beam_fn_api_pb2.Elements.Data(
+              instruction_reference=instruction_id,
+              target=target,
+              data=data))
       self._to_send.put(
           beam_fn_api_pb2.Elements.Data(
               instruction_reference=instruction_id,

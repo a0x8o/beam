@@ -144,7 +144,6 @@ public class ParDoTranslation {
 
     ParDoPayload.Builder builder = ParDoPayload.newBuilder();
     builder.setDoFn(toProto(parDo.getFn(), parDo.getMainOutputTag()));
-    builder.setSplittable(signature.processElement().isSplittable());
     for (PCollectionView<?> sideInput : parDo.getSideInputs()) {
       builder.putSideInputs(sideInput.getTagInternal().getId(), toProto(sideInput));
     }
@@ -495,25 +494,6 @@ public class ParDoTranslation {
                                 ByteString.copyFrom(SerializableUtils.serializeToByteArray(viewFn)))
                             .build())))
         .build();
-  }
-
-  private static <T> ParDoPayload getParDoPayload(AppliedPTransform<?, ?, ?> transform)
-      throws IOException {
-    return PTransformTranslation.toProto(
-            transform, Collections.<AppliedPTransform<?, ?, ?>>emptyList(), SdkComponents.create())
-        .getSpec()
-        .getParameter()
-        .unpack(ParDoPayload.class);
-  }
-
-  public static boolean usesStateOrTimers(AppliedPTransform<?, ?, ?> transform) throws IOException {
-    ParDoPayload payload = getParDoPayload(transform);
-    return payload.getStateSpecsCount() > 0 || payload.getTimerSpecsCount() > 0;
-  }
-
-  public static boolean isSplittable(AppliedPTransform<?, ?, ?> transform) throws IOException {
-    ParDoPayload payload = getParDoPayload(transform);
-    return payload.getSplittable();
   }
 
   private static ViewFn<?, ?> viewFnFromProto(SdkFunctionSpec viewFn)

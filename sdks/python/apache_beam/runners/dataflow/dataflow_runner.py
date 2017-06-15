@@ -26,7 +26,6 @@ import threading
 import time
 import traceback
 
-import apache_beam as beam
 from apache_beam import error
 from apache_beam import coders
 from apache_beam import pvalue
@@ -64,7 +63,7 @@ class DataflowRunner(PipelineRunner):
   # a job submission and is used by the service to establish what features
   # are expected by the workers.
   BATCH_ENVIRONMENT_MAJOR_VERSION = '6'
-  STREAMING_ENVIRONMENT_MAJOR_VERSION = '1'
+  STREAMING_ENVIRONMENT_MAJOR_VERSION = '0'
 
   def __init__(self, cache=None):
     # Cache of CloudWorkflowStep protos generated while the runner
@@ -378,23 +377,6 @@ class DataflowRunner(PipelineRunner):
           PropertyNames.ENCODING: step.encoding,
           PropertyNames.OUTPUT_NAME: PropertyNames.OUT}])
 
-  def apply_WriteToBigQuery(self, transform, pcoll):
-    standard_options = pcoll.pipeline._options.view_as(StandardOptions)
-    if standard_options.streaming:
-      if (transform.write_disposition ==
-          beam.io.BigQueryDisposition.WRITE_TRUNCATE):
-        raise RuntimeError('Can not use write truncation mode in streaming')
-      return self.apply_PTransform(transform, pcoll)
-    else:
-      return pcoll  | 'WriteToBigQuery' >> beam.io.Write(
-          beam.io.BigQuerySink(
-              transform.table_reference.tableId,
-              transform.table_reference.datasetId,
-              transform.table_reference.projectId,
-              transform.schema,
-              transform.create_disposition,
-              transform.write_disposition))
-
   def apply_GroupByKey(self, transform, pcoll):
     # Infer coder of parent.
     #
@@ -615,12 +597,10 @@ class DataflowRunner(PipelineRunner):
       if not standard_options.streaming:
         raise ValueError('PubSubPayloadSource is currently available for use '
                          'only in streaming pipelines.')
-      # Only one of topic or subscription should be set.
-      if transform.source.topic:
-        step.add_property(PropertyNames.PUBSUB_TOPIC, transform.source.topic)
-      elif transform.source.subscription:
+      step.add_property(PropertyNames.PUBSUB_TOPIC, transform.source.topic)
+      if transform.source.subscription:
         step.add_property(PropertyNames.PUBSUB_SUBSCRIPTION,
-                          transform.source.subscription)
+                          transform.source.topic)
       if transform.source.id_label:
         step.add_property(PropertyNames.PUBSUB_ID_LABEL,
                           transform.source.id_label)
@@ -638,12 +618,7 @@ class DataflowRunner(PipelineRunner):
     # step should be the type of value outputted by each step.  Read steps
     # automatically wrap output values in a WindowedValue wrapper, if necessary.
     # This is also necessary for proper encoding for size estimation.
-    # Using a GlobalWindowCoder as a place holder instead of the default
-    # PickleCoder because GlobalWindowCoder is known coder.
-    # TODO(robertwb): Query the collection for the windowfn to extract the
-    # correct coder.
-    coder = coders.WindowedValueCoder(transform._infer_output_coder(),
-                                      coders.coders.GlobalWindowCoder())  # pylint: disable=protected-access
+    coder = coders.WindowedValueCoder(transform._infer_output_coder())  # pylint: disable=protected-access
 
     step.encoding = self._get_cloud_encoding(coder)
     step.add_property(
@@ -712,12 +687,8 @@ class DataflowRunner(PipelineRunner):
     step.add_property(PropertyNames.FORMAT, transform.sink.format)
 
     # Wrap coder in WindowedValueCoder: this is necessary for proper encoding
-    # for size estimation. Using a GlobalWindowCoder as a place holder instead
-    # of the default PickleCoder because GlobalWindowCoder is known coder.
-    # TODO(robertwb): Query the collection for the windowfn to extract the
-    # correct coder.
-    coder = coders.WindowedValueCoder(transform.sink.coder,
-                                      coders.coders.GlobalWindowCoder())
+    # for size estimation.
+    coder = coders.WindowedValueCoder(transform.sink.coder)
     step.encoding = self._get_cloud_encoding(coder)
     step.add_property(PropertyNames.ENCODING, step.encoding)
     step.add_property(
@@ -726,43 +697,6 @@ class DataflowRunner(PipelineRunner):
          PropertyNames.STEP_NAME: input_step.proto.name,
          PropertyNames.OUTPUT_NAME: input_step.get_output(input_tag)})
 
-<<<<<<< HEAD
-=======
-  @classmethod
-  def serialize_windowing_strategy(cls, windowing):
-    from apache_beam.runners import pipeline_context
-    from apache_beam.portability.runners.api import beam_runner_api_pb2
-    context = pipeline_context.PipelineContext()
-    windowing_proto = windowing.to_runner_api(context)
-    return cls.byte_array_to_json_string(
-        beam_runner_api_pb2.MessageWithComponents(
-            components=context.to_runner_api(),
-            windowing_strategy=windowing_proto).SerializeToString())
-
-  @classmethod
-  def deserialize_windowing_strategy(cls, serialized_data):
-    # Imported here to avoid circular dependencies.
-    # pylint: disable=wrong-import-order, wrong-import-position
-    from apache_beam.runners import pipeline_context
-    from apache_beam.portability.runners.api import beam_runner_api_pb2
-    from apache_beam.transforms.core import Windowing
-    proto = beam_runner_api_pb2.MessageWithComponents()
-    proto.ParseFromString(cls.json_string_to_byte_array(serialized_data))
-    return Windowing.from_runner_api(
-        proto.windowing_strategy,
-        pipeline_context.PipelineContext(proto.components))
-
-  @staticmethod
-  def byte_array_to_json_string(raw_bytes):
-    """Implements org.apache.beam.sdk.util.StringUtils.byteArrayToJsonString."""
-    return urllib.quote(raw_bytes)
-
-  @staticmethod
-  def json_string_to_byte_array(encoded_string):
-    """Implements org.apache.beam.sdk.util.StringUtils.jsonStringToByteArray."""
-    return urllib.unquote(encoded_string)
-
->>>>>>> 8f5e8defbda6ba65282ea60af67ce4840136dcbf
 
 class DataflowPipelineResult(PipelineResult):
   """Represents the state of a pipeline run on the Dataflow service."""

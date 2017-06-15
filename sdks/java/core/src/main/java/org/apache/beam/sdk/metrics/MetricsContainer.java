@@ -23,8 +23,7 @@ import org.apache.beam.sdk.annotations.Experimental;
 import org.apache.beam.sdk.annotations.Experimental.Kind;
 
 /**
- * Holds the metrics for a single step. Each of the methods should return an implementation of the
- * appropriate metrics interface for the "current" step.
+ * Holds the metrics for a single step and unit-of-commit (bundle).
  */
 @Experimental(Kind.METRICS)
 public interface MetricsContainer extends Serializable {

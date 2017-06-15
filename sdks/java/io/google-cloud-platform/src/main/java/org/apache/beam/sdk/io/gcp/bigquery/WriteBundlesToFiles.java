@@ -18,7 +18,8 @@
 
 package org.apache.beam.sdk.io.gcp.bigquery;
 
-import static com.google.common.base.Preconditions.checkNotNull;
+import static org.apache.beam.sdk.io.gcp.bigquery.BigQueryHelpers.resolveTempLocation;
+
 import com.google.api.services.bigquery.model.TableRow;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
@@ -39,7 +40,6 @@ import org.apache.beam.sdk.io.gcp.bigquery.WriteBundlesToFiles.Result;
 import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
 import org.apache.beam.sdk.values.KV;
-import org.apache.beam.sdk.values.PCollectionView;
 import org.apache.beam.sdk.values.TupleTag;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -63,7 +63,7 @@ class WriteBundlesToFiles<DestinationT>
   // Map from tablespec to a writer for that table.
   private transient Map<DestinationT, TableRowWriter> writers;
   private transient Map<DestinationT, BoundedWindow> writerWindows;
-  private final PCollectionView<String> tempFilePrefixView;
+  private final String stepUuid;
   private final TupleTag<KV<ShardedKey<DestinationT>, TableRow>> unwrittedRecordsTag;
   private int maxNumWritersPerBundle;
   private long maxFileSize;
@@ -79,7 +79,6 @@ class WriteBundlesToFiles<DestinationT>
     public final DestinationT destination;
 
     public Result(String filename, Long fileByteSize, DestinationT destination) {
-      checkNotNull(destination);
       this.filename = filename;
       this.fileByteSize = fileByteSize;
       this.destination = destination;
@@ -130,11 +129,11 @@ class WriteBundlesToFiles<DestinationT>
   }
 
   WriteBundlesToFiles(
-      PCollectionView<String> tempFilePrefixView,
+      String stepUuid,
       TupleTag<KV<ShardedKey<DestinationT>, TableRow>> unwrittedRecordsTag,
       int maxNumWritersPerBundle,
       long maxFileSize) {
-    this.tempFilePrefixView = tempFilePrefixView;
+    this.stepUuid = stepUuid;
     this.unwrittedRecordsTag = unwrittedRecordsTag;
     this.maxNumWritersPerBundle = maxNumWritersPerBundle;
     this.maxFileSize = maxFileSize;
@@ -158,7 +157,8 @@ class WriteBundlesToFiles<DestinationT>
 
   @ProcessElement
   public void processElement(ProcessContext c, BoundedWindow window) throws Exception {
-    String tempFilePrefix = c.sideInput(tempFilePrefixView);
+    String tempFilePrefix = resolveTempLocation(
+        c.getPipelineOptions().getTempLocation(), "BigQueryWriteTemp", stepUuid);
     DestinationT destination = c.element().getKey();
 
     TableRowWriter writer;

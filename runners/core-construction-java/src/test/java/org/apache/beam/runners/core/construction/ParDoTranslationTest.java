@@ -51,7 +51,6 @@ import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.ParDo;
 import org.apache.beam.sdk.transforms.ParDo.MultiOutput;
 import org.apache.beam.sdk.transforms.View;
-import org.apache.beam.sdk.transforms.splittabledofn.RestrictionTracker;
 import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
 import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollection;
@@ -112,11 +111,7 @@ public class ParDoTranslationTest {
           ParDo.of(new DropElementsFn())
               .withOutputTags(
                   new TupleTag<Void>(),
-                  TupleTagList.of(new TupleTag<byte[]>() {}).and(new TupleTag<Integer>() {})),
-      ParDo.of(new SplittableDropElementsFn())
-          .withOutputTags(
-              new TupleTag<Void>(),
-              TupleTagList.empty()));
+                  TupleTagList.of(new TupleTag<byte[]>() {}).and(new TupleTag<Integer>() {})));
     }
 
     @Parameter(0)
@@ -237,34 +232,6 @@ public class ParDoTranslationTest {
     @Override
     public int hashCode() {
       return DropElementsFn.class.hashCode();
-    }
-  }
-
-  private static class SplittableDropElementsFn extends DoFn<KV<Long, String>, Void> {
-    @ProcessElement
-    public void proc(ProcessContext context, RestrictionTracker<Integer> restriction) {
-      context.output(null);
-    }
-
-    @GetInitialRestriction
-    public Integer restriction(KV<Long, String> elem) {
-      return 42;
-    }
-
-    @NewTracker
-    public RestrictionTracker<Integer> newTracker(Integer restriction) {
-      throw new UnsupportedOperationException("Should never be called; only to test translation");
-    }
-
-
-    @Override
-    public boolean equals(Object other) {
-      return other instanceof SplittableDropElementsFn;
-    }
-
-    @Override
-    public int hashCode() {
-      return SplittableDropElementsFn.class.hashCode();
     }
   }
 

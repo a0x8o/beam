@@ -559,7 +559,7 @@ public class TFRecordIO {
       super(
           outputPrefix,
           DefaultFilenamePolicy.constructUsingStandardParameters(
-              outputPrefix, shardTemplate, suffix, false),
+              outputPrefix, shardTemplate, suffix),
           writableByteChannelFactory(compressionType));
     }
 

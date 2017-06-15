@@ -20,6 +20,7 @@ package org.apache.beam.runners.direct;
 
 import static com.google.common.base.Preconditions.checkArgument;
 
+import com.google.protobuf.Message;
 import org.apache.beam.runners.core.KeyedWorkItem;
 import org.apache.beam.runners.core.KeyedWorkItemCoder;
 import org.apache.beam.runners.core.construction.ForwardingPTransform;
@@ -73,7 +74,7 @@ class DirectGroupByKey<K, V>
 
   static final class DirectGroupByKeyOnly<K, V>
       extends PTransformTranslation.RawPTransform<
-          PCollection<KV<K, V>>, PCollection<KeyedWorkItem<K, V>>> {
+          PCollection<KV<K, V>>, PCollection<KeyedWorkItem<K, V>>, Message> {
     @Override
     public PCollection<KeyedWorkItem<K, V>> expand(PCollection<KV<K, V>> input) {
       return PCollection.createPrimitiveOutputInternal(
@@ -100,7 +101,7 @@ class DirectGroupByKey<K, V>
 
   static final class DirectGroupAlsoByWindow<K, V>
       extends PTransformTranslation.RawPTransform<
-          PCollection<KeyedWorkItem<K, V>>, PCollection<KV<K, Iterable<V>>>> {
+          PCollection<KeyedWorkItem<K, V>>, PCollection<KV<K, Iterable<V>>>, Message> {
 
     private final WindowingStrategy<?, ?> inputWindowingStrategy;
     private final WindowingStrategy<?, ?> outputWindowingStrategy;

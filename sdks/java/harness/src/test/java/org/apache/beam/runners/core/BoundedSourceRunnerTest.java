@@ -33,7 +33,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import org.apache.beam.fn.harness.fn.ThrowingConsumer;
-import org.apache.beam.sdk.common.runner.v1.RunnerApi;
+import org.apache.beam.fn.v1.BeamFnApi;
 import org.apache.beam.sdk.io.BoundedSource;
 import org.apache.beam.sdk.io.CountingSource;
 import org.apache.beam.sdk.options.PipelineOptionsFactory;
@@ -58,7 +58,7 @@ public class BoundedSourceRunnerTest {
     BoundedSourceRunner<BoundedSource<Long>, Long> runner =
         new BoundedSourceRunner<>(
         PipelineOptionsFactory.create(),
-        RunnerApi.FunctionSpec.getDefaultInstance(),
+        BeamFnApi.FunctionSpec.getDefaultInstance(),
         outputMap);
 
     runner.runReadLoop(valueInGlobalWindow(CountingSource.upTo(2)));
@@ -81,7 +81,7 @@ public class BoundedSourceRunnerTest {
     BoundedSourceRunner<BoundedSource<Long>, Long> runner =
         new BoundedSourceRunner<>(
         PipelineOptionsFactory.create(),
-        RunnerApi.FunctionSpec.getDefaultInstance(),
+        BeamFnApi.FunctionSpec.getDefaultInstance(),
         outputMap);
 
     runner.runReadLoop(valueInGlobalWindow(CountingSource.upTo(0)));
@@ -101,7 +101,7 @@ public class BoundedSourceRunnerTest {
     BoundedSourceRunner<BoundedSource<Long>, Long> runner =
         new BoundedSourceRunner<>(
         PipelineOptionsFactory.create(),
-            RunnerApi.FunctionSpec.newBuilder().setParameter(
+        BeamFnApi.FunctionSpec.newBuilder().setData(
             Any.pack(BytesValue.newBuilder().setValue(encodedSource).build())).build(),
         outputMap);
 

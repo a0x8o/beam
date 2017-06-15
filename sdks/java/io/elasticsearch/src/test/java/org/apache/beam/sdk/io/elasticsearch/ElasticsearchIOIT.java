@@ -32,7 +32,7 @@ import org.apache.beam.sdk.testing.TestPipeline;
 import org.apache.beam.sdk.transforms.Count;
 import org.apache.beam.sdk.transforms.Create;
 import org.apache.beam.sdk.values.PCollection;
-import org.elasticsearch.client.RestClient;
+import org.elasticsearch.client.transport.TransportClient;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Rule;
@@ -56,13 +56,8 @@ import org.slf4j.LoggerFactory;
  * </pre>
  */
 public class ElasticsearchIOIT {
-<<<<<<< HEAD
   private static final Logger LOGGER = LoggerFactory.getLogger(ElasticsearchIOIT.class);
   private static TransportClient client;
-=======
-  private static final Logger LOG = LoggerFactory.getLogger(ElasticsearchIOIT.class);
-  private static  RestClient restClient;
->>>>>>> 8f5e8defbda6ba65282ea60af67ce4840136dcbf
   private static IOTestPipelineOptions options;
   private static ElasticsearchIO.ConnectionConfiguration readConnectionConfiguration;
   @Rule public TestPipeline pipeline = TestPipeline.create();
@@ -71,16 +66,16 @@ public class ElasticsearchIOIT {
   public static void beforeClass() throws Exception {
     PipelineOptionsFactory.register(IOTestPipelineOptions.class);
     options = TestPipeline.testingPipelineOptions().as(IOTestPipelineOptions.class);
+    client = ElasticsearchTestDataSet.getClient(options);
     readConnectionConfiguration =
         ElasticsearchTestDataSet.getConnectionConfiguration(
             options, ElasticsearchTestDataSet.ReadOrWrite.READ);
-    restClient = readConnectionConfiguration.createClient();
   }
 
   @AfterClass
   public static void afterClass() throws Exception {
-    ElasticsearchTestDataSet.deleteIndex(restClient, ElasticsearchTestDataSet.ReadOrWrite.WRITE);
-    restClient.close();
+    ElasticsearchTestDataSet.deleteIndex(client, ElasticsearchTestDataSet.ReadOrWrite.WRITE);
+    client.close();
   }
 
   @Test
@@ -133,8 +128,8 @@ public class ElasticsearchIOIT {
     pipeline.run();
 
     long currentNumDocs =
-        ElasticSearchIOTestUtils.refreshIndexAndGetCurrentNumDocs(
-            ElasticsearchTestDataSet.ES_INDEX, ElasticsearchTestDataSet.ES_TYPE, restClient);
+        ElasticSearchIOTestUtils.upgradeIndexAndGetCurrentNumDocs(
+            ElasticsearchTestDataSet.ES_INDEX, ElasticsearchTestDataSet.ES_TYPE, client);
     assertEquals(ElasticsearchTestDataSet.NUM_DOCS, currentNumDocs);
   }
 

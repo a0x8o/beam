@@ -145,7 +145,7 @@ class Environment(object):
     # Version information.
     self.proto.version = dataflow.Environment.VersionValue()
     if self.standard_options.streaming:
-      job_type = 'FNAPI_STREAMING'
+      job_type = 'PYTHON_STREAMING'
     else:
       job_type = 'PYTHON_BATCH'
     self.proto.version.additionalProperties.extend([

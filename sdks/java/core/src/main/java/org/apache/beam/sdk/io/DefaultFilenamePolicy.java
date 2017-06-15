@@ -36,7 +36,6 @@ import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
 import org.apache.beam.sdk.transforms.windowing.GlobalWindow;
 import org.apache.beam.sdk.transforms.windowing.IntervalWindow;
 import org.apache.beam.sdk.transforms.windowing.PaneInfo;
-import org.apache.beam.sdk.transforms.windowing.PaneInfo.Timing;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -55,7 +54,7 @@ public final class DefaultFilenamePolicy extends FilenamePolicy {
   private static final Logger LOG = LoggerFactory.getLogger(DefaultFilenamePolicy.class);
 
   /** The default sharding name template used in {@link #constructUsingStandardParameters}. */
-  public static final String DEFAULT_UNWINDOWED_SHARD_TEMPLATE = ShardNameTemplate.INDEX_OF_MAX;
+  public static final String DEFAULT_SHARD_TEMPLATE = ShardNameTemplate.INDEX_OF_MAX;
 
   /** The default windowed sharding name template used when writing windowed files.
    *  This is used as default in cases when user did not specify shard template to
@@ -64,12 +63,27 @@ public final class DefaultFilenamePolicy extends FilenamePolicy {
    *  windowed and non-windowed file names.
    */
   private static final String DEFAULT_WINDOWED_SHARD_TEMPLATE =
-      "W-P" + DEFAULT_UNWINDOWED_SHARD_TEMPLATE;
+      "P-W" + DEFAULT_SHARD_TEMPLATE;
+
+  /*
+   * pattern for only non-windowed file names
+   */
+  private static final String NON_WINDOWED_ONLY_PATTERN = "S+|N+";
+
+  /*
+   * pattern for only windowed file names
+   */
+  private static final String WINDOWED_ONLY_PATTERN = "P|W";
 
   /*
    * pattern for both windowed and non-windowed file names
    */
-  private static final Pattern SHARD_FORMAT_RE = Pattern.compile("(S+|N+|W|P)");
+  private static final String TEMPLATE_PATTERN = "(" + NON_WINDOWED_ONLY_PATTERN + "|"
+   + WINDOWED_ONLY_PATTERN + ")";
+
+  // Pattern that matches shard placeholders within a shard template.
+  private static final Pattern SHARD_FORMAT_RE = Pattern.compile(TEMPLATE_PATTERN);
+  private static final Pattern WINDOWED_FORMAT_RE = Pattern.compile(WINDOWED_ONLY_PATTERN);
 
   /**
    * Constructs a new {@link DefaultFilenamePolicy}.
@@ -90,29 +104,38 @@ public final class DefaultFilenamePolicy extends FilenamePolicy {
    *
    * <p>Any filename component of the provided resource will be used as the filename prefix.
    *
-   * <p>If provided, the shard name template will be used; otherwise
-   * {@link #DEFAULT_UNWINDOWED_SHARD_TEMPLATE} will be used for non-windowed file names and
-   * {@link #DEFAULT_WINDOWED_SHARD_TEMPLATE} will be used for windowed file names.
+   * <p>If provided, the shard name template will be used; otherwise {@link #DEFAULT_SHARD_TEMPLATE}
+   * will be used for non-windowed file names and {@link #DEFAULT_WINDOWED_SHARD_TEMPLATE} will
+   * be used for windowed file names.
    *
    * <p>If provided, the suffix will be used; otherwise the files will have an empty suffix.
    */
   public static DefaultFilenamePolicy constructUsingStandardParameters(
       ValueProvider<ResourceId> outputPrefix,
       @Nullable String shardTemplate,
-      @Nullable String filenameSuffix,
-      boolean windowedWrites) {
-    // Pick the appropriate default policy based on whether windowed writes are being performed.
-    String defaultTemplate =
-        windowedWrites ? DEFAULT_WINDOWED_SHARD_TEMPLATE : DEFAULT_UNWINDOWED_SHARD_TEMPLATE;
+      @Nullable String filenameSuffix) {
     return new DefaultFilenamePolicy(
         NestedValueProvider.of(outputPrefix, new ExtractFilename()),
-        firstNonNull(shardTemplate, defaultTemplate),
+        firstNonNull(shardTemplate, DEFAULT_SHARD_TEMPLATE),
         firstNonNull(filenameSuffix, ""));
   }
 
   private final ValueProvider<String> prefix;
   private final String shardTemplate;
   private final String suffix;
+
+  /*
+   * Checks whether given template contains enough information to form
+   * meaningful windowed file names - ie whether it uses pane and window
+   * info.
+   */
+  static boolean isWindowedTemplate(String template){
+    if (template != null){
+      Matcher m = WINDOWED_FORMAT_RE.matcher(template);
+      return m.find();
+    }
+    return false;
+  }
 
   /**
    * Constructs a fully qualified name from components.
@@ -168,23 +191,51 @@ public final class DefaultFilenamePolicy extends FilenamePolicy {
     return sb.toString();
   }
 
+  static String constructName(String prefix, String shardTemplate, String suffix, int shardNum,
+      int numShards) {
+    return constructName(prefix, shardTemplate, suffix, shardNum, numShards, null, null);
+  }
+
   @Override
   @Nullable
   public ResourceId unwindowedFilename(ResourceId outputDirectory, Context context,
       String extension) {
-    String filename = constructName(prefix.get(), shardTemplate, suffix, context.getShardNumber(),
-        context.getNumShards(), null, null) + extension;
+    String filename =
+        constructName(
+            prefix.get(), shardTemplate, suffix, context.getShardNumber(), context.getNumShards())
+        + extension;
     return outputDirectory.resolve(filename, StandardResolveOptions.RESOLVE_FILE);
   }
 
   @Override
   public ResourceId windowedFilename(ResourceId outputDirectory,
       WindowedContext context, String extension) {
+
+    boolean shardTemplateProvidedByUser = !this.shardTemplate.equals(DEFAULT_SHARD_TEMPLATE);
+
+    if (shardTemplateProvidedByUser){
+      boolean isWindowed = isWindowedTemplate(this.shardTemplate);
+      if (!isWindowed){
+        LOG.info("Template you provided {} does not have enough information to create"
+            + "meaningful windowed file names. Consider using P and W in your template",
+            this.shardTemplate);
+      }
+    }
+
     final PaneInfo paneInfo = context.getPaneInfo();
     String paneStr = paneInfoToString(paneInfo);
     String windowStr = windowToString(context.getWindow());
-    String filename = constructName(prefix.get(), shardTemplate, suffix, context.getShardNumber(),
-        context.getNumShards(), paneStr, windowStr) + extension;
+
+    String templateToUse = shardTemplate;
+    if (!shardTemplateProvidedByUser){
+      LOG.info("User did not provide shard template. For creating windowed file names "
+          + "default template {} will be used", DEFAULT_WINDOWED_SHARD_TEMPLATE);
+      templateToUse = DEFAULT_WINDOWED_SHARD_TEMPLATE;
+    }
+
+    String filename = constructName(prefix.get(), templateToUse, suffix,
+        context.getShardNumber(), context.getNumShards(), paneStr, windowStr)
+        + extension;
     return outputDirectory.resolve(filename, StandardResolveOptions.RESOLVE_FILE);
   }
 
@@ -197,20 +248,18 @@ public final class DefaultFilenamePolicy extends FilenamePolicy {
     }
     if (window instanceof IntervalWindow) {
       IntervalWindow iw = (IntervalWindow) window;
-      return String.format("%s-%s", iw.start().toString(), iw.end().toString());
+      return String.format("IntervalWindow-%s-%s", iw.start().toString(),
+          iw.end().toString());
     }
     return window.toString();
   }
 
-  private String paneInfoToString(PaneInfo paneInfo) {
-    String paneString = String.format("pane-%d", paneInfo.getIndex());
-    if (paneInfo.getTiming() == Timing.LATE) {
-      paneString = String.format("%s-late", paneString);
-    }
-    if (paneInfo.isLast()) {
-      paneString = String.format("%s-last", paneString);
-    }
-    return paneString;
+  private String paneInfoToString(PaneInfo paneInfo){
+    long currentPaneIndex = (paneInfo == null ? -1L
+        : paneInfo.getIndex());
+    boolean firstPane = (paneInfo == null ? false : paneInfo.isFirst());
+    boolean lastPane = (paneInfo == null ? false : paneInfo.isLast());
+    return String.format("pane-%s-%b-%b", currentPaneIndex, firstPane, lastPane);
   }
 
   @Override

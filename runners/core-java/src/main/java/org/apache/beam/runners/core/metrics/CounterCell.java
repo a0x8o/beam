@@ -21,10 +21,8 @@ package org.apache.beam.runners.core.metrics;
 import java.util.concurrent.atomic.AtomicLong;
 import org.apache.beam.sdk.annotations.Experimental;
 import org.apache.beam.sdk.annotations.Experimental.Kind;
-import org.apache.beam.sdk.annotations.Internal;
 import org.apache.beam.sdk.metrics.Counter;
 import org.apache.beam.sdk.metrics.MetricName;
-import org.apache.beam.sdk.metrics.MetricsContainer;
 
 /**
  * Tracks the current value (and delta) for a Counter metric for a specific context and bundle.
@@ -42,12 +40,10 @@ public class CounterCell implements Counter, MetricCell<Long> {
   private final MetricName name;
 
   /**
-   * Generally, runners should construct instances using the methods in
-   * {@link MetricsContainerImpl}, unless they need to define their own version of
-   * {@link MetricsContainer}. These constructors are *only* public so runners can instantiate.
+   * Package-visibility because all {@link CounterCell CounterCells} should be created by
+   * {@link MetricsContainerImpl#getCounter(MetricName)}.
    */
-  @Internal
-  public CounterCell(MetricName name) {
+  CounterCell(MetricName name) {
     this.name = name;
   }
 

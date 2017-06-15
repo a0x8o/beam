@@ -279,8 +279,7 @@ class CloudObjectTranslators {
       @Override
       public CloudObject toCloudObject(ByteArrayCoder target) {
         return addComponents(
-            CloudObject.forClassName(CloudObjectKinds.KIND_BYTES),
-            Collections.<Coder<?>>emptyList());
+            CloudObject.forClass(target.getClass()), Collections.<Coder<?>>emptyList());
       }
 
       @Override
@@ -295,7 +294,7 @@ class CloudObjectTranslators {
 
       @Override
       public String cloudObjectClassName() {
-        return CloudObjectKinds.KIND_BYTES;
+        return CloudObject.forClass(ByteArrayCoder.class).getClassName();
       }
 
     };

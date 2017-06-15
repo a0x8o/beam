@@ -438,17 +438,12 @@ public class DataflowPipelineTranslator {
 
     @Override
     public void visitValue(PValue value, TransformHierarchy.Node producer) {
+      producers.put(value, producer.toAppliedPTransform(getPipeline()));
       LOG.debug("Checking translation of {}", value);
-      // Primitive transforms are the only ones assigned step names.
-      if (producer.getTransform() instanceof CreateDataflowView) {
-        // CreateDataflowView produces a dummy output (as it must be a primitive transform) but
-        // in the Dataflow Job graph produces only the view and not the output PCollection.
-        asOutputReference(
-            ((CreateDataflowView) producer.getTransform()).getView(),
-            producer.toAppliedPTransform(getPipeline()));
-        return;
+      if (!producer.isCompositeNode()) {
+        // Primitive transforms are the only ones assigned step names.
+        asOutputReference(value, producer.toAppliedPTransform(getPipeline()));
       }
-      asOutputReference(value, producer.toAppliedPTransform(getPipeline()));
     }
 
     @Override
@@ -473,8 +468,49 @@ public class DataflowPipelineTranslator {
       StepTranslator stepContext = new StepTranslator(this, step);
       stepContext.addInput(PropertyNames.USER_NAME, getFullName(transform));
       stepContext.addDisplayData(step, stepName, transform);
-      LOG.info("Adding {} as step {}", getCurrentTransform(transform).getFullName(), stepName);
       return stepContext;
+    }
+
+    @Override
+    public Step addStep(PTransform<?, ? extends PValue> transform, Step original) {
+      Step step = original.clone();
+      String stepName = step.getName();
+      if (stepNames.put(getCurrentTransform(transform), stepName) != null) {
+        throw new IllegalArgumentException(transform + " already has a name specified");
+      }
+
+      Map<String, Object> properties = step.getProperties();
+      if (properties != null) {
+        @Nullable List<Map<String, Object>> outputInfoList = null;
+        try {
+          // TODO: This should be done via a Structs accessor.
+          @Nullable List<Map<String, Object>> list =
+              (List<Map<String, Object>>) properties.get(PropertyNames.OUTPUT_INFO);
+          outputInfoList = list;
+        } catch (Exception e) {
+          throw new RuntimeException("Inconsistent dataflow pipeline translation", e);
+        }
+        if (outputInfoList != null && outputInfoList.size() > 0) {
+          Map<String, Object> firstOutputPort = outputInfoList.get(0);
+          @Nullable String name;
+          try {
+            name = getString(firstOutputPort, PropertyNames.OUTPUT_NAME);
+          } catch (Exception e) {
+            name = null;
+          }
+          if (name != null) {
+            registerOutputName(getOutput(transform), name);
+          }
+        }
+      }
+
+      List<Step> steps = job.getSteps();
+      if (steps == null) {
+        steps = new LinkedList<>();
+        job.setSteps(steps);
+      }
+      steps.add(step);
+      return step;
     }
 
     public OutputReference asOutputReference(PValue value, AppliedPTransform<?, ?, ?> producer) {
@@ -571,19 +607,26 @@ public class DataflowPipelineTranslator {
     }
 
     @Override
-    public long addOutput(PCollection<?> value) {
-      translator.producers.put(value, translator.currentTransform);
-      // Wrap the PCollection element Coder inside a WindowedValueCoder.
-      Coder<?> coder =
-          WindowedValue.getFullCoder(
-              value.getCoder(), value.getWindowingStrategy().getWindowFn().windowCoder());
+    public long addOutput(PValue value) {
+      Coder<?> coder;
+      if (value instanceof PCollection) {
+        coder = ((PCollection<?>) value).getCoder();
+        if (value instanceof PCollection) {
+          // Wrap the PCollection element Coder inside a WindowedValueCoder.
+          coder = WindowedValue.getFullCoder(
+              coder,
+              ((PCollection<?>) value).getWindowingStrategy().getWindowFn().windowCoder());
+        }
+      } else {
+        // No output coder to encode.
+        coder = null;
+      }
       return addOutput(value, coder);
     }
 
     @Override
     public long addCollectionToSingletonOutput(
-        PCollection<?> inputValue, PCollectionView<?> outputValue) {
-      translator.producers.put(outputValue, translator.currentTransform);
+        PValue inputValue, PValue outputValue) {
       Coder<?> inputValueCoder =
           checkNotNull(translator.outputCoders.get(inputValue));
       // The inputValueCoder for the input PCollection should be some
@@ -686,7 +729,7 @@ public class DataflowPipelineTranslator {
                 context.addStep(transform, "CollectionToSingleton");
             PCollection<ElemT> input = context.getInput(transform);
             stepContext.addInput(PropertyNames.PARALLEL_INPUT, input);
-            stepContext.addCollectionToSingletonOutput(input, transform.getView());
+            stepContext.addCollectionToSingletonOutput(input, context.getOutput(transform));
           }
         });
 

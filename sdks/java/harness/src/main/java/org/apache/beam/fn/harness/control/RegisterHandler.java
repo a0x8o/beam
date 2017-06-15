@@ -19,14 +19,12 @@
 package org.apache.beam.fn.harness.control;
 
 import com.google.protobuf.Message;
-import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ExecutionException;
 import org.apache.beam.fn.v1.BeamFnApi;
 import org.apache.beam.fn.v1.BeamFnApi.RegisterResponse;
-import org.apache.beam.sdk.common.runner.v1.RunnerApi;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -47,7 +45,6 @@ public class RegisterHandler {
 
   public <T extends Message> T getById(String id) {
     try {
-      LOG.debug("Attempting to find {}", id);
       @SuppressWarnings("unchecked")
       CompletableFuture<T> returnValue = (CompletableFuture<T>) computeIfAbsent(id);
       /*
@@ -78,12 +75,11 @@ public class RegisterHandler {
           processBundleDescriptor.getId(),
           processBundleDescriptor.getClass());
       computeIfAbsent(processBundleDescriptor.getId()).complete(processBundleDescriptor);
-      for (Map.Entry<String, RunnerApi.Coder> entry
-          : processBundleDescriptor.getCodersyyyMap().entrySet()) {
+      for (BeamFnApi.Coder coder : processBundleDescriptor.getCodersList()) {
         LOG.debug("Registering {} with type {}",
-            entry.getKey(),
-            entry.getValue().getClass());
-        computeIfAbsent(entry.getKey()).complete(entry.getValue());
+            coder.getFunctionSpec().getId(),
+            coder.getClass());
+        computeIfAbsent(coder.getFunctionSpec().getId()).complete(coder);
       }
     }
 

@@ -1277,15 +1277,14 @@ public class Combine {
     public PCollectionView<OutputT> expand(PCollection<InputT> input) {
       PCollection<OutputT> combined =
           input.apply(Combine.<InputT, OutputT>globally(fn).withoutDefaults().withFanout(fanout));
-      PCollectionView<OutputT> view =
-          PCollectionViews.singletonView(
-              combined,
-              input.getWindowingStrategy(),
-              insertDefault,
-              insertDefault ? fn.defaultValue() : null,
-              combined.getCoder());
-      combined.apply(CreatePCollectionView.<OutputT, OutputT>of(view));
-      return view;
+      return combined.apply(
+          CreatePCollectionView.<OutputT, OutputT>of(
+              PCollectionViews.singletonView(
+                  combined,
+                  input.getWindowingStrategy(),
+                  insertDefault,
+                  insertDefault ? fn.defaultValue() : null,
+                  combined.getCoder())));
     }
 
     public int getFanout() {
