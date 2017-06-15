@@ -46,10 +46,14 @@ EXCLUDED_GENERATED_FILES=(
 "apache_beam/io/gcp/internal/clients/storage/storage_v1_client.py"
 "apache_beam/io/gcp/internal/clients/storage/storage_v1_messages.py"
 "apache_beam/coders/proto2_coder_test_messages_pb2.py"
+<<<<<<< HEAD
 "apache_beam/runners/api/beam_fn_api_pb2.py"
 "apache_beam/runners/api/beam_fn_api_pb2_grpc.py"
 "apache_beam/runners/api/beam_runner_api_pb2.py"
 "apache_beam/runners/api/beam_runner_api_pb2_grpc.py"
+=======
+apache_beam/portability/runners/api/*pb2*.py
+>>>>>>> 8f5e8defbda6ba65282ea60af67ce4840136dcbf
 )
 
 FILES_TO_IGNORE=""

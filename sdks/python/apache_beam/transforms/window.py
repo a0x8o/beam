@@ -54,7 +54,12 @@ import abc
 from google.protobuf import struct_pb2
 
 from apache_beam.coders import coders
+<<<<<<< HEAD
 from apache_beam.runners.api import beam_runner_api_pb2
+=======
+from apache_beam.portability.runners.api import beam_runner_api_pb2
+from apache_beam.portability.runners.api import standard_window_fns_pb2
+>>>>>>> 8f5e8defbda6ba65282ea60af67ce4840136dcbf
 from apache_beam.transforms import timeutil
 from apache_beam.utils import proto_utils
 from apache_beam.utils import urns

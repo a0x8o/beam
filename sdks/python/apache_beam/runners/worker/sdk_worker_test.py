@@ -29,7 +29,7 @@ from concurrent import futures
 
 from apache_beam.io.concat_source_test import RangeSource
 from apache_beam.io.iobase import SourceBundle
-from apache_beam.runners.api import beam_fn_api_pb2
+from apache_beam.portability.runners.api import beam_fn_api_pb2
 from apache_beam.runners.worker import data_plane
 from apache_beam.runners.worker import sdk_worker
 
