@@ -22,8 +22,6 @@ import unittest
 
 import hamcrest as hc
 
-from apache_beam.io.gcp.pubsub import _decodeUtf8String
-from apache_beam.io.gcp.pubsub import _encodeUtf8String
 from apache_beam.io.gcp.pubsub import _PubSubPayloadSink
 from apache_beam.io.gcp.pubsub import _PubSubPayloadSource
 from apache_beam.io.gcp.pubsub import ReadStringsFromPubSub
@@ -34,9 +32,9 @@ from apache_beam.transforms.display_test import DisplayDataItemMatcher
 
 
 class TestReadStringsFromPubSub(unittest.TestCase):
-  def test_expand(self):
+  def test_expand_with_topic(self):
     p = TestPipeline()
-    pcoll = p | ReadStringsFromPubSub('a_topic', 'a_subscription', 'a_label')
+    pcoll = p | ReadStringsFromPubSub('a_topic', None, 'a_label')
     # Ensure that the output type is str
     self.assertEqual(unicode, pcoll.element_type)
 
@@ -47,8 +45,32 @@ class TestReadStringsFromPubSub(unittest.TestCase):
     # Ensure that the properties passed through correctly
     source = read_pcoll.producer.transform.source
     self.assertEqual('a_topic', source.topic)
+    self.assertEqual('a_label', source.id_label)
+
+  def test_expand_with_subscription(self):
+    p = TestPipeline()
+    pcoll = p | ReadStringsFromPubSub(None, 'a_subscription', 'a_label')
+    # Ensure that the output type is str
+    self.assertEqual(unicode, pcoll.element_type)
+
+    # Ensure that the type on the intermediate read output PCollection is bytes
+    read_pcoll = pcoll.producer.inputs[0]
+    self.assertEqual(bytes, read_pcoll.element_type)
+
+    # Ensure that the properties passed through correctly
+    source = read_pcoll.producer.transform.source
     self.assertEqual('a_subscription', source.subscription)
     self.assertEqual('a_label', source.id_label)
+
+  def test_expand_with_both_topic_and_subscription(self):
+    with self.assertRaisesRegexp(
+        ValueError, "Only one of topic or subscription should be provided."):
+      ReadStringsFromPubSub('a_topic', 'a_subscription', 'a_label')
+
+  def test_expand_with_no_topic_or_subscription(self):
+    with self.assertRaisesRegexp(
+        ValueError, "Either a topic or subscription must be provided."):
+      ReadStringsFromPubSub(None, None, 'a_label')
 
 
 class TestWriteStringsToPubSub(unittest.TestCase):
@@ -94,14 +116,6 @@ class TestPubSubSink(unittest.TestCase):
         DisplayDataItemMatcher('topic', 'a_topic')]
 
     hc.assert_that(dd.items, hc.contains_inanyorder(*expected_items))
-
-
-class TestEncodeDecodeUtf8String(unittest.TestCase):
-  def test_encode(self):
-    self.assertEqual(b'test_data', _encodeUtf8String('test_data'))
-
-  def test_decode(self):
-    self.assertEqual('test_data', _decodeUtf8String(b'test_data'))
 
 
 if __name__ == '__main__':

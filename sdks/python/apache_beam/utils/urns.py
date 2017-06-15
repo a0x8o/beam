@@ -26,11 +26,11 @@ from apache_beam.internal import pickler
 from apache_beam.utils import proto_utils
 
 
-PICKLED_WINDOW_FN = "beam:window_fn:pickled_python:v0.1"
-GLOBAL_WINDOWS_FN = "beam:window_fn:global_windows:v0.1"
-FIXED_WINDOWS_FN = "beam:window_fn:fixed_windows:v0.1"
-SLIDING_WINDOWS_FN = "beam:window_fn:sliding_windows:v0.1"
-SESSION_WINDOWS_FN = "beam:window_fn:session_windows:v0.1"
+PICKLED_WINDOW_FN = "beam:windowfn:pickled_python:v0.1"
+GLOBAL_WINDOWS_FN = "beam:windowfn:global_windows:v0.1"
+FIXED_WINDOWS_FN = "beam:windowfn:fixed_windows:v0.1"
+SLIDING_WINDOWS_FN = "beam:windowfn:sliding_windows:v0.1"
+SESSION_WINDOWS_FN = "beam:windowfn:session_windows:v0.1"
 
 PICKLED_CODER = "beam:coder:pickled_python:v0.1"
 
@@ -102,7 +102,7 @@ class RunnerApiFn(object):
 
     Prefer overriding self.to_runner_api_parameter.
     """
-    from apache_beam.runners.api import beam_runner_api_pb2
+    from apache_beam.portability.api import beam_runner_api_pb2
     urn, typed_param = self.to_runner_api_parameter(context)
     return beam_runner_api_pb2.SdkFunctionSpec(
         spec=beam_runner_api_pb2.FunctionSpec(
