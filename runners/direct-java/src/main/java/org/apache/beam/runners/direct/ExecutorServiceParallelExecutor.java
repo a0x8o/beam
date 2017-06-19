@@ -355,17 +355,18 @@ final class ExecutorServiceParallelExecutor implements PipelineExecutor {
       for (CommittedBundle<?> outputBundle : committedResult.getOutputs()) {
         allUpdates.offer(
             ExecutorUpdate.fromBundle(
-                outputBundle, graph.getPrimitiveConsumers(outputBundle.getPCollection())));
+                outputBundle, graph.getPerElementConsumers(outputBundle.getPCollection())));
       }
-      CommittedBundle<?> unprocessedInputs = committedResult.getUnprocessedInputs();
-      if (unprocessedInputs != null && !Iterables.isEmpty(unprocessedInputs.getElements())) {
+      Optional<? extends CommittedBundle<?>> unprocessedInputs =
+          committedResult.getUnprocessedInputs();
+      if (unprocessedInputs.isPresent()) {
         if (inputBundle.getPCollection() == null) {
           // TODO: Split this logic out of an if statement
-          pendingRootBundles.get(result.getTransform()).offer(unprocessedInputs);
+          pendingRootBundles.get(result.getTransform()).offer(unprocessedInputs.get());
         } else {
           allUpdates.offer(
               ExecutorUpdate.fromBundle(
-                  unprocessedInputs,
+                  unprocessedInputs.get(),
                   Collections.<AppliedPTransform<?, ?, ?>>singleton(
                       committedResult.getTransform())));
         }
