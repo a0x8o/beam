@@ -465,7 +465,14 @@ class WorkerOptions(PipelineOptions):
     parser.add_argument(
         '--use_public_ips',
         default=None,
-        help='Whether to assign public IP addresses to the worker machines.')
+        action='store_true',
+        help='Whether to assign public IP addresses to the worker VMs.')
+    parser.add_argument(
+        '--no_use_public_ips',
+        dest='use_public_ips',
+        default=None,
+        action='store_false',
+        help='Whether to assign only private IP addresses to the worker VMs.')
 
   def validate(self, validator):
     errors = []
@@ -598,6 +605,11 @@ class TestOptions(PipelineOptions):
         help=('Verify state/output of e2e test pipeline. This is pickled '
               'version of the matcher which should extends '
               'hamcrest.core.base_matcher.BaseMatcher.'))
+    parser.add_argument(
+        '--dry_run',
+        default=False,
+        help=('Used in unit testing runners without submitting the '
+              'actual job.'))
 
   def validate(self, validator):
     errors = []
