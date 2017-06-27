@@ -129,6 +129,7 @@ class Operation(object):
         self.operation_name + '-finish')
     # TODO(ccy): the '-abort' state can be added when the abort is supported in
     # Operations.
+    self.scoped_metrics_container = None
 
   def start(self):
     """Start operation."""
@@ -281,7 +282,7 @@ class DoOperation(Operation):
 
       # Backwards compatibility for pre BEAM-733 SDKs.
       if isinstance(view_options, tuple):
-        if view_class == pvalue.SingletonPCollectionView:
+        if view_class == pvalue.AsSingleton:
           has_default, default = view_options
           view_options = {'default': default} if has_default else {}
         else:

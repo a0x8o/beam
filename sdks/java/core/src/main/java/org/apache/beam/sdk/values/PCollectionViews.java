@@ -170,6 +170,15 @@ public class PCollectionViews {
     }
 
     /**
+     * Returns if a default value was specified.
+     */
+    @Deprecated
+    @Internal
+    public boolean hasDefault() {
+      return hasDefault;
+    }
+
+    /**
      * Returns the default value that was specified.
      *
      * <p>For internal use only.
@@ -272,6 +281,16 @@ public class PCollectionViews {
               return input.getValue();
             }
           }));
+    }
+
+    @Override
+    public boolean equals(Object other) {
+      return other instanceof ListViewFn;
+    }
+
+    @Override
+    public int hashCode() {
+      return ListViewFn.class.hashCode();
     }
   }
 
@@ -490,6 +509,11 @@ public class PCollectionViews {
     @Override
     public String toString() {
       return MoreObjects.toStringHelper(this).add("tag", tag).toString();
+    }
+
+    @Override
+    public Map<TupleTag<?>, PValue> expand() {
+      return Collections.<TupleTag<?>, PValue>singletonMap(tag, pCollection);
     }
   }
 }

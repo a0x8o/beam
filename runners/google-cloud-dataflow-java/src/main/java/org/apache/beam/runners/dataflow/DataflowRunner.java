@@ -49,6 +49,7 @@ import java.net.URLClassLoader;
 import java.nio.channels.Channels;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
@@ -57,6 +58,7 @@ import java.util.Random;
 import java.util.Set;
 import java.util.SortedSet;
 import java.util.TreeSet;
+import org.apache.beam.runners.core.construction.CoderTranslation;
 import org.apache.beam.runners.core.construction.DeduplicatedFlattenFactory;
 import org.apache.beam.runners.core.construction.EmptyFlattenAsCreateFactory;
 import org.apache.beam.runners.core.construction.PTransformMatchers;
@@ -65,11 +67,12 @@ import org.apache.beam.runners.core.construction.ReplacementOutputs;
 import org.apache.beam.runners.core.construction.SingleInputOutputOverrideFactory;
 import org.apache.beam.runners.core.construction.UnboundedReadFromBoundedSource;
 import org.apache.beam.runners.core.construction.UnconsumedReads;
-import org.apache.beam.runners.dataflow.BatchViewOverrides.BatchCombineGloballyAsSingletonViewFactory;
+import org.apache.beam.runners.core.construction.WriteFilesTranslation;
 import org.apache.beam.runners.dataflow.DataflowPipelineTranslator.JobSpecification;
 import org.apache.beam.runners.dataflow.StreamingViewOverrides.StreamingCreatePCollectionViewFactory;
 import org.apache.beam.runners.dataflow.options.DataflowPipelineDebugOptions;
 import org.apache.beam.runners.dataflow.options.DataflowPipelineOptions;
+import org.apache.beam.runners.dataflow.options.DataflowPipelineWorkerPoolOptions;
 import org.apache.beam.runners.dataflow.util.DataflowTemplateJob;
 import org.apache.beam.runners.dataflow.util.DataflowTransport;
 import org.apache.beam.runners.dataflow.util.MonitoringUtil;
@@ -79,15 +82,18 @@ import org.apache.beam.sdk.Pipeline.PipelineVisitor;
 import org.apache.beam.sdk.PipelineResult.State;
 import org.apache.beam.sdk.PipelineRunner;
 import org.apache.beam.sdk.annotations.Experimental;
+import org.apache.beam.sdk.coders.ByteArrayCoder;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.coders.Coder.NonDeterministicException;
 import org.apache.beam.sdk.coders.KvCoder;
 import org.apache.beam.sdk.coders.VoidCoder;
+import org.apache.beam.sdk.common.runner.v1.RunnerApi;
 import org.apache.beam.sdk.extensions.gcp.storage.PathValidator;
 import org.apache.beam.sdk.io.BoundedSource;
 import org.apache.beam.sdk.io.FileSystems;
 import org.apache.beam.sdk.io.Read;
 import org.apache.beam.sdk.io.UnboundedSource;
+import org.apache.beam.sdk.io.WriteFiles;
 import org.apache.beam.sdk.io.fs.ResourceId;
 import org.apache.beam.sdk.io.gcp.pubsub.PubsubMessage;
 import org.apache.beam.sdk.io.gcp.pubsub.PubsubMessageWithAttributesCoder;
@@ -101,8 +107,11 @@ import org.apache.beam.sdk.runners.PTransformOverride;
 import org.apache.beam.sdk.runners.PTransformOverrideFactory;
 import org.apache.beam.sdk.runners.TransformHierarchy;
 import org.apache.beam.sdk.runners.TransformHierarchy.Node;
+import org.apache.beam.sdk.state.MapState;
+import org.apache.beam.sdk.state.SetState;
 import org.apache.beam.sdk.transforms.Combine;
 import org.apache.beam.sdk.transforms.Combine.GroupedValues;
+import org.apache.beam.sdk.transforms.Create;
 import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.PTransform;
 import org.apache.beam.sdk.transforms.ParDo;
@@ -112,7 +121,10 @@ import org.apache.beam.sdk.transforms.SimpleFunction;
 import org.apache.beam.sdk.transforms.View;
 import org.apache.beam.sdk.transforms.WithKeys;
 import org.apache.beam.sdk.transforms.display.DisplayData;
+import org.apache.beam.sdk.transforms.reflect.DoFnSignature;
+import org.apache.beam.sdk.transforms.reflect.DoFnSignatures;
 import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
+import org.apache.beam.sdk.util.CoderUtils;
 import org.apache.beam.sdk.util.InstanceBuilder;
 import org.apache.beam.sdk.util.MimeTypes;
 import org.apache.beam.sdk.util.NameUtils;
@@ -123,10 +135,12 @@ import org.apache.beam.sdk.values.PBegin;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.PCollection.IsBounded;
 import org.apache.beam.sdk.values.PCollectionView;
+import org.apache.beam.sdk.values.PCollectionViews;
 import org.apache.beam.sdk.values.PDone;
 import org.apache.beam.sdk.values.PInput;
 import org.apache.beam.sdk.values.PValue;
 import org.apache.beam.sdk.values.TupleTag;
+import org.apache.beam.sdk.values.TypeDescriptor;
 import org.apache.beam.sdk.values.ValueWithRecordId;
 import org.apache.beam.sdk.values.WindowingStrategy;
 import org.joda.time.DateTimeUtils;
@@ -312,7 +326,31 @@ public class DataflowRunner extends PipelineRunner<DataflowPipelineJob> {
                 PTransformMatchers.classEqualTo(PubsubUnboundedSink.class),
                 new StreamingPubsubIOWriteOverrideFactory(this)));
       }
+      if (hasExperiment(options, "beam_fn_api")) {
+        overridesBuilder.add(
+            PTransformOverride.of(
+                PTransformMatchers.classEqualTo(Create.Values.class),
+                new StreamingFnApiCreateOverrideFactory()));
+      }
       overridesBuilder
+          // Support Splittable DoFn for now only in streaming mode.
+          // The order of the following overrides is important because they are applied in order.
+
+          // By default Dataflow runner replaces single-output ParDo with a ParDoSingle override.
+          // However, we want a different expansion for single-output splittable ParDo.
+          .add(
+              PTransformOverride.of(
+                  PTransformMatchers.splittableParDoSingle(),
+                  new ReflectiveOneToOneOverrideFactory(
+                      SplittableParDoOverrides.ParDoSingleViaMulti.class, this)))
+          .add(
+              PTransformOverride.of(
+                  PTransformMatchers.splittableParDoMulti(),
+                  new SplittableParDoOverrides.SplittableParDoOverrideFactory()))
+          .add(
+              PTransformOverride.of(
+                  PTransformMatchers.writeWithRunnerDeterminedSharding(),
+                  new StreamingShardedWriteFactory(options)))
           .add(
               // Streaming Bounded Read is implemented in terms of Streaming Unbounded Read, and
               // must precede it
@@ -338,34 +376,29 @@ public class DataflowRunner extends PipelineRunner<DataflowPipelineJob> {
               PTransformOverride.of(
                   PTransformMatchers.stateOrTimerParDoSingle(),
                   BatchStatefulParDoOverrides.singleOutputOverrideFactory()))
-
           .add(
               PTransformOverride.of(
-                  PTransformMatchers.classEqualTo(Combine.GloballyAsSingletonView.class),
-                  new BatchCombineGloballyAsSingletonViewFactory(this)))
-          .add(
-              PTransformOverride.of(
-                  PTransformMatchers.classEqualTo(View.AsMap.class),
+                  PTransformMatchers.createViewWithViewFn(PCollectionViews.MapViewFn.class),
                   new ReflectiveOneToOneOverrideFactory(
                       BatchViewOverrides.BatchViewAsMap.class, this)))
           .add(
               PTransformOverride.of(
-                  PTransformMatchers.classEqualTo(View.AsMultimap.class),
+                  PTransformMatchers.createViewWithViewFn(PCollectionViews.MultimapViewFn.class),
                   new ReflectiveOneToOneOverrideFactory(
                       BatchViewOverrides.BatchViewAsMultimap.class, this)))
           .add(
               PTransformOverride.of(
-                  PTransformMatchers.classEqualTo(View.AsSingleton.class),
+                  PTransformMatchers.createViewWithViewFn(PCollectionViews.SingletonViewFn.class),
                   new ReflectiveOneToOneOverrideFactory(
                       BatchViewOverrides.BatchViewAsSingleton.class, this)))
           .add(
               PTransformOverride.of(
-                  PTransformMatchers.classEqualTo(View.AsList.class),
+                  PTransformMatchers.createViewWithViewFn(PCollectionViews.ListViewFn.class),
                   new ReflectiveOneToOneOverrideFactory(
                       BatchViewOverrides.BatchViewAsList.class, this)))
           .add(
               PTransformOverride.of(
-                  PTransformMatchers.classEqualTo(View.AsIterable.class),
+                  PTransformMatchers.createViewWithViewFn(PCollectionViews.IterableViewFn.class),
                   new ReflectiveOneToOneOverrideFactory(
                       BatchViewOverrides.BatchViewAsIterable.class, this)));
     }
@@ -809,11 +842,9 @@ public class DataflowRunner extends PipelineRunner<DataflowPipelineJob> {
       extends PTransform<PBegin, PCollection<PubsubMessage>> {
     private final PubsubUnboundedSource transform;
 
-    /**
-     * Builds an instance of this class from the overridden transform.
-     */
-    public StreamingPubsubIORead(
-        DataflowRunner runner, PubsubUnboundedSource transform) {
+    /** Builds an instance of this class from the overridden transform. */
+    @SuppressWarnings("unused") // used via reflection in DataflowRunner#apply()
+    public StreamingPubsubIORead(DataflowRunner runner, PubsubUnboundedSource transform) {
       this.transform = transform;
     }
 
@@ -982,6 +1013,136 @@ public class DataflowRunner extends PipelineRunner<DataflowPipelineJob> {
   // ================================================================================
 
   /**
+   * A PTranform override factory which maps Create.Values PTransforms for streaming pipelines
+   * into a Dataflow specific variant.
+   */
+  private static class StreamingFnApiCreateOverrideFactory<T>
+      implements PTransformOverrideFactory<PBegin, PCollection<T>, Create.Values<T>> {
+
+    @Override
+    public PTransformReplacement<PBegin, PCollection<T>> getReplacementTransform(
+        AppliedPTransform<PBegin, PCollection<T>, Create.Values<T>> transform) {
+      Create.Values<T> original = transform.getTransform();
+      PCollection<T> output =
+          (PCollection) Iterables.getOnlyElement(transform.getOutputs().values());
+      return PTransformReplacement.of(
+          transform.getPipeline().begin(),
+          new StreamingFnApiCreate<>(original, output));
+    }
+
+    @Override
+    public Map<PValue, ReplacementOutput> mapOutputs(
+        Map<TupleTag<?>, PValue> outputs, PCollection<T> newOutput) {
+      return ReplacementOutputs.singleton(outputs, newOutput);
+    }
+  }
+
+  /**
+   * Specialized implementation for
+   * {@link org.apache.beam.sdk.transforms.Create.Values Create.Values} for the Dataflow runner in
+   * streaming mode over the Fn API.
+   */
+  private static class StreamingFnApiCreate<T> extends PTransform<PBegin, PCollection<T>> {
+    private final Create.Values<T> transform;
+    private final PCollection<T> originalOutput;
+
+    private StreamingFnApiCreate(
+        Create.Values<T> transform,
+        PCollection<T> originalOutput) {
+      this.transform = transform;
+      this.originalOutput = originalOutput;
+    }
+
+    @Override
+    public final PCollection<T> expand(PBegin input) {
+      try {
+        PCollection<T> pc = Pipeline
+            .applyTransform(input, new Impulse(IsBounded.BOUNDED))
+            .apply(ParDo.of(DecodeAndEmitDoFn
+                .fromIterable(transform.getElements(), originalOutput.getCoder())));
+        pc.setCoder(originalOutput.getCoder());
+        return pc;
+      } catch (IOException e) {
+        throw new IllegalStateException("Unable to encode elements.", e);
+      }
+    }
+
+    /**
+     * A DoFn which stores encoded versions of elements and a representation of a Coder
+     * capable of decoding those elements.
+     *
+     * <p>TODO: BEAM-2422 - Make this a SplittableDoFn.
+     */
+    private static class DecodeAndEmitDoFn<T> extends DoFn<byte[], T> {
+      public static <T> DecodeAndEmitDoFn<T> fromIterable(Iterable<T> elements, Coder<T> elemCoder)
+          throws IOException {
+        ImmutableList.Builder<byte[]> allElementsBytes = ImmutableList.builder();
+        for (T element : elements) {
+          byte[] bytes = CoderUtils.encodeToByteArray(elemCoder, element);
+          allElementsBytes.add(bytes);
+        }
+        return new DecodeAndEmitDoFn<>(allElementsBytes.build(), elemCoder);
+      }
+
+      private final Collection<byte[]> elements;
+      private final RunnerApi.MessageWithComponents coderSpec;
+
+      private DecodeAndEmitDoFn(Collection<byte[]> elements, Coder<T> coder) throws IOException {
+        this.elements = elements;
+        this.coderSpec = CoderTranslation.toProto(coder);
+      }
+
+      @ProcessElement
+      public void processElement(ProcessContext context) throws IOException {
+        Coder<T> coder =
+            (Coder) CoderTranslation.fromProto(coderSpec.getCoder(), coderSpec.getComponents());
+        for (byte[] element : elements) {
+          context.output(CoderUtils.decodeFromByteArray(coder, element));
+        }
+      }
+    }
+  }
+
+  /** The Dataflow specific override for the impulse primitive. */
+  private static class Impulse extends PTransform<PBegin, PCollection<byte[]>> {
+    private final IsBounded isBounded;
+
+    private Impulse(IsBounded isBounded) {
+      this.isBounded = isBounded;
+    }
+
+    @Override
+    public PCollection<byte[]> expand(PBegin input) {
+      return PCollection.createPrimitiveOutputInternal(
+          input.getPipeline(), WindowingStrategy.globalDefault(), isBounded);
+    }
+
+    @Override
+    protected Coder<?> getDefaultOutputCoder() {
+      return ByteArrayCoder.of();
+    }
+
+    private static class Translator implements TransformTranslator<Impulse> {
+      @Override
+      public void translate(Impulse transform, TranslationContext context) {
+        if (context.getPipelineOptions().isStreaming()) {
+          StepTranslationContext stepContext = context.addStep(transform, "ParallelRead");
+          stepContext.addInput(PropertyNames.FORMAT, "pubsub");
+          stepContext.addInput(PropertyNames.PUBSUB_SUBSCRIPTION, "_starting_signal/");
+          stepContext.addOutput(context.getOutput(transform));
+        } else {
+          throw new UnsupportedOperationException(
+              "Impulse source for batch pipelines has not been defined.");
+        }
+      }
+    }
+
+    static {
+      DataflowPipelineTranslator.registerTransformTranslator(Impulse.class, new Translator());
+    }
+  }
+
+  /**
    * Specialized implementation for
    * {@link org.apache.beam.sdk.io.Read.Unbounded Read.Unbounded} for the
    * Dataflow runner in streaming mode.
@@ -992,9 +1153,7 @@ public class DataflowRunner extends PipelineRunner<DataflowPipelineJob> {
   private static class StreamingUnboundedRead<T> extends PTransform<PBegin, PCollection<T>> {
     private final UnboundedSource<T, ?> source;
 
-    /**
-     * Builds an instance of this class from the overridden transform.
-     */
+    /** Builds an instance of this class from the overridden transform. */
     @SuppressWarnings("unused") // used via reflection in DataflowRunner#apply()
     public StreamingUnboundedRead(DataflowRunner runner, Read.Unbounded<T> transform) {
       this.source = transform.getSource();
@@ -1296,6 +1455,56 @@ public class DataflowRunner extends PipelineRunner<DataflowPipelineJob> {
   }
 
   @VisibleForTesting
+  static class StreamingShardedWriteFactory<T>
+      implements PTransformOverrideFactory<PCollection<T>, PDone, WriteFiles<T>> {
+    // We pick 10 as a a default, as it works well with the default number of workers started
+    // by Dataflow.
+    static final int DEFAULT_NUM_SHARDS = 10;
+    DataflowPipelineWorkerPoolOptions options;
+
+    StreamingShardedWriteFactory(PipelineOptions options) {
+      this.options = options.as(DataflowPipelineWorkerPoolOptions.class);
+    }
+
+    @Override
+    public PTransformReplacement<PCollection<T>, PDone> getReplacementTransform(
+        AppliedPTransform<PCollection<T>, PDone, WriteFiles<T>> transform) {
+      // By default, if numShards is not set WriteFiles will produce one file per bundle. In
+      // streaming, there are large numbers of small bundles, resulting in many tiny files.
+      // Instead we pick max workers * 2 to ensure full parallelism, but prevent too-many files.
+      // (current_num_workers * 2 might be a better choice, but that value is not easily available
+      // today).
+      // If the user does not set either numWorkers or maxNumWorkers, default to 10 shards.
+      int numShards;
+      if (options.getMaxNumWorkers() > 0) {
+        numShards = options.getMaxNumWorkers() * 2;
+      } else if (options.getNumWorkers() > 0) {
+        numShards = options.getNumWorkers() * 2;
+      } else {
+        numShards = DEFAULT_NUM_SHARDS;
+      }
+
+      try {
+        WriteFiles<T> replacement = WriteFiles.to(WriteFilesTranslation.getSink(transform));
+        if (WriteFilesTranslation.isWindowedWrites(transform)) {
+          replacement = replacement.withWindowedWrites();
+        }
+        return PTransformReplacement.of(
+            PTransformReplacements.getSingletonMainInput(transform),
+            replacement.withNumShards(numShards));
+      } catch (Exception e) {
+        throw new RuntimeException(e);
+      }
+    }
+
+    @Override
+    public Map<PValue, ReplacementOutput> mapOutputs(Map<TupleTag<?>, PValue> outputs,
+                                                     PDone newOutput) {
+      return Collections.emptyMap();
+    }
+  }
+
+  @VisibleForTesting
   static String getContainerImageForJob(DataflowPipelineOptions options) {
     String workerHarnessContainerImage = options.getWorkerHarnessContainerImage();
     if (!workerHarnessContainerImage.contains("IMAGE")) {
@@ -1306,6 +1515,41 @@ public class DataflowRunner extends PipelineRunner<DataflowPipelineJob> {
       return workerHarnessContainerImage.replace("IMAGE", "beam-java-streaming");
     } else {
       return workerHarnessContainerImage.replace("IMAGE", "beam-java-batch");
+    }
+  }
+
+  static void verifyStateSupported(DoFn<?, ?> fn) {
+    DoFnSignature signature = DoFnSignatures.getSignature(fn.getClass());
+
+    for (DoFnSignature.StateDeclaration stateDecl : signature.stateDeclarations().values()) {
+
+      // https://issues.apache.org/jira/browse/BEAM-1474
+      if (stateDecl.stateType().isSubtypeOf(TypeDescriptor.of(MapState.class))) {
+        throw new UnsupportedOperationException(String.format(
+            "%s does not currently support %s",
+            DataflowRunner.class.getSimpleName(),
+            MapState.class.getSimpleName()
+        ));
+      }
+
+      // https://issues.apache.org/jira/browse/BEAM-1479
+      if (stateDecl.stateType().isSubtypeOf(TypeDescriptor.of(SetState.class))) {
+        throw new UnsupportedOperationException(String.format(
+            "%s does not currently support %s",
+            DataflowRunner.class.getSimpleName(),
+            SetState.class.getSimpleName()
+        ));
+      }
+    }
+  }
+
+  static void verifyStateSupportForWindowingStrategy(WindowingStrategy strategy) {
+    // https://issues.apache.org/jira/browse/BEAM-2507
+    if (!strategy.getWindowFn().isNonMerging()) {
+      throw new UnsupportedOperationException(
+          String.format(
+              "%s does not currently support state or timers with merging windows",
+              DataflowRunner.class.getSimpleName()));
     }
   }
 }

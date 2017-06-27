@@ -23,6 +23,7 @@ import static com.google.common.base.Preconditions.checkArgument;
 import org.apache.beam.runners.core.KeyedWorkItem;
 import org.apache.beam.runners.core.KeyedWorkItemCoder;
 import org.apache.beam.runners.core.construction.ForwardingPTransform;
+import org.apache.beam.runners.core.construction.PTransformTranslation;
 import org.apache.beam.sdk.coders.CannotProvideCoderException;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.coders.IterableCoder;
@@ -35,10 +36,17 @@ import org.apache.beam.sdk.values.WindowingStrategy;
 
 class DirectGroupByKey<K, V>
     extends ForwardingPTransform<PCollection<KV<K, V>>, PCollection<KV<K, Iterable<V>>>> {
-  private final GroupByKey<K, V> original;
+  private final PTransform<PCollection<KV<K, V>>, PCollection<KV<K, Iterable<V>>>> original;
 
-  DirectGroupByKey(GroupByKey<K, V> from) {
-    this.original = from;
+  static final String DIRECT_GBKO_URN = "urn:beam:directrunner:transforms:gbko:v1";
+  static final String DIRECT_GABW_URN = "urn:beam:directrunner:transforms:gabw:v1";
+  private final WindowingStrategy<?, ?> outputWindowingStrategy;
+
+  DirectGroupByKey(
+      PTransform<PCollection<KV<K, V>>, PCollection<KV<K, Iterable<V>>>> original,
+      WindowingStrategy<?, ?> outputWindowingStrategy) {
+    this.original = original;
+    this.outputWindowingStrategy = outputWindowingStrategy;
   }
 
   @Override
@@ -53,9 +61,6 @@ class DirectGroupByKey<K, V>
     // key/value input elements and the window merge operation of the
     // window function associated with the input PCollection.
     WindowingStrategy<?, ?> inputWindowingStrategy = input.getWindowingStrategy();
-    // Update the windowing strategy as appropriate.
-    WindowingStrategy<?, ?> outputWindowingStrategy =
-        original.updateWindowingStrategy(inputWindowingStrategy);
 
     // By default, implement GroupByKey via a series of lower-level operations.
     return input
@@ -68,7 +73,8 @@ class DirectGroupByKey<K, V>
   }
 
   static final class DirectGroupByKeyOnly<K, V>
-      extends PTransform<PCollection<KV<K, V>>, PCollection<KeyedWorkItem<K, V>>> {
+      extends PTransformTranslation.RawPTransform<
+          PCollection<KV<K, V>>, PCollection<KeyedWorkItem<K, V>>> {
     @Override
     public PCollection<KeyedWorkItem<K, V>> expand(PCollection<KV<K, V>> input) {
       return PCollection.createPrimitiveOutputInternal(
@@ -86,10 +92,16 @@ class DirectGroupByKey<K, V>
           GroupByKey.getInputValueCoder(input.getCoder()),
           input.getWindowingStrategy().getWindowFn().windowCoder());
     }
+
+    @Override
+    public String getUrn() {
+      return DIRECT_GBKO_URN;
+    }
   }
 
   static final class DirectGroupAlsoByWindow<K, V>
-      extends PTransform<PCollection<KeyedWorkItem<K, V>>, PCollection<KV<K, Iterable<V>>>> {
+      extends PTransformTranslation.RawPTransform<
+          PCollection<KeyedWorkItem<K, V>>, PCollection<KV<K, Iterable<V>>>> {
 
     private final WindowingStrategy<?, ?> inputWindowingStrategy;
     private final WindowingStrategy<?, ?> outputWindowingStrategy;
@@ -134,6 +146,11 @@ class DirectGroupByKey<K, V>
     public PCollection<KV<K, Iterable<V>>> expand(PCollection<KeyedWorkItem<K, V>> input) {
       return PCollection.createPrimitiveOutputInternal(
           input.getPipeline(), outputWindowingStrategy, input.isBounded());
+    }
+
+    @Override
+    public String getUrn() {
+      return DIRECT_GABW_URN;
     }
   }
 }

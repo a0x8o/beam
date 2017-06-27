@@ -38,7 +38,7 @@ import java.util.Map;
 import java.util.Set;
 import javax.annotation.Nullable;
 import org.apache.beam.runners.core.TimerInternals.TimerData;
-import org.apache.beam.runners.core.construction.Triggers;
+import org.apache.beam.runners.core.construction.TriggerTranslation;
 import org.apache.beam.runners.core.triggers.ExecutableTriggerStateMachine;
 import org.apache.beam.runners.core.triggers.TriggerStateMachine;
 import org.apache.beam.runners.core.triggers.TriggerStateMachineRunner;
@@ -116,7 +116,7 @@ public class ReduceFnTester<InputT, OutputT, W extends BoundedWindow> {
     return new ReduceFnTester<Integer, Iterable<Integer>, W>(
         windowingStrategy,
         TriggerStateMachines.stateMachineForTrigger(
-            Triggers.toProto(windowingStrategy.getTrigger())),
+            TriggerTranslation.toProto(windowingStrategy.getTrigger())),
         SystemReduceFn.<String, Integer, W>buffering(VarIntCoder.of()),
         IterableCoder.of(VarIntCoder.of()),
         PipelineOptionsFactory.create(),
@@ -179,7 +179,8 @@ public class ReduceFnTester<InputT, OutputT, W extends BoundedWindow> {
 
     return combining(
         strategy,
-        TriggerStateMachines.stateMachineForTrigger(Triggers.toProto(strategy.getTrigger())),
+        TriggerStateMachines.stateMachineForTrigger(
+            TriggerTranslation.toProto(strategy.getTrigger())),
         combineFn,
         outputCoder);
   }
@@ -227,7 +228,8 @@ public class ReduceFnTester<InputT, OutputT, W extends BoundedWindow> {
 
     return combining(
         strategy,
-        TriggerStateMachines.stateMachineForTrigger(Triggers.toProto(strategy.getTrigger())),
+        TriggerStateMachines.stateMachineForTrigger(
+            TriggerTranslation.toProto(strategy.getTrigger())),
         combineFn,
         outputCoder,
         options,
@@ -313,6 +315,19 @@ public class ReduceFnTester<InputT, OutputT, W extends BoundedWindow> {
     assertHasOnlyGlobalAndAllowedTags(
         ImmutableSet.copyOf(expectedWindows),
         ImmutableSet.<StateTag<?>>of(TriggerStateMachineRunner.FINISHED_BITS_TAG));
+  }
+
+  @SafeVarargs
+  public final void assertHasOnlyGlobalAndStateFor(W... expectedWindows) {
+    assertHasOnlyGlobalAndAllowedTags(
+        ImmutableSet.copyOf(expectedWindows),
+        ImmutableSet.<StateTag<?>>of(
+            ((SystemReduceFn<?, ?, ?, ?, ?>) reduceFn).getBufferTag(),
+            TriggerStateMachineRunner.FINISHED_BITS_TAG,
+            PaneInfoTracker.PANE_INFO_TAG,
+            WatermarkHold.watermarkHoldTagForTimestampCombiner(
+                objectStrategy.getTimestampCombiner()),
+            WatermarkHold.EXTRA_HOLD_TAG));
   }
 
   @SafeVarargs
@@ -418,6 +433,10 @@ public class ReduceFnTester<InputT, OutputT, W extends BoundedWindow> {
     return result;
   }
 
+  public void advanceInputWatermarkNoTimers(Instant newInputWatermark) throws Exception {
+    timerInternals.advanceInputWatermark(newInputWatermark);
+  }
+
   /**
    * Advance the input watermark to the specified time, firing any timers that should
    * fire. Then advance the output watermark as far as possible.
@@ -447,6 +466,10 @@ public class ReduceFnTester<InputT, OutputT, W extends BoundedWindow> {
       advanceOutputWatermark(hold);
     }
     runner.persist();
+  }
+
+  public void advanceProcessingTimeNoTimers(Instant newProcessingTime) throws Exception {
+    timerInternals.advanceProcessingTime(newProcessingTime);
   }
 
   /**
@@ -506,8 +529,8 @@ public class ReduceFnTester<InputT, OutputT, W extends BoundedWindow> {
     for (TimestampedValue<InputT> value : values) {
       WindowTracing.trace("TriggerTester.injectElements: {}", value);
     }
-    ReduceFnRunner<String, InputT, OutputT, W> runner = createRunner();
-    runner.processElements(
+
+    Iterable<WindowedValue<InputT>> inputs =
         Iterables.transform(
             Arrays.asList(values),
             new Function<TimestampedValue<InputT>, WindowedValue<InputT>>() {
@@ -525,7 +548,12 @@ public class ReduceFnTester<InputT, OutputT, W extends BoundedWindow> {
                   throw new RuntimeException(e);
                 }
               }
-            }));
+            });
+
+    ReduceFnRunner<String, InputT, OutputT, W> runner = createRunner();
+    runner.processElements(
+        new LateDataDroppingDoFnRunner.LateDataFilter(objectStrategy, timerInternals)
+            .filter(KEY, inputs));
 
     // Persist after each bundle.
     runner.persist();
@@ -533,10 +561,24 @@ public class ReduceFnTester<InputT, OutputT, W extends BoundedWindow> {
 
   public void fireTimer(W window, Instant timestamp, TimeDomain domain) throws Exception {
     ReduceFnRunner<String, InputT, OutputT, W> runner = createRunner();
-    ArrayList timers = new ArrayList(1);
+    ArrayList<TimerData> timers = new ArrayList<>(1);
     timers.add(
         TimerData.of(StateNamespaces.window(windowFn.windowCoder(), window), timestamp, domain));
     runner.onTimers(timers);
+    runner.persist();
+  }
+
+  public void fireTimers(W window, TimestampedValue<TimeDomain>... timers) throws Exception {
+    ReduceFnRunner<String, InputT, OutputT, W> runner = createRunner();
+    ArrayList<TimerData> timerData = new ArrayList<>(timers.length);
+    for (TimestampedValue<TimeDomain> timer : timers) {
+      timerData.add(
+          TimerData.of(
+              StateNamespaces.window(windowFn.windowCoder(), window),
+              timer.getTimestamp(),
+              timer.getValue()));
+    }
+    runner.onTimers(timerData);
     runner.persist();
   }
 

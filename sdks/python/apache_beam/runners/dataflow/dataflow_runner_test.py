@@ -38,6 +38,8 @@ from apache_beam.runners.dataflow.internal.clients import dataflow as dataflow_a
 from apache_beam.testing.test_pipeline import TestPipeline
 from apache_beam.transforms.display import DisplayDataItem
 from apache_beam.transforms.core import _GroupByKeyOnly
+from apache_beam.transforms.core import Windowing
+from apache_beam.transforms import window
 from apache_beam.typehints import typehints
 
 # Protect against environments where apitools library is not available.
@@ -57,7 +59,8 @@ class DataflowRunnerTest(unittest.TestCase):
       '--project=test-project',
       '--staging_location=ignored',
       '--temp_location=/dev/null',
-      '--no_auth=True']
+      '--no_auth=True',
+      '--dry_run=True']
 
   @mock.patch('time.sleep', return_value=None)
   def test_wait_until_finish(self, patched_time_sleep):
@@ -106,8 +109,22 @@ class DataflowRunnerTest(unittest.TestCase):
     (p | ptransform.Create([1, 2, 3])  # pylint: disable=expression-not-assigned
      | 'Do' >> ptransform.FlatMap(lambda x: [(x, x)])
      | ptransform.GroupByKey())
-    remote_runner.job = apiclient.Job(p._options)
-    super(DataflowRunner, remote_runner).run(p)
+    p.run()
+
+  def test_streaming_create_translation(self):
+    remote_runner = DataflowRunner()
+    self.default_properties.append("--streaming")
+    p = Pipeline(remote_runner, PipelineOptions(self.default_properties))
+    p | ptransform.Create([1])  # pylint: disable=expression-not-assigned
+    p.run()
+    job_dict = json.loads(str(remote_runner.job))
+    self.assertEqual(len(job_dict[u'steps']), 2)
+
+    self.assertEqual(job_dict[u'steps'][0][u'kind'], u'ParallelRead')
+    self.assertEqual(
+        job_dict[u'steps'][0][u'properties'][u'pubsub_subscription'],
+        '_starting_signal/')
+    self.assertEqual(job_dict[u'steps'][1][u'kind'], u'ParallelDo')
 
   def test_remote_runner_display_data(self):
     remote_runner = DataflowRunner()
@@ -140,8 +157,7 @@ class DataflowRunnerTest(unittest.TestCase):
     (p | ptransform.Create([1, 2, 3, 4, 5])
      | 'Do' >> SpecialParDo(SpecialDoFn(), now))
 
-    remote_runner.job = apiclient.Job(p._options)
-    super(DataflowRunner, remote_runner).run(p)
+    p.run()
     job_dict = json.loads(str(remote_runner.job))
     steps = [step
              for step in job_dict['steps']
@@ -239,6 +255,15 @@ class DataflowRunnerTest(unittest.TestCase):
     DataflowRunner.flatten_input_visitor().visit_transform(flatten)
     for _ in range(num_inputs):
       self.assertEqual(inputs[0].element_type, output_type)
+
+  def test_serialize_windowing_strategy(self):
+    # This just tests the basic path; more complete tests
+    # are in window_test.py.
+    strategy = Windowing(window.FixedWindows(10))
+    self.assertEqual(
+        strategy,
+        DataflowRunner.deserialize_windowing_strategy(
+            DataflowRunner.serialize_windowing_strategy(strategy)))
 
 
 if __name__ == '__main__':

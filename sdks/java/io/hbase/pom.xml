@@ -31,7 +31,7 @@
   <description>Library to read and write from/to HBase</description>
 
   <properties>
-    <hbase.version>1.2.5</hbase.version>
+    <hbase.version>1.2.6</hbase.version>
     <hbase.hadoop.version>2.5.1</hbase.hadoop.version>
   </properties>
 
@@ -61,6 +61,12 @@
     <dependency>
       <groupId>org.apache.beam</groupId>
       <artifactId>beam-sdks-java-io-hadoop-common</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>com.google.auto.service</groupId>
+      <artifactId>auto-service</artifactId>
+      <optional>true</optional>
     </dependency>
 
     <dependency>

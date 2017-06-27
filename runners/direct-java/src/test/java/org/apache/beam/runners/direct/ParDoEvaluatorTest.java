@@ -141,8 +141,8 @@ public class ParDoEvaluatorTest {
     DirectExecutionContext executionContext = mock(DirectExecutionContext.class);
     DirectStepContext stepContext = mock(DirectStepContext.class);
     when(
-            executionContext.getOrCreateStepContext(
-                Mockito.any(String.class), Mockito.any(String.class)))
+            executionContext.getStepContext(
+                Mockito.any(String.class)))
         .thenReturn(stepContext);
     when(stepContext.getTimerUpdate()).thenReturn(TimerUpdate.empty());
     when(
@@ -150,6 +150,7 @@ public class ParDoEvaluatorTest {
                 Mockito.any(AppliedPTransform.class), Mockito.any(StructuralKey.class)))
         .thenReturn(executionContext);
 
+    DirectGraphs.performDirectOverrides(p);
     @SuppressWarnings("unchecked")
     AppliedPTransform<PCollection<Integer>, ?, ?> transform =
         (AppliedPTransform<PCollection<Integer>, ?, ?>) DirectGraphs.getProducer(output);

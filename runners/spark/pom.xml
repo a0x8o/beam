@@ -77,8 +77,6 @@
                     org.apache.beam.runners.spark.UsesCheckpointRecovery
                   </groups>
                   <excludedGroups>
-                    org.apache.beam.sdk.testing.UsesStatefulParDo,
-                    org.apache.beam.sdk.testing.UsesTimersInParDo,
                     org.apache.beam.sdk.testing.UsesSplittableParDo,
                     org.apache.beam.sdk.testing.UsesCommittedMetrics,
                     org.apache.beam.sdk.testing.UsesTestStream
@@ -103,6 +101,27 @@
                     <spark.ui.showConsoleProgress>false</spark.ui.showConsoleProgress>
                   </systemPropertyVariables>
                   <threadCount>4</threadCount>
+                </configuration>
+              </execution>
+              <execution>
+                <id>streaming-tests</id>
+                <phase>test</phase>
+                <goals>
+                  <goal>test</goal>
+                </goals>
+                <configuration>
+                  <groups>
+                    org.apache.beam.runners.spark.StreamingTest
+                  </groups>
+                  <systemPropertyVariables>
+                    <beamTestPipelineOptions>
+                      [
+                      "--runner=TestSparkRunner",
+                      "--forceStreaming=true",
+                      "--enableSparkMetricSinks=true"
+                      ]
+                    </beamTestPipelineOptions>
+                  </systemPropertyVariables>
                 </configuration>
               </execution>
             </executions>
@@ -197,6 +216,11 @@
     <dependency>
       <groupId>org.apache.commons</groupId>
       <artifactId>commons-lang3</artifactId>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.commons</groupId>
+      <artifactId>commons-text</artifactId>
     </dependency>
     <dependency>
       <groupId>commons-io</groupId>
@@ -215,6 +239,10 @@
       <artifactId>scala-library</artifactId>
       <version>2.10.5</version>
       <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.beam</groupId>
+      <artifactId>beam-sdks-common-runner-api</artifactId>
     </dependency>
     <dependency>
       <groupId>org.apache.beam</groupId>
@@ -319,6 +347,13 @@
       <type>test-jar</type>
       <scope>test</scope>
     </dependency>
+
+    <dependency>
+      <groupId>org.apache.beam</groupId>
+      <artifactId>beam-runners-core-java</artifactId>
+      <type>test-jar</type>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <build>
@@ -352,27 +387,6 @@
                     [
                     "--runner=TestSparkRunner",
                     "--streaming=false",
-                    "--enableSparkMetricSinks=true"
-                    ]
-                  </beamTestPipelineOptions>
-                </systemPropertyVariables>
-              </configuration>
-            </execution>
-            <execution>
-              <id>streaming-tests</id>
-              <phase>test</phase>
-              <goals>
-                <goal>test</goal>
-              </goals>
-              <configuration>
-                <groups>
-                  org.apache.beam.runners.spark.StreamingTest
-                </groups>
-                <systemPropertyVariables>
-                  <beamTestPipelineOptions>
-                    [
-                    "--runner=TestSparkRunner",
-                    "--forceStreaming=true",
                     "--enableSparkMetricSinks=true"
                     ]
                   </beamTestPipelineOptions>

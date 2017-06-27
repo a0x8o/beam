@@ -18,21 +18,28 @@
 
 package org.apache.beam.runners.core;
 
+import static com.google.common.collect.Iterables.getOnlyElement;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.google.common.collect.FluentIterable;
-import com.google.common.collect.ImmutableList;
+import com.google.auto.service.AutoService;
+import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.Multimap;
 import com.google.protobuf.BytesValue;
 import java.io.IOException;
 import java.util.Collection;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Consumer;
 import java.util.function.Supplier;
 import org.apache.beam.fn.harness.data.BeamFnDataClient;
 import org.apache.beam.fn.harness.fn.ThrowingConsumer;
+import org.apache.beam.fn.harness.fn.ThrowingRunnable;
 import org.apache.beam.fn.v1.BeamFnApi;
 import org.apache.beam.runners.dataflow.util.CloudObject;
 import org.apache.beam.runners.dataflow.util.CloudObjects;
 import org.apache.beam.sdk.coders.Coder;
+import org.apache.beam.sdk.common.runner.v1.RunnerApi;
+import org.apache.beam.sdk.options.PipelineOptions;
 import org.apache.beam.sdk.util.WindowedValue;
 import org.apache.beam.sdk.values.KV;
 import org.slf4j.Logger;
@@ -47,9 +54,61 @@ import org.slf4j.LoggerFactory;
  * {@link #blockTillReadFinishes()} to finish.
  */
 public class BeamFnDataReadRunner<OutputT> {
-  private static final Logger LOG = LoggerFactory.getLogger(BeamFnDataReadRunner.class);
 
+  private static final Logger LOG = LoggerFactory.getLogger(BeamFnDataReadRunner.class);
   private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+  private static final String URN = "urn:org.apache.beam:source:runner:0.1";
+
+  /** A registrar which provides a factory to handle reading from the Fn Api Data Plane. */
+  @AutoService(PTransformRunnerFactory.Registrar.class)
+  public static class Registrar implements
+      PTransformRunnerFactory.Registrar {
+
+    @Override
+    public Map<String, PTransformRunnerFactory> getPTransformRunnerFactories() {
+      return ImmutableMap.of(URN, new Factory());
+    }
+  }
+
+  /** A factory for {@link BeamFnDataReadRunner}s. */
+  static class Factory<OutputT>
+      implements PTransformRunnerFactory<BeamFnDataReadRunner<OutputT>> {
+
+    @Override
+    public BeamFnDataReadRunner<OutputT> createRunnerForPTransform(
+        PipelineOptions pipelineOptions,
+        BeamFnDataClient beamFnDataClient,
+        String pTransformId,
+        RunnerApi.PTransform pTransform,
+        Supplier<String> processBundleInstructionId,
+        Map<String, RunnerApi.PCollection> pCollections,
+        Map<String, RunnerApi.Coder> coders,
+        Multimap<String, ThrowingConsumer<WindowedValue<?>>> pCollectionIdsToConsumers,
+        Consumer<ThrowingRunnable> addStartFunction,
+        Consumer<ThrowingRunnable> addFinishFunction) throws IOException {
+
+      BeamFnApi.Target target = BeamFnApi.Target.newBuilder()
+          .setPrimitiveTransformReference(pTransformId)
+          .setName(getOnlyElement(pTransform.getOutputsMap().keySet()))
+          .build();
+      RunnerApi.Coder coderSpec = coders.get(pCollections.get(
+          getOnlyElement(pTransform.getOutputsMap().values())).getCoderId());
+      Collection<ThrowingConsumer<WindowedValue<OutputT>>> consumers =
+          (Collection) pCollectionIdsToConsumers.get(
+              getOnlyElement(pTransform.getOutputsMap().values()));
+
+      BeamFnDataReadRunner<OutputT> runner = new BeamFnDataReadRunner<>(
+          pTransform.getSpec(),
+          processBundleInstructionId,
+          target,
+          coderSpec,
+          beamFnDataClient,
+          consumers);
+      addStartFunction.accept(runner::registerInputLocation);
+      addFinishFunction.accept(runner::blockTillReadFinishes);
+      return runner;
+    }
+  }
 
   private final BeamFnApi.ApiServiceDescriptor apiServiceDescriptor;
   private final Collection<ThrowingConsumer<WindowedValue<OutputT>>> consumers;
@@ -60,20 +119,20 @@ public class BeamFnDataReadRunner<OutputT> {
 
   private CompletableFuture<Void> readFuture;
 
-  public BeamFnDataReadRunner(
-      BeamFnApi.FunctionSpec functionSpec,
+  BeamFnDataReadRunner(
+      RunnerApi.FunctionSpec functionSpec,
       Supplier<String> processBundleInstructionIdSupplier,
       BeamFnApi.Target inputTarget,
-      BeamFnApi.Coder coderSpec,
+      RunnerApi.Coder coderSpec,
       BeamFnDataClient beamFnDataClientFactory,
-      Map<String, Collection<ThrowingConsumer<WindowedValue<OutputT>>>> outputMap)
+      Collection<ThrowingConsumer<WindowedValue<OutputT>>> consumers)
           throws IOException {
-    this.apiServiceDescriptor = functionSpec.getData().unpack(BeamFnApi.RemoteGrpcPort.class)
+    this.apiServiceDescriptor = functionSpec.getParameter().unpack(BeamFnApi.RemoteGrpcPort.class)
         .getApiServiceDescriptor();
     this.inputTarget = inputTarget;
     this.processBundleInstructionIdSupplier = processBundleInstructionIdSupplier;
     this.beamFnDataClientFactory = beamFnDataClientFactory;
-    this.consumers = ImmutableList.copyOf(FluentIterable.concat(outputMap.values()));
+    this.consumers = consumers;
 
     @SuppressWarnings("unchecked")
     Coder<WindowedValue<OutputT>> coder =
@@ -82,8 +141,9 @@ public class BeamFnDataReadRunner<OutputT> {
                 CloudObject.fromSpec(
                     OBJECT_MAPPER.readValue(
                         coderSpec
-                            .getFunctionSpec()
-                            .getData()
+                            .getSpec()
+                            .getSpec()
+                            .getParameter()
                             .unpack(BytesValue.class)
                             .getValue()
                             .newInput(),
