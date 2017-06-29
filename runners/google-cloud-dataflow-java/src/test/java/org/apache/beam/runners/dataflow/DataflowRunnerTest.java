@@ -50,6 +50,7 @@ import com.google.common.collect.ImmutableList;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.io.Serializable;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.channels.FileChannel;
@@ -82,18 +83,29 @@ import org.apache.beam.sdk.io.WriteFiles;
 import org.apache.beam.sdk.options.PipelineOptions;
 import org.apache.beam.sdk.options.PipelineOptions.CheckEnabled;
 import org.apache.beam.sdk.options.PipelineOptionsFactory;
+import org.apache.beam.sdk.options.StreamingOptions;
 import org.apache.beam.sdk.options.ValueProvider;
 import org.apache.beam.sdk.options.ValueProvider.StaticValueProvider;
 import org.apache.beam.sdk.runners.AppliedPTransform;
 import org.apache.beam.sdk.runners.TransformHierarchy;
 import org.apache.beam.sdk.runners.TransformHierarchy.Node;
+import org.apache.beam.sdk.state.MapState;
+import org.apache.beam.sdk.state.SetState;
+import org.apache.beam.sdk.state.StateSpec;
+import org.apache.beam.sdk.state.StateSpecs;
+import org.apache.beam.sdk.state.ValueState;
 import org.apache.beam.sdk.testing.ExpectedLogs;
 import org.apache.beam.sdk.testing.TestPipeline;
 import org.apache.beam.sdk.transforms.Create;
+import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.PTransform;
+import org.apache.beam.sdk.transforms.ParDo;
+import org.apache.beam.sdk.transforms.windowing.Sessions;
+import org.apache.beam.sdk.transforms.windowing.Window;
 import org.apache.beam.sdk.util.GcsUtil;
 import org.apache.beam.sdk.util.ReleaseInfo;
 import org.apache.beam.sdk.util.gcsfs.GcsPath;
+import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.PDone;
 import org.apache.beam.sdk.values.PValue;
@@ -103,6 +115,7 @@ import org.apache.beam.sdk.values.WindowingStrategy;
 import org.hamcrest.Description;
 import org.hamcrest.Matchers;
 import org.hamcrest.TypeSafeMatcher;
+import org.joda.time.Duration;
 import org.joda.time.Instant;
 import org.junit.Before;
 import org.junit.Rule;
@@ -118,9 +131,11 @@ import org.mockito.stubbing.Answer;
 
 /**
  * Tests for the {@link DataflowRunner}.
+ *
+ * <p>Implements {@link Serializable} because it is caught in closures.
  */
 @RunWith(JUnit4.class)
-public class DataflowRunnerTest {
+public class DataflowRunnerTest implements Serializable {
 
   private static final String VALID_STAGING_BUCKET = "gs://valid-bucket/staging";
   private static final String VALID_TEMP_BUCKET = "gs://valid-bucket/temp";
@@ -130,15 +145,12 @@ public class DataflowRunnerTest {
   private static final String PROJECT_ID = "some-project";
   private static final String REGION_ID = "some-region-1";
 
-  @Rule
-  public TemporaryFolder tmpFolder = new TemporaryFolder();
-  @Rule
-  public ExpectedException thrown = ExpectedException.none();
-  @Rule
-  public ExpectedLogs expectedLogs = ExpectedLogs.none(DataflowRunner.class);
+  @Rule public transient TemporaryFolder tmpFolder = new TemporaryFolder();
+  @Rule public transient ExpectedException thrown = ExpectedException.none();
+  @Rule public transient ExpectedLogs expectedLogs = ExpectedLogs.none(DataflowRunner.class);
 
-  private Dataflow.Projects.Locations.Jobs mockJobs;
-  private GcsUtil mockGcsUtil;
+  private transient Dataflow.Projects.Locations.Jobs mockJobs;
+  private transient GcsUtil mockGcsUtil;
 
   // Asserts that the given Job has all expected fields set.
   private static void assertValidJob(Job job) {
@@ -1001,6 +1013,71 @@ public class DataflowRunnerTest {
     assertTrue(transform.translated);
   }
 
+  private void verifyMapStateUnsupported(PipelineOptions options) throws Exception {
+    Pipeline p = Pipeline.create(options);
+    p.apply(Create.of(KV.of(13, 42)))
+        .apply(
+            ParDo.of(
+                new DoFn<KV<Integer, Integer>, Void>() {
+                  @StateId("fizzle")
+                  private final StateSpec<MapState<Void, Void>> voidState = StateSpecs.map();
+
+                  @ProcessElement
+                  public void process() {}
+                }));
+
+    thrown.expectMessage("MapState");
+    thrown.expect(UnsupportedOperationException.class);
+    p.run();
+  }
+
+  @Test
+  public void testMapStateUnsupportedInBatch() throws Exception {
+    PipelineOptions options = buildPipelineOptions();
+    options.as(StreamingOptions.class).setStreaming(false);
+    verifyMapStateUnsupported(options);
+  }
+
+  @Test
+  public void testMapStateUnsupportedInStreaming() throws Exception {
+    PipelineOptions options = buildPipelineOptions();
+    options.as(StreamingOptions.class).setStreaming(true);
+    verifyMapStateUnsupported(options);
+  }
+
+  private void verifySetStateUnsupported(PipelineOptions options) throws Exception {
+    Pipeline p = Pipeline.create(options);
+    p.apply(Create.of(KV.of(13, 42)))
+        .apply(
+            ParDo.of(
+                new DoFn<KV<Integer, Integer>, Void>() {
+                  @StateId("fizzle")
+                  private final StateSpec<SetState<Void>> voidState = StateSpecs.set();
+
+                  @ProcessElement
+                  public void process() {}
+                }));
+
+    thrown.expectMessage("SetState");
+    thrown.expect(UnsupportedOperationException.class);
+    p.run();
+  }
+
+  @Test
+  public void testSetStateUnsupportedInBatch() throws Exception {
+    PipelineOptions options = buildPipelineOptions();
+    options.as(StreamingOptions.class).setStreaming(false);
+    Pipeline p = Pipeline.create(options);
+    verifySetStateUnsupported(options);
+  }
+
+  @Test
+  public void testSetStateUnsupportedInStreaming() throws Exception {
+    PipelineOptions options = buildPipelineOptions();
+    options.as(StreamingOptions.class).setStreaming(true);
+    verifySetStateUnsupported(options);
+  }
+
   /** Records all the composite transforms visited within the Pipeline. */
   private static class CompositeTransformRecorder extends PipelineVisitor.Defaults {
     private List<PTransform<?, ?>> transforms = new ArrayList<>();
@@ -1149,6 +1226,38 @@ public class DataflowRunnerTest {
   public void testStreamingWriteWithNoShardingReturnsNewTransformMaxWorkersUnset() {
     PipelineOptions options = TestPipeline.testingPipelineOptions();
     testStreamingWriteOverride(options, StreamingShardedWriteFactory.DEFAULT_NUM_SHARDS);
+  }
+
+  private void verifyMergingStatefulParDoRejected(PipelineOptions options) throws Exception {
+    Pipeline p = Pipeline.create(options);
+
+    p.apply(Create.of(KV.of(13, 42)))
+        .apply(Window.<KV<Integer, Integer>>into(Sessions.withGapDuration(Duration.millis(1))))
+        .apply(ParDo.of(new DoFn<KV<Integer, Integer>, Void>() {
+          @StateId("fizzle")
+          private final StateSpec<ValueState<Void>> voidState = StateSpecs.value();
+
+          @ProcessElement
+          public void process() {}
+        }));
+
+    thrown.expectMessage("merging");
+    thrown.expect(UnsupportedOperationException.class);
+    p.run();
+  }
+
+  @Test
+  public void testMergingStatefulRejectedInStreaming() throws Exception {
+    PipelineOptions options = buildPipelineOptions();
+    options.as(StreamingOptions.class).setStreaming(true);
+    verifyMergingStatefulParDoRejected(options);
+  }
+
+  @Test
+  public void testMergingStatefulRejectedInBatch() throws Exception {
+    PipelineOptions options = buildPipelineOptions();
+    options.as(StreamingOptions.class).setStreaming(false);
+    verifyMergingStatefulParDoRejected(options);
   }
 
   private void testStreamingWriteOverride(PipelineOptions options, int expectedNumShards) {

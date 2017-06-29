@@ -67,6 +67,7 @@ import org.apache.beam.sdk.transforms.windowing.Sessions;
 import org.apache.beam.sdk.transforms.windowing.SlidingWindows;
 import org.apache.beam.sdk.transforms.windowing.TimestampCombiner;
 import org.apache.beam.sdk.transforms.windowing.Trigger;
+import org.apache.beam.sdk.transforms.windowing.Window;
 import org.apache.beam.sdk.transforms.windowing.Window.ClosingBehavior;
 import org.apache.beam.sdk.transforms.windowing.WindowFn;
 import org.apache.beam.sdk.transforms.windowing.WindowMappingFn;
@@ -78,6 +79,7 @@ import org.apache.beam.sdk.values.WindowingStrategy.AccumulationMode;
 import org.joda.time.Duration;
 import org.joda.time.Instant;
 import org.junit.Before;
+import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
@@ -140,7 +142,40 @@ public class ReduceFnRunnerTest {
       }
     })
     .when(mockTrigger).onFire(anyTriggerContext());
- }
+  }
+
+  /**
+   * Tests that a processing time timer does not cause window GC.
+   */
+  @Test
+  public void testProcessingTimeTimerDoesNotGc() throws Exception {
+    WindowingStrategy<?, IntervalWindow> strategy =
+        WindowingStrategy.of((WindowFn<?, IntervalWindow>) FixedWindows.of(Duration.millis(100)))
+            .withTimestampCombiner(TimestampCombiner.EARLIEST)
+            .withMode(AccumulationMode.ACCUMULATING_FIRED_PANES)
+            .withAllowedLateness(Duration.ZERO)
+            .withTrigger(
+                Repeatedly.forever(
+                    AfterProcessingTime.pastFirstElementInPane().plusDelayOf(Duration.millis(10))));
+
+    ReduceFnTester<Integer, Integer, IntervalWindow> tester =
+        ReduceFnTester.combining(strategy, Sum.ofIntegers(), VarIntCoder.of());
+
+    tester.advanceProcessingTime(new Instant(5000));
+    injectElement(tester, 2); // processing timer @ 5000 + 10; EOW timer @ 100
+    injectElement(tester, 5);
+
+    tester.advanceProcessingTime(new Instant(10000));
+
+    tester.assertHasOnlyGlobalAndStateFor(
+        new IntervalWindow(new Instant(0), new Instant(100)));
+
+    assertThat(
+        tester.extractOutput(),
+        contains(
+            isSingleWindowedValue(
+                equalTo(7), 2, 0, 100, PaneInfo.createPane(true, false, Timing.EARLY, 0, 0))));
+  }
 
   @Test
   public void testOnElementBufferingDiscarding() throws Exception {
@@ -250,6 +285,44 @@ public class ReduceFnRunnerTest {
   }
 
   /**
+   * Tests that when a processing time timer comes in after a window is expired
+   * but in the same bundle it does not cause a spurious output.
+   */
+  @Test
+  public void testCombiningAccumulatingProcessingTime() throws Exception {
+    WindowingStrategy<?, IntervalWindow> strategy =
+        WindowingStrategy.of((WindowFn<?, IntervalWindow>) FixedWindows.of(Duration.millis(100)))
+            .withTimestampCombiner(TimestampCombiner.EARLIEST)
+            .withMode(AccumulationMode.ACCUMULATING_FIRED_PANES)
+            .withAllowedLateness(Duration.ZERO)
+            .withTrigger(
+                Repeatedly.forever(
+                    AfterProcessingTime.pastFirstElementInPane().plusDelayOf(Duration.millis(10))));
+
+    ReduceFnTester<Integer, Integer, IntervalWindow> tester =
+        ReduceFnTester.combining(strategy, Sum.ofIntegers(), VarIntCoder.of());
+
+    tester.advanceProcessingTime(new Instant(5000));
+    injectElement(tester, 2); // processing timer @ 5000 + 10; EOW timer @ 100
+    injectElement(tester, 5);
+
+    tester.advanceInputWatermarkNoTimers(new Instant(100));
+    tester.advanceProcessingTimeNoTimers(new Instant(5010));
+
+    // Fires the GC/EOW timer at the same time as the processing time timer.
+    tester.fireTimers(
+        new IntervalWindow(new Instant(0), new Instant(100)),
+        TimestampedValue.of(TimeDomain.EVENT_TIME, new Instant(100)),
+        TimestampedValue.of(TimeDomain.PROCESSING_TIME, new Instant(5010)));
+
+    assertThat(
+        tester.extractOutput(),
+        contains(
+            isSingleWindowedValue(
+                equalTo(7), 2, 0, 100, PaneInfo.createPane(true, true, Timing.ON_TIME, 0, 0))));
+  }
+
+  /**
    * Tests that the garbage collection time for a fixed window does not overflow the end of time.
    */
   @Test
@@ -315,6 +388,68 @@ public class ReduceFnRunnerTest {
     tester.advanceInputWatermark(GlobalWindow.INSTANCE.maxTimestamp());
     assertThat(tester.extractOutput(), contains(isWindowedValue(equalTo(55))));
   }
+
+  /**
+   * Tests that when a processing time timers comes in after a window is expired
+   * and GC'd it does not cause a spurious output.
+   */
+  @Test
+  public void testCombiningAccumulatingProcessingTimeSeparateBundles() throws Exception {
+    WindowingStrategy<?, IntervalWindow> strategy =
+        WindowingStrategy.of((WindowFn<?, IntervalWindow>) FixedWindows.of(Duration.millis(100)))
+            .withTimestampCombiner(TimestampCombiner.EARLIEST)
+            .withMode(AccumulationMode.ACCUMULATING_FIRED_PANES)
+            .withAllowedLateness(Duration.ZERO)
+            .withTrigger(
+                Repeatedly.forever(
+                    AfterProcessingTime.pastFirstElementInPane().plusDelayOf(Duration.millis(10))));
+
+    ReduceFnTester<Integer, Integer, IntervalWindow> tester =
+        ReduceFnTester.combining(strategy, Sum.ofIntegers(), VarIntCoder.of());
+
+    tester.advanceProcessingTime(new Instant(5000));
+    injectElement(tester, 2); // processing timer @ 5000 + 10; EOW timer @ 100
+    injectElement(tester, 5);
+
+    tester.advanceInputWatermark(new Instant(100));
+    tester.advanceProcessingTime(new Instant(5011));
+
+    assertThat(
+        tester.extractOutput(),
+        contains(
+            isSingleWindowedValue(
+                equalTo(7), 2, 0, 100, PaneInfo.createPane(true, true, Timing.ON_TIME, 0, 0))));
+  }
+
+  /**
+   * Tests that if end-of-window and GC timers come in together, that the pane is correctly
+   * marked as final.
+   */
+  @Test
+  @Ignore("https://issues.apache.org/jira/browse/BEAM-2505")
+  public void testCombiningAccumulatingEventTime() throws Exception {
+    WindowingStrategy<?, IntervalWindow> strategy =
+        WindowingStrategy.of((WindowFn<?, IntervalWindow>) FixedWindows.of(Duration.millis(100)))
+            .withTimestampCombiner(TimestampCombiner.EARLIEST)
+            .withMode(AccumulationMode.ACCUMULATING_FIRED_PANES)
+            .withAllowedLateness(Duration.millis(1))
+            .withTrigger(Repeatedly.forever(AfterWatermark.pastEndOfWindow()));
+
+    ReduceFnTester<Integer, Integer, IntervalWindow> tester =
+        ReduceFnTester.combining(strategy, Sum.ofIntegers(), VarIntCoder.of());
+
+    injectElement(tester, 2); // processing timer @ 5000 + 10; EOW timer @ 100
+    injectElement(tester, 5);
+
+    tester.advanceInputWatermark(new Instant(1000));
+
+    assertThat(
+        tester.extractOutput(),
+        contains(
+            isSingleWindowedValue(
+                equalTo(7), 2, 0, 100, PaneInfo.createPane(true, true, Timing.ON_TIME, 0, 0))));
+  }
+
 
   @Test
   public void testOnElementCombiningAccumulating() throws Exception {
@@ -1286,6 +1421,166 @@ public class ReduceFnRunnerTest {
     assertThat(
         output.get(1),
         WindowMatchers.valueWithPaneInfo(PaneInfo.createPane(false, false, Timing.ON_TIME, 1, 0)));
+  }
+
+  /**
+   * Test that it won't fire an empty on-time pane when OnTimeBehavior is FIRE_IF_NON_EMPTY.
+   */
+  @Test
+  public void testEmptyOnTimeWithOnTimeBehaviorFireIfNonEmpty() throws Exception {
+
+    WindowingStrategy<?, IntervalWindow> strategy =
+        WindowingStrategy.of((WindowFn<?, IntervalWindow>) FixedWindows.of(Duration.millis(10)))
+            .withTimestampCombiner(TimestampCombiner.EARLIEST)
+            .withTrigger(
+                AfterEach.<IntervalWindow>inOrder(
+                    Repeatedly.forever(
+                        AfterProcessingTime.pastFirstElementInPane()
+                            .plusDelayOf(new Duration(5)))
+                        .orFinally(AfterWatermark.pastEndOfWindow()),
+                    Repeatedly.forever(
+                        AfterProcessingTime.pastFirstElementInPane()
+                            .plusDelayOf(new Duration(25)))))
+            .withMode(AccumulationMode.ACCUMULATING_FIRED_PANES)
+            .withAllowedLateness(Duration.millis(100))
+            .withClosingBehavior(ClosingBehavior.FIRE_ALWAYS)
+            .withOnTimeBehavior(Window.OnTimeBehavior.FIRE_IF_NON_EMPTY);
+
+    ReduceFnTester<Integer, Integer, IntervalWindow> tester =
+        ReduceFnTester.combining(strategy, Sum.ofIntegers(), VarIntCoder.of());
+
+    tester.advanceInputWatermark(new Instant(0));
+    tester.advanceProcessingTime(new Instant(0));
+
+    // Processing time timer for 5
+    tester.injectElements(
+        TimestampedValue.of(1, new Instant(1)),
+        TimestampedValue.of(1, new Instant(3)),
+        TimestampedValue.of(1, new Instant(7)),
+        TimestampedValue.of(1, new Instant(5)));
+
+    // Should fire early pane
+    tester.advanceProcessingTime(new Instant(6));
+
+    // Should not fire empty on time pane
+    tester.advanceInputWatermark(new Instant(11));
+
+    // Should fire final GC pane
+    tester.advanceInputWatermark(new Instant(10 + 100));
+    List<WindowedValue<Integer>> output = tester.extractOutput();
+    assertEquals(2, output.size());
+
+    assertThat(output.get(0), WindowMatchers.isSingleWindowedValue(4, 1, 0, 10));
+    assertThat(output.get(1), WindowMatchers.isSingleWindowedValue(4, 9, 0, 10));
+
+    assertThat(
+        output.get(0),
+        WindowMatchers.valueWithPaneInfo(PaneInfo.createPane(true, false, Timing.EARLY, 0, -1)));
+    assertThat(
+        output.get(1),
+        WindowMatchers.valueWithPaneInfo(PaneInfo.createPane(false, true, Timing.LATE, 1, 0)));
+  }
+
+  /**
+   * Test that it fires an empty on-time isFinished pane when OnTimeBehavior is FIRE_ALWAYS
+   * and ClosingBehavior is FIRE_IF_NON_EMPTY.
+   *
+   * <p>This is a test just for backward compatibility.
+   */
+  @Test
+  public void testEmptyOnTimeWithOnTimeBehaviorBackwardCompatibility() throws Exception {
+
+    WindowingStrategy<?, IntervalWindow> strategy =
+        WindowingStrategy.of((WindowFn<?, IntervalWindow>) FixedWindows.of(Duration.millis(10)))
+            .withTimestampCombiner(TimestampCombiner.EARLIEST)
+            .withTrigger(AfterWatermark.pastEndOfWindow()
+                .withEarlyFirings(AfterPane.elementCountAtLeast(1)))
+            .withMode(AccumulationMode.ACCUMULATING_FIRED_PANES)
+            .withAllowedLateness(Duration.millis(0))
+            .withClosingBehavior(ClosingBehavior.FIRE_IF_NON_EMPTY);
+
+    ReduceFnTester<Integer, Integer, IntervalWindow> tester =
+        ReduceFnTester.combining(strategy, Sum.ofIntegers(), VarIntCoder.of());
+
+    tester.advanceInputWatermark(new Instant(0));
+    tester.advanceProcessingTime(new Instant(0));
+
+    tester.injectElements(
+        TimestampedValue.of(1, new Instant(1)));
+
+    // Should fire empty on time isFinished pane
+    tester.advanceInputWatermark(new Instant(11));
+
+    List<WindowedValue<Integer>> output = tester.extractOutput();
+    assertEquals(2, output.size());
+
+    assertThat(
+        output.get(0),
+        WindowMatchers.valueWithPaneInfo(PaneInfo.createPane(true, false, Timing.EARLY, 0, -1)));
+    assertThat(
+        output.get(1),
+        WindowMatchers.valueWithPaneInfo(PaneInfo.createPane(false, true, Timing.ON_TIME, 1, 0)));
+  }
+
+  /**
+   * Test that it won't fire an empty on-time pane when OnTimeBehavior is FIRE_IF_NON_EMPTY
+   * and when receiving late data.
+   */
+  @Test
+  public void testEmptyOnTimeWithOnTimeBehaviorFireIfNonEmptyAndLateData() throws Exception {
+
+    WindowingStrategy<?, IntervalWindow> strategy =
+        WindowingStrategy.of((WindowFn<?, IntervalWindow>) FixedWindows.of(Duration.millis(10)))
+            .withTimestampCombiner(TimestampCombiner.EARLIEST)
+            .withTrigger(
+                AfterEach.<IntervalWindow>inOrder(
+                    Repeatedly.forever(
+                        AfterProcessingTime.pastFirstElementInPane()
+                            .plusDelayOf(new Duration(5)))
+                        .orFinally(AfterWatermark.pastEndOfWindow()),
+                    Repeatedly.forever(
+                        AfterProcessingTime.pastFirstElementInPane()
+                            .plusDelayOf(new Duration(25)))))
+            .withMode(AccumulationMode.ACCUMULATING_FIRED_PANES)
+            .withAllowedLateness(Duration.millis(100))
+            .withOnTimeBehavior(Window.OnTimeBehavior.FIRE_IF_NON_EMPTY);
+
+    ReduceFnTester<Integer, Integer, IntervalWindow> tester =
+        ReduceFnTester.combining(strategy, Sum.ofIntegers(), VarIntCoder.of());
+
+    tester.advanceInputWatermark(new Instant(0));
+    tester.advanceProcessingTime(new Instant(0));
+
+    // Processing time timer for 5
+    tester.injectElements(
+        TimestampedValue.of(1, new Instant(1)),
+        TimestampedValue.of(1, new Instant(3)),
+        TimestampedValue.of(1, new Instant(7)),
+        TimestampedValue.of(1, new Instant(5)));
+
+    // Should fire early pane
+    tester.advanceProcessingTime(new Instant(6));
+
+    // Should not fire empty on time pane
+    tester.advanceInputWatermark(new Instant(11));
+
+    // Processing late data, and should fire late pane
+    tester.injectElements(
+        TimestampedValue.of(1, new Instant(9)));
+    tester.advanceProcessingTime(new Instant(6 + 25 + 1));
+
+    List<WindowedValue<Integer>> output = tester.extractOutput();
+    assertEquals(2, output.size());
+
+    assertThat(output.get(0), WindowMatchers.isSingleWindowedValue(4, 1, 0, 10));
+    assertThat(output.get(1), WindowMatchers.isSingleWindowedValue(5, 9, 0, 10));
+
+    assertThat(
+        output.get(0),
+        WindowMatchers.valueWithPaneInfo(PaneInfo.createPane(true, false, Timing.EARLY, 0, -1)));
+    assertThat(
+        output.get(1),
+        WindowMatchers.valueWithPaneInfo(PaneInfo.createPane(false, false, Timing.LATE, 1, 0)));
   }
 
   /**
