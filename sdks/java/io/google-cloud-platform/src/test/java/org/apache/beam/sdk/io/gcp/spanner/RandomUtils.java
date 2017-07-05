@@ -15,18 +15,27 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.beam.sdk.io.gcp.bigtable;
+package org.apache.beam.sdk.io.gcp.spanner;
 
-import org.apache.beam.sdk.options.Default;
-import org.apache.beam.sdk.options.Description;
-import org.apache.beam.sdk.testing.TestPipelineOptions;
+import java.util.Random;
 
 /**
- * Properties needed when using Bigtable with the Beam SDK.
+ * Useful randomness related utilities.
  */
-public interface BigtableTestOptions extends TestPipelineOptions {
-  @Description("Instance ID for Bigtable")
-  @Default.String("beam-test")
-  String getInstanceId();
-  void setInstanceId(String value);
+public class RandomUtils {
+
+  private static final char[] ALPHANUMERIC = "1234567890abcdefghijklmnopqrstuvwxyz".toCharArray();
+
+  private RandomUtils() {
+  }
+
+  public static String randomAlphaNumeric(int length) {
+    Random random = new Random();
+    char[] result = new char[length];
+    for (int i = 0; i < length; i++) {
+      result[i] = ALPHANUMERIC[random.nextInt(ALPHANUMERIC.length)];
+    }
+    return new String(result);
+  }
+
 }
