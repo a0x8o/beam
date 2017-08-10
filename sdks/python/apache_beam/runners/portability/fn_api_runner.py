@@ -17,27 +17,38 @@
 
 """A PipelineRunner using the SDK harness.
 """
+import base64
 import collections
-import json
+import copy
 import logging
 import Queue as queue
 import threading
 
 from concurrent import futures
+from google.protobuf import wrappers_pb2
 import grpc
 
-import apache_beam as beam
+import apache_beam as beam  # pylint: disable=ungrouped-imports
+from apache_beam.coders import registry
 from apache_beam.coders import WindowedValueCoder
 from apache_beam.coders.coder_impl import create_InputStream
 from apache_beam.coders.coder_impl import create_OutputStream
 from apache_beam.internal import pickler
 from apache_beam.io import iobase
-from apache_beam.transforms.window import GlobalWindows
+from apache_beam.metrics.execution import MetricsEnvironment
 from apache_beam.portability.api import beam_fn_api_pb2
+from apache_beam.portability.api import beam_runner_api_pb2
+from apache_beam.runners import pipeline_context
 from apache_beam.runners.portability import maptask_executor_runner
+from apache_beam.runners.runner import PipelineState
+from apache_beam.runners.worker import bundle_processor
 from apache_beam.runners.worker import data_plane
 from apache_beam.runners.worker import operation_specs
 from apache_beam.runners.worker import sdk_worker
+from apache_beam.transforms.window import GlobalWindows
+from apache_beam.utils import proto_utils
+from apache_beam.utils import urns
+
 
 # This module is experimental. No backwards-compatibility guarantees.
 
@@ -108,6 +119,30 @@ OLDE_SOURCE_SPLITTABLE_DOFN_DATA = pickler.dumps(
      beam.transforms.core.Windowing(GlobalWindows())))
 
 
+class _GroupingBuffer(object):
+  """Used to accumulate groupded (shuffled) results."""
+  def __init__(self, pre_grouped_coder, post_grouped_coder):
+    self._key_coder = pre_grouped_coder.value_coder().key_coder()
+    self._pre_grouped_coder = pre_grouped_coder
+    self._post_grouped_coder = post_grouped_coder
+    self._table = collections.defaultdict(list)
+
+  def append(self, elements_data):
+    input_stream = create_InputStream(elements_data)
+    while input_stream.size() > 0:
+      key, value = self._pre_grouped_coder.get_impl().decode_from_stream(
+          input_stream, True).value
+      self._table[self._key_coder.encode(key)].append(value)
+
+  def __iter__(self):
+    output_stream = create_OutputStream()
+    for encoded_key, values in self._table.items():
+      key = self._key_coder.decode(encoded_key)
+      self._post_grouped_coder.get_impl().encode_to_stream(
+          GlobalWindows.windowed_value((key, values)), output_stream, True)
+    return iter([output_stream.get()])
+
+
 class FnApiRunner(maptask_executor_runner.MapTaskExecutorRunner):
 
   def __init__(self):
@@ -121,191 +156,675 @@ class FnApiRunner(maptask_executor_runner.MapTaskExecutorRunner):
     self._last_uid += 1
     return str(self._last_uid)
 
+  def run(self, pipeline):
+    MetricsEnvironment.set_metrics_supported(self.has_metrics_support())
+    if pipeline._verify_runner_api_compatible():
+      return self.run_via_runner_api(pipeline.to_runner_api())
+    else:
+      return super(FnApiRunner, self).run(pipeline)
+
+  def run_via_runner_api(self, pipeline_proto):
+    return self.run_stages(*self.create_stages(pipeline_proto))
+
+  def create_stages(self, pipeline_proto):
+
+    # First define a couple of helpers.
+
+    def union(a, b):
+      # Minimize the number of distinct sets.
+      if not a or a == b:
+        return b
+      elif not b:
+        return a
+      else:
+        return frozenset.union(a, b)
+
+    class Stage(object):
+      """A set of Transforms that can be sent to the worker for processing."""
+      def __init__(self, name, transforms,
+                   downstream_side_inputs=None, must_follow=frozenset()):
+        self.name = name
+        self.transforms = transforms
+        self.downstream_side_inputs = downstream_side_inputs
+        self.must_follow = must_follow
+
+      def __repr__(self):
+        must_follow = ', '.join(prev.name for prev in self.must_follow)
+        return "%s\n    %s\n    must follow: %s" % (
+            self.name,
+            '\n'.join(["%s:%s" % (transform.unique_name, transform.spec.urn)
+                       for transform in self.transforms]),
+            must_follow)
+
+      def can_fuse(self, consumer):
+        def no_overlap(a, b):
+          return not a.intersection(b)
+        return (
+            not self in consumer.must_follow
+            and not self.is_flatten() and not consumer.is_flatten()
+            and no_overlap(self.downstream_side_inputs, consumer.side_inputs()))
+
+      def fuse(self, other):
+        return Stage(
+            "(%s)+(%s)" % (self.name, other.name),
+            self.transforms + other.transforms,
+            union(self.downstream_side_inputs, other.downstream_side_inputs),
+            union(self.must_follow, other.must_follow))
+
+      def is_flatten(self):
+        return any(transform.spec.urn == urns.FLATTEN_TRANSFORM
+                   for transform in self.transforms)
+
+      def side_inputs(self):
+        for transform in self.transforms:
+          if transform.spec.urn == urns.PARDO_TRANSFORM:
+            payload = proto_utils.parse_Bytes(
+                transform.spec.payload, beam_runner_api_pb2.ParDoPayload)
+            for side_input in payload.side_inputs:
+              yield transform.inputs[side_input]
+
+      def has_as_main_input(self, pcoll):
+        for transform in self.transforms:
+          if transform.spec.urn == urns.PARDO_TRANSFORM:
+            payload = proto_utils.parse_Bytes(
+                transform.spec.payload, beam_runner_api_pb2.ParDoPayload)
+            local_side_inputs = payload.side_inputs
+          else:
+            local_side_inputs = {}
+          for local_id, pipeline_id in transform.inputs.items():
+            if pcoll == pipeline_id and local_id not in local_side_inputs:
+              return True
+
+      def deduplicate_read(self):
+        seen_pcolls = set()
+        new_transforms = []
+        for transform in self.transforms:
+          if transform.spec.urn == bundle_processor.DATA_INPUT_URN:
+            pcoll = only_element(transform.outputs.items())[1]
+            if pcoll in seen_pcolls:
+              continue
+            seen_pcolls.add(pcoll)
+          new_transforms.append(transform)
+        self.transforms = new_transforms
+
+    # Now define the "optimization" phases.
+
+    def expand_gbk(stages):
+      """Transforms each GBK into a write followed by a read.
+      """
+      for stage in stages:
+        assert len(stage.transforms) == 1
+        transform = stage.transforms[0]
+        if transform.spec.urn == urns.GROUP_BY_KEY_ONLY_TRANSFORM:
+          # This is used later to correlate the read and write.
+          param = str("group:%s" % stage.name)
+          gbk_write = Stage(
+              transform.unique_name + '/Write',
+              [beam_runner_api_pb2.PTransform(
+                  unique_name=transform.unique_name + '/Write',
+                  inputs=transform.inputs,
+                  spec=beam_runner_api_pb2.FunctionSpec(
+                      urn=bundle_processor.DATA_OUTPUT_URN,
+                      any_param=proto_utils.pack_Any(
+                          wrappers_pb2.BytesValue(value=param)),
+                      payload=param))],
+              downstream_side_inputs=frozenset(),
+              must_follow=stage.must_follow)
+          yield gbk_write
+
+          yield Stage(
+              transform.unique_name + '/Read',
+              [beam_runner_api_pb2.PTransform(
+                  unique_name=transform.unique_name + '/Read',
+                  outputs=transform.outputs,
+                  spec=beam_runner_api_pb2.FunctionSpec(
+                      urn=bundle_processor.DATA_INPUT_URN,
+                      any_param=proto_utils.pack_Any(
+                          wrappers_pb2.BytesValue(value=param)),
+                      payload=param))],
+              downstream_side_inputs=frozenset(),
+              must_follow=union(frozenset([gbk_write]), stage.must_follow))
+        else:
+          yield stage
+
+    def sink_flattens(stages):
+      """Sink flattens and remove them from the graph.
+
+      A flatten that cannot be sunk/fused away becomes multiple writes (to the
+      same logical sink) followed by a read.
+      """
+      # TODO(robertwb): Actually attempt to sink rather than always materialize.
+      # TODO(robertwb): Possibly fuse this into one of the stages.
+      pcollections = pipeline_components.pcollections
+      for stage in stages:
+        assert len(stage.transforms) == 1
+        transform = stage.transforms[0]
+        if transform.spec.urn == urns.FLATTEN_TRANSFORM:
+          # This is used later to correlate the read and writes.
+          param = str("materialize:%s" % transform.unique_name)
+          output_pcoll_id, = transform.outputs.values()
+          output_coder_id = pcollections[output_pcoll_id].coder_id
+          flatten_writes = []
+          for local_in, pcoll_in in transform.inputs.items():
+
+            if pcollections[pcoll_in].coder_id != output_coder_id:
+              # Flatten inputs must all be written with the same coder as is
+              # used to read them.
+              pcollections[pcoll_in].coder_id = output_coder_id
+              transcoded_pcollection = (
+                  transform.unique_name + '/Transcode/' + local_in + '/out')
+              yield Stage(
+                  transform.unique_name + '/Transcode/' + local_in,
+                  [beam_runner_api_pb2.PTransform(
+                      unique_name=
+                      transform.unique_name + '/Transcode/' + local_in,
+                      inputs={local_in: pcoll_in},
+                      outputs={'out': transcoded_pcollection},
+                      spec=beam_runner_api_pb2.FunctionSpec(
+                          urn=bundle_processor.IDENTITY_DOFN_URN))],
+                  downstream_side_inputs=frozenset(),
+                  must_follow=stage.must_follow)
+              pcollections[transcoded_pcollection].CopyFrom(
+                  pcollections[pcoll_in])
+              pcollections[transcoded_pcollection].coder_id = output_coder_id
+            else:
+              transcoded_pcollection = pcoll_in
+
+            flatten_write = Stage(
+                transform.unique_name + '/Write/' + local_in,
+                [beam_runner_api_pb2.PTransform(
+                    unique_name=transform.unique_name + '/Write/' + local_in,
+                    inputs={local_in: transcoded_pcollection},
+                    spec=beam_runner_api_pb2.FunctionSpec(
+                        urn=bundle_processor.DATA_OUTPUT_URN,
+                        any_param=proto_utils.pack_Any(
+                            wrappers_pb2.BytesValue(
+                                value=param)),
+                        payload=param))],
+                downstream_side_inputs=frozenset(),
+                must_follow=stage.must_follow)
+            flatten_writes.append(flatten_write)
+            yield flatten_write
+
+          yield Stage(
+              transform.unique_name + '/Read',
+              [beam_runner_api_pb2.PTransform(
+                  unique_name=transform.unique_name + '/Read',
+                  outputs=transform.outputs,
+                  spec=beam_runner_api_pb2.FunctionSpec(
+                      urn=bundle_processor.DATA_INPUT_URN,
+                      any_param=proto_utils.pack_Any(
+                          wrappers_pb2.BytesValue(
+                              value=param)),
+                      payload=param))],
+              downstream_side_inputs=frozenset(),
+              must_follow=union(frozenset(flatten_writes), stage.must_follow))
+
+        else:
+          yield stage
+
+    def annotate_downstream_side_inputs(stages):
+      """Annotate each stage with fusion-prohibiting information.
+
+      Each stage is annotated with the (transitive) set of pcollections that
+      depend on this stage that are also used later in the pipeline as a
+      side input.
+
+      While theoretically this could result in O(n^2) annotations, the size of
+      each set is bounded by the number of side inputs (typically much smaller
+      than the number of total nodes) and the number of *distinct* side-input
+      sets is also generally small (and shared due to the use of union
+      defined above).
+
+      This representation is also amenable to simple recomputation on fusion.
+      """
+      consumers = collections.defaultdict(list)
+      all_side_inputs = set()
+      for stage in stages:
+        for transform in stage.transforms:
+          for input in transform.inputs.values():
+            consumers[input].append(stage)
+        for si in stage.side_inputs():
+          all_side_inputs.add(si)
+      all_side_inputs = frozenset(all_side_inputs)
+
+      downstream_side_inputs_by_stage = {}
+
+      def compute_downstream_side_inputs(stage):
+        if stage not in downstream_side_inputs_by_stage:
+          downstream_side_inputs = frozenset()
+          for transform in stage.transforms:
+            for output in transform.outputs.values():
+              if output in all_side_inputs:
+                downstream_side_inputs = union(downstream_side_inputs, output)
+                for consumer in consumers[output]:
+                  downstream_side_inputs = union(
+                      downstream_side_inputs,
+                      compute_downstream_side_inputs(consumer))
+          downstream_side_inputs_by_stage[stage] = downstream_side_inputs
+        return downstream_side_inputs_by_stage[stage]
+
+      for stage in stages:
+        stage.downstream_side_inputs = compute_downstream_side_inputs(stage)
+      return stages
+
+    def greedily_fuse(stages):
+      """Places transforms sharing an edge in the same stage, whenever possible.
+      """
+      producers_by_pcoll = {}
+      consumers_by_pcoll = collections.defaultdict(list)
+
+      # Used to always reference the correct stage as the producer and
+      # consumer maps are not updated when stages are fused away.
+      replacements = {}
+
+      def replacement(s):
+        old_ss = []
+        while s in replacements:
+          old_ss.append(s)
+          s = replacements[s]
+        for old_s in old_ss[:-1]:
+          replacements[old_s] = s
+        return s
+
+      def fuse(producer, consumer):
+        fused = producer.fuse(consumer)
+        replacements[producer] = fused
+        replacements[consumer] = fused
+
+      # First record the producers and consumers of each PCollection.
+      for stage in stages:
+        for transform in stage.transforms:
+          for input in transform.inputs.values():
+            consumers_by_pcoll[input].append(stage)
+          for output in transform.outputs.values():
+            producers_by_pcoll[output] = stage
+
+      logging.debug('consumers\n%s', consumers_by_pcoll)
+      logging.debug('producers\n%s', producers_by_pcoll)
+
+      # Now try to fuse away all pcollections.
+      for pcoll, producer in producers_by_pcoll.items():
+        pcoll_as_param = str("materialize:%s" % pcoll)
+        write_pcoll = None
+        for consumer in consumers_by_pcoll[pcoll]:
+          producer = replacement(producer)
+          consumer = replacement(consumer)
+          # Update consumer.must_follow set, as it's used in can_fuse.
+          consumer.must_follow = set(
+              replacement(s) for s in consumer.must_follow)
+          if producer.can_fuse(consumer):
+            fuse(producer, consumer)
+          else:
+            # If we can't fuse, do a read + write.
+            if write_pcoll is None:
+              write_pcoll = Stage(
+                  pcoll + '/Write',
+                  [beam_runner_api_pb2.PTransform(
+                      unique_name=pcoll + '/Write',
+                      inputs={'in': pcoll},
+                      spec=beam_runner_api_pb2.FunctionSpec(
+                          urn=bundle_processor.DATA_OUTPUT_URN,
+                          any_param=proto_utils.pack_Any(
+                              wrappers_pb2.BytesValue(
+                                  value=pcoll_as_param)),
+                          payload=pcoll_as_param))])
+              fuse(producer, write_pcoll)
+            if consumer.has_as_main_input(pcoll):
+              read_pcoll = Stage(
+                  pcoll + '/Read',
+                  [beam_runner_api_pb2.PTransform(
+                      unique_name=pcoll + '/Read',
+                      outputs={'out': pcoll},
+                      spec=beam_runner_api_pb2.FunctionSpec(
+                          urn=bundle_processor.DATA_INPUT_URN,
+                          any_param=proto_utils.pack_Any(
+                              wrappers_pb2.BytesValue(
+                                  value=pcoll_as_param)),
+                          payload=pcoll_as_param))],
+                  must_follow={write_pcoll})
+              fuse(read_pcoll, consumer)
+
+      # Everything that was originally a stage or a replacement, but wasn't
+      # replaced, should be in the final graph.
+      final_stages = frozenset(stages).union(replacements.values()).difference(
+          replacements.keys())
+
+      for stage in final_stages:
+        # Update all references to their final values before throwing
+        # the replacement data away.
+        stage.must_follow = frozenset(replacement(s) for s in stage.must_follow)
+        # Two reads of the same stage may have been fused.  This is unneeded.
+        stage.deduplicate_read()
+      return final_stages
+
+    def sort_stages(stages):
+      """Order stages suitable for sequential execution.
+      """
+      seen = set()
+      ordered = []
+
+      def process(stage):
+        if stage not in seen:
+          seen.add(stage)
+          for prev in stage.must_follow:
+            process(prev)
+          ordered.append(stage)
+      for stage in stages:
+        process(stage)
+      return ordered
+
+    # Now actually apply the operations.
+
+    pipeline_components = copy.deepcopy(pipeline_proto.components)
+
+    # Reify coders.
+    # TODO(BEAM-2717): Remove once Coders are already in proto.
+    coders = pipeline_context.PipelineContext(pipeline_components).coders
+    for pcoll in pipeline_components.pcollections.values():
+      if pcoll.coder_id not in coders:
+        window_coder = coders[
+            pipeline_components.windowing_strategies[
+                pcoll.windowing_strategy_id].window_coder_id]
+        coder = WindowedValueCoder(
+            registry.get_coder(pickler.loads(pcoll.coder_id)),
+            window_coder=window_coder)
+        pcoll.coder_id = coders.get_id(coder)
+    coders.populate_map(pipeline_components.coders)
+
+    # Initial set of stages are singleton transforms.
+    stages = [
+        Stage(name, [transform])
+        for name, transform in pipeline_proto.components.transforms.items()
+        if not transform.subtransforms]
+
+    # Apply each phase in order.
+    for phase in [
+        annotate_downstream_side_inputs, expand_gbk, sink_flattens,
+        greedily_fuse, sort_stages]:
+      logging.info('%s %s %s', '=' * 20, phase, '=' * 20)
+      stages = list(phase(stages))
+      logging.debug('Stages: %s', [str(s) for s in stages])
+
+    # Return the (possibly mutated) context and ordered set of stages.
+    return pipeline_components, stages
+
+  def run_stages(self, pipeline_components, stages, direct=True):
+
+    if direct:
+      controller = FnApiRunner.DirectController()
+    else:
+      controller = FnApiRunner.GrpcController()
+
+    try:
+      pcoll_buffers = collections.defaultdict(list)
+      for stage in stages:
+        self.run_stage(controller, pipeline_components, stage, pcoll_buffers)
+    finally:
+      controller.close()
+
+    return maptask_executor_runner.WorkerRunnerResult(PipelineState.DONE)
+
+  def run_stage(self, controller, pipeline_components, stage, pcoll_buffers):
+
+    coders = pipeline_context.PipelineContext(pipeline_components).coders
+    data_operation_spec = controller.data_operation_spec()
+
+    def extract_endpoints(stage):
+      # Returns maps of transform names to PCollection identifiers.
+      # Also mutates IO stages to point to the data data_operation_spec.
+      data_input = {}
+      data_side_input = {}
+      data_output = {}
+      for transform in stage.transforms:
+        pcoll_id = transform.spec.payload
+        if transform.spec.urn in (bundle_processor.DATA_INPUT_URN,
+                                  bundle_processor.DATA_OUTPUT_URN):
+          if transform.spec.urn == bundle_processor.DATA_INPUT_URN:
+            target = transform.unique_name, only_element(transform.outputs)
+            data_input[target] = pcoll_id
+          elif transform.spec.urn == bundle_processor.DATA_OUTPUT_URN:
+            target = transform.unique_name, only_element(transform.inputs)
+            data_output[target] = pcoll_id
+          else:
+            raise NotImplementedError
+          if data_operation_spec:
+            transform.spec.payload = data_operation_spec
+            transform.spec.any_param.CopyFrom(data_operation_spec)
+          else:
+            transform.spec.payload = ""
+            transform.spec.any_param.Clear()
+      return data_input, data_side_input, data_output
+
+    logging.info('Running %s', stage.name)
+    logging.debug('       %s', stage)
+    data_input, data_side_input, data_output = extract_endpoints(stage)
+    if data_side_input:
+      raise NotImplementedError('Side inputs.')
+
+    process_bundle_descriptor = beam_fn_api_pb2.ProcessBundleDescriptor(
+        id=self._next_uid(),
+        transforms={transform.unique_name: transform
+                    for transform in stage.transforms},
+        pcollections=dict(pipeline_components.pcollections.items()),
+        coders=dict(pipeline_components.coders.items()),
+        windowing_strategies=dict(
+            pipeline_components.windowing_strategies.items()),
+        environments=dict(pipeline_components.environments.items()))
+
+    process_bundle_registration = beam_fn_api_pb2.InstructionRequest(
+        instruction_id=self._next_uid(),
+        register=beam_fn_api_pb2.RegisterRequest(
+            process_bundle_descriptor=[process_bundle_descriptor]))
+
+    process_bundle = beam_fn_api_pb2.InstructionRequest(
+        instruction_id=self._next_uid(),
+        process_bundle=beam_fn_api_pb2.ProcessBundleRequest(
+            process_bundle_descriptor_reference=
+            process_bundle_descriptor.id))
+
+    # Write all the input data to the channel.
+    for (transform_id, name), pcoll_id in data_input.items():
+      data_out = controller.data_plane_handler.output_stream(
+          process_bundle.instruction_id, beam_fn_api_pb2.Target(
+              primitive_transform_reference=transform_id, name=name))
+      for element_data in pcoll_buffers[pcoll_id]:
+        data_out.write(element_data)
+      data_out.close()
+
+    # Register and start running the bundle.
+    controller.control_handler.push(process_bundle_registration)
+    controller.control_handler.push(process_bundle)
+
+    # Wait for the bundle to finish.
+    while True:
+      result = controller.control_handler.pull()
+      if result.instruction_id == process_bundle.instruction_id:
+        if result.error:
+          raise RuntimeError(result.error)
+        break
+
+    # Gather all output data.
+    expected_targets = [
+        beam_fn_api_pb2.Target(primitive_transform_reference=transform_id,
+                               name=output_name)
+        for (transform_id, output_name), _ in data_output.items()]
+    for output in controller.data_plane_handler.input_elements(
+        process_bundle.instruction_id, expected_targets):
+      target_tuple = (
+          output.target.primitive_transform_reference, output.target.name)
+      if target_tuple in data_output:
+        pcoll_id = data_output[target_tuple]
+        if pcoll_id.startswith('materialize:'):
+          # Just store the data chunks for replay.
+          pcoll_buffers[pcoll_id].append(output.data)
+        elif pcoll_id.startswith('group:'):
+          # This is a grouping write, create a grouping buffer if needed.
+          if pcoll_id not in pcoll_buffers:
+            original_gbk_transform = pcoll_id.split(':', 1)[1]
+            transform_proto = pipeline_components.transforms[
+                original_gbk_transform]
+            input_pcoll = only_element(transform_proto.inputs.values())
+            output_pcoll = only_element(transform_proto.outputs.values())
+            pre_gbk_coder = coders[
+                pipeline_components.pcollections[input_pcoll].coder_id]
+            post_gbk_coder = coders[
+                pipeline_components.pcollections[output_pcoll].coder_id]
+            pcoll_buffers[pcoll_id] = _GroupingBuffer(
+                pre_gbk_coder, post_gbk_coder)
+          pcoll_buffers[pcoll_id].append(output.data)
+        else:
+          # These should be the only two identifiers we produce for now,
+          # but special side input writes may go here.
+          raise NotImplementedError(pcoll_id)
+
+  # This is the "old" way of executing pipelines.
+  # TODO(robertwb): Remove once runner API supports side inputs.
+
   def _map_task_registration(self, map_task, state_handler,
                              data_operation_spec):
+    input_data, side_input_data, runner_sinks, process_bundle_descriptor = (
+        self._map_task_to_protos(map_task, data_operation_spec))
+    # Side inputs will be accessed over the state API.
+    for key, elements_data in side_input_data.items():
+      state_key = beam_fn_api_pb2.StateKey.MultimapSideInput(key=key)
+      state_handler.Clear(state_key)
+      state_handler.Append(state_key, [elements_data])
+    return beam_fn_api_pb2.InstructionRequest(
+        instruction_id=self._next_uid(),
+        register=beam_fn_api_pb2.RegisterRequest(
+            process_bundle_descriptor=[process_bundle_descriptor])
+        ), runner_sinks, input_data
+
+  def _map_task_to_protos(self, map_task, data_operation_spec):
     input_data = {}
+    side_input_data = {}
     runner_sinks = {}
-    transforms = []
-    transform_index_to_id = {}
 
-    # Maps coders to new coder objects and references.
-    coders = {}
+    context = pipeline_context.PipelineContext()
+    transform_protos = {}
+    used_pcollections = {}
 
-    def coder_id(coder):
-      if coder not in coders:
-        coders[coder] = beam_fn_api_pb2.Coder(
-            function_spec=sdk_worker.pack_function_spec_data(
-                json.dumps(coder.as_cloud_object()),
-                sdk_worker.PYTHON_CODER_URN, id=self._next_uid()))
+    def uniquify(*names):
+      # An injective mapping from string* to string.
+      return ':'.join("%s:%d" % (name, len(name)) for name in names)
 
-      return coders[coder].function_spec.id
+    def pcollection_id(op_ix, out_ix):
+      if (op_ix, out_ix) not in used_pcollections:
+        used_pcollections[op_ix, out_ix] = uniquify(
+            map_task[op_ix][0], 'out', str(out_ix))
+      return used_pcollections[op_ix, out_ix]
 
-    def output_tags(op):
-      return getattr(op, 'output_tags', ['out'])
+    def get_inputs(op):
+      if hasattr(op, 'inputs'):
+        inputs = op.inputs
+      elif hasattr(op, 'input'):
+        inputs = [op.input]
+      else:
+        inputs = []
+      return {'in%s' % ix: pcollection_id(*input)
+              for ix, input in enumerate(inputs)}
 
-    def as_target(op_input):
-      input_op_index, input_output_index = op_input
-      input_op = map_task[input_op_index][1]
-      return {
-          'ignored_input_tag':
-              beam_fn_api_pb2.Target.List(target=[
-                  beam_fn_api_pb2.Target(
-                      primitive_transform_reference=transform_index_to_id[
-                          input_op_index],
-                      name=output_tags(input_op)[input_output_index])
-              ])
-      }
-
-    def outputs(op):
-      return {
-          tag: beam_fn_api_pb2.PCollection(coder_reference=coder_id(coder))
-          for tag, coder in zip(output_tags(op), op.output_coders)
-      }
+    def get_outputs(op_ix):
+      op = map_task[op_ix][1]
+      return {tag: pcollection_id(op_ix, out_ix)
+              for out_ix, tag in enumerate(getattr(op, 'output_tags', ['out']))}
 
     for op_ix, (stage_name, operation) in enumerate(map_task):
-      transform_id = transform_index_to_id[op_ix] = self._next_uid()
+      transform_id = uniquify(stage_name)
+
       if isinstance(operation, operation_specs.WorkerInMemoryWrite):
         # Write this data back to the runner.
-        fn = beam_fn_api_pb2.FunctionSpec(urn=sdk_worker.DATA_OUTPUT_URN,
-                                          id=self._next_uid())
-        if data_operation_spec:
-          fn.data.Pack(data_operation_spec)
-        inputs = as_target(operation.input)
-        side_inputs = {}
-        runner_sinks[(transform_id, 'out')] = operation
+        target_name = only_element(get_inputs(operation).keys())
+        runner_sinks[(transform_id, target_name)] = operation
+        transform_spec = beam_runner_api_pb2.FunctionSpec(
+            urn=bundle_processor.DATA_OUTPUT_URN,
+            any_param=proto_utils.pack_Any(data_operation_spec),
+            payload=data_operation_spec.SerializeToString() \
+                if data_operation_spec is not None else None)
 
       elif isinstance(operation, operation_specs.WorkerRead):
-        # A Read is either translated to a direct injection of windowed values
-        # into the sdk worker, or an injection of the source object into the
-        # sdk worker as data followed by an SDF that reads that source.
+        # A Read from an in-memory source is done over the data plane.
         if (isinstance(operation.source.source,
                        maptask_executor_runner.InMemorySource)
             and isinstance(operation.source.source.default_output_coder(),
                            WindowedValueCoder)):
-          output_stream = create_OutputStream()
-          element_coder = (
-              operation.source.source.default_output_coder().get_impl())
-          # Re-encode the elements in the nested context and
-          # concatenate them together
-          for element in operation.source.source.read(None):
-            element_coder.encode_to_stream(element, output_stream, True)
-          target_name = self._next_uid()
-          input_data[(transform_id, target_name)] = output_stream.get()
-          fn = beam_fn_api_pb2.FunctionSpec(urn=sdk_worker.DATA_INPUT_URN,
-                                            id=self._next_uid())
-          if data_operation_spec:
-            fn.data.Pack(data_operation_spec)
-          inputs = {target_name: beam_fn_api_pb2.Target.List()}
-          side_inputs = {}
-        else:
-          # Read the source object from the runner.
-          source_coder = beam.coders.DillCoder()
-          input_transform_id = self._next_uid()
-          output_stream = create_OutputStream()
-          source_coder.get_impl().encode_to_stream(
-              GlobalWindows.windowed_value(operation.source),
-              output_stream,
-              True)
-          target_name = self._next_uid()
-          input_data[(input_transform_id, target_name)] = output_stream.get()
-          input_ptransform = beam_fn_api_pb2.PrimitiveTransform(
-              id=input_transform_id,
-              function_spec=beam_fn_api_pb2.FunctionSpec(
-                  urn=sdk_worker.DATA_INPUT_URN,
-                  id=self._next_uid()),
-              # TODO(robertwb): Possible name collision.
-              step_name=stage_name + '/inject_source',
-              inputs={target_name: beam_fn_api_pb2.Target.List()},
-              outputs={
-                  'out':
-                      beam_fn_api_pb2.PCollection(
-                          coder_reference=coder_id(source_coder))
-              })
-          if data_operation_spec:
-            input_ptransform.function_spec.data.Pack(data_operation_spec)
-          transforms.append(input_ptransform)
+          target_name = only_element(get_outputs(op_ix).keys())
+          input_data[(transform_id, target_name)] = self._reencode_elements(
+              operation.source.source.read(None),
+              operation.source.source.default_output_coder())
+          transform_spec = beam_runner_api_pb2.FunctionSpec(
+              urn=bundle_processor.DATA_INPUT_URN,
+              any_param=proto_utils.pack_Any(data_operation_spec),
+              payload=data_operation_spec.SerializeToString() \
+                  if data_operation_spec is not None else None)
 
-          # Read the elements out of the source.
-          fn = sdk_worker.pack_function_spec_data(
-              OLDE_SOURCE_SPLITTABLE_DOFN_DATA,
-              sdk_worker.PYTHON_DOFN_URN,
-              id=self._next_uid())
-          inputs = {
-              'ignored_input_tag':
-                  beam_fn_api_pb2.Target.List(target=[
-                      beam_fn_api_pb2.Target(
-                          primitive_transform_reference=input_transform_id,
-                          name='out')
-                  ])
-          }
-          side_inputs = {}
+        else:
+          # Otherwise serialize the source and execute it there.
+          # TODO: Use SDFs with an initial impulse.
+          # The Dataflow runner harness strips the base64 encoding. do the same
+          # here until we get the same thing back that we sent in.
+          source_bytes = base64.b64decode(
+              pickler.dumps(operation.source.source))
+          transform_spec = beam_runner_api_pb2.FunctionSpec(
+              urn=bundle_processor.PYTHON_SOURCE_URN,
+              any_param=proto_utils.pack_Any(
+                  wrappers_pb2.BytesValue(
+                      value=source_bytes)),
+              payload=source_bytes)
 
       elif isinstance(operation, operation_specs.WorkerDoFn):
-        fn = sdk_worker.pack_function_spec_data(
-            operation.serialized_fn,
-            sdk_worker.PYTHON_DOFN_URN,
-            id=self._next_uid())
-        inputs = as_target(operation.input)
-        # Store the contents of each side input for state access.
+        # Record the contents of each side input for access via the state api.
+        side_input_extras = []
         for si in operation.side_inputs:
           assert isinstance(si.source, iobase.BoundedSource)
           element_coder = si.source.default_output_coder()
-          view_id = self._next_uid()
           # TODO(robertwb): Actually flesh out the ViewFn API.
-          side_inputs[si.tag] = beam_fn_api_pb2.SideInput(
-              view_fn=sdk_worker.serialize_and_pack_py_fn(
-                  element_coder, urn=sdk_worker.PYTHON_ITERABLE_VIEWFN_URN,
-                  id=view_id))
-          # Re-encode the elements in the nested context and
-          # concatenate them together
-          output_stream = create_OutputStream()
-          for element in si.source.read(
-              si.source.get_range_tracker(None, None)):
-            element_coder.get_impl().encode_to_stream(
-                element, output_stream, True)
-          elements_data = output_stream.get()
-          state_key = beam_fn_api_pb2.StateKey(key=view_id)
-          state_handler.Clear(state_key)
-          state_handler.Append(state_key, elements_data)
+          side_input_extras.append((si.tag, element_coder))
+          side_input_data[
+              bundle_processor.side_input_tag(transform_id, si.tag)] = (
+                  self._reencode_elements(
+                      si.source.read(si.source.get_range_tracker(None, None)),
+                      element_coder))
+        augmented_serialized_fn = pickler.dumps(
+            (operation.serialized_fn, side_input_extras))
+        transform_spec = beam_runner_api_pb2.FunctionSpec(
+            urn=bundle_processor.PYTHON_DOFN_URN,
+            any_param=proto_utils.pack_Any(
+                wrappers_pb2.BytesValue(value=augmented_serialized_fn)),
+            payload=augmented_serialized_fn)
 
       elif isinstance(operation, operation_specs.WorkerFlatten):
-        fn = sdk_worker.pack_function_spec_data(
-            operation.serialized_fn,
-            sdk_worker.IDENTITY_DOFN_URN,
-            id=self._next_uid())
-        inputs = {
-            'ignored_input_tag':
-                beam_fn_api_pb2.Target.List(target=[
-                    beam_fn_api_pb2.Target(
-                        primitive_transform_reference=transform_index_to_id[
-                            input_op_index],
-                        name=output_tags(map_task[input_op_index][1])[
-                            input_output_index])
-                    for input_op_index, input_output_index in operation.inputs
-                ])
-        }
-        side_inputs = {}
+        # Flatten is nice and simple.
+        transform_spec = beam_runner_api_pb2.FunctionSpec(
+            urn=bundle_processor.IDENTITY_DOFN_URN)
 
       else:
-        raise TypeError(operation)
+        raise NotImplementedError(operation)
 
-      ptransform = beam_fn_api_pb2.PrimitiveTransform(
-          id=transform_id,
-          function_spec=fn,
-          step_name=stage_name,
-          inputs=inputs,
-          side_inputs=side_inputs,
-          outputs=outputs(operation))
-      transforms.append(ptransform)
+      transform_protos[transform_id] = beam_runner_api_pb2.PTransform(
+          unique_name=stage_name,
+          spec=transform_spec,
+          inputs=get_inputs(operation),
+          outputs=get_outputs(op_ix))
 
+    pcollection_protos = {
+        name: beam_runner_api_pb2.PCollection(
+            unique_name=name,
+            coder_id=context.coders.get_id(
+                map_task[op_id][1].output_coders[out_id]))
+        for (op_id, out_id), name in used_pcollections.items()
+    }
+    # Must follow creation of pcollection_protos to capture used coders.
+    context_proto = context.to_runner_api()
     process_bundle_descriptor = beam_fn_api_pb2.ProcessBundleDescriptor(
-        id=self._next_uid(), coders=coders.values(),
-        primitive_transform=transforms)
-    return beam_fn_api_pb2.InstructionRequest(
-        instruction_id=self._next_uid(),
-        register=beam_fn_api_pb2.RegisterRequest(
-            process_bundle_descriptor=[process_bundle_descriptor
-                                      ])), runner_sinks, input_data
+        id=self._next_uid(),
+        transforms=transform_protos,
+        pcollections=pcollection_protos,
+        coders=dict(context_proto.coders.items()),
+        windowing_strategies=dict(context_proto.windowing_strategies.items()),
+        environments=dict(context_proto.environments.items()))
+    return input_data, side_input_data, runner_sinks, process_bundle_descriptor
 
   def _run_map_task(
       self, map_task, control_handler, state_handler, data_plane_handler,
@@ -356,7 +875,7 @@ class FnApiRunner(maptask_executor_runner.MapTaskExecutorRunner):
             sink_op.output_buffer.append(e)
         return
 
-  def execute_map_tasks(self, ordered_map_tasks, direct=True):
+  def execute_map_tasks(self, ordered_map_tasks, direct=False):
     if direct:
       controller = FnApiRunner.DirectController()
     else:
@@ -370,6 +889,15 @@ class FnApiRunner(maptask_executor_runner.MapTaskExecutorRunner):
             controller.data_plane_handler, controller.data_operation_spec())
     finally:
       controller.close()
+
+  @staticmethod
+  def _reencode_elements(elements, element_coder):
+    output_stream = create_OutputStream()
+    for element in elements:
+      element_coder.get_impl().encode_to_stream(element, output_stream, True)
+    return output_stream.get()
+
+  # These classes are used to interact with the worker.
 
   class SimpleState(object):  # TODO(robertwb): Inherit from GRPC servicer.
 
@@ -467,3 +995,8 @@ class FnApiRunner(maptask_executor_runner.MapTaskExecutorRunner):
       self.data_plane_handler.close()
       self.control_server.stop(5).wait()
       self.data_server.stop(5).wait()
+
+
+def only_element(iterable):
+  element, = iterable
+  return element

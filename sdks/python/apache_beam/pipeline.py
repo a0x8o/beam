@@ -66,6 +66,7 @@ from apache_beam.options.pipeline_options import StandardOptions
 from apache_beam.options.pipeline_options import TypeOptions
 from apache_beam.options.pipeline_options_validator import PipelineOptionsValidator
 from apache_beam.utils.annotations import deprecated
+from apache_beam.utils import urns
 
 
 __all__ = ['Pipeline']
@@ -466,9 +467,25 @@ class Pipeline(object):
     self.transforms_stack.pop()
     return pvalueish_result
 
+  def __reduce__(self):
+    # Some transforms contain a reference to their enclosing pipeline,
+    # which in turn reference all other transforms (resulting in quadratic
+    # time/space to pickle each transform individually).  As we don't
+    # require pickled pipelines to be executable, break the chain here.
+    return str, ('Pickled pipeline stub.',)
+
   def _verify_runner_api_compatible(self):
+    if self._options.view_as(TypeOptions).runtime_type_check:
+      # This option is incompatible with the runner API as it requires
+      # the runner to inspect non-serialized hints on the transform
+      # itself.
+      return False
+
     class Visitor(PipelineVisitor):  # pylint: disable=used-before-assignment
       ok = True  # Really a nonlocal.
+
+      def enter_composite_transform(self, transform_node):
+        self.visit_transform(transform_node)
 
       def visit_transform(self, transform_node):
         if transform_node.side_inputs:
@@ -515,7 +532,18 @@ class Pipeline(object):
     p.applied_labels = set([
         t.unique_name for t in proto.components.transforms.values()])
     for id in proto.components.pcollections:
-      context.pcollections.get_by_id(id).pipeline = p
+      pcollection = context.pcollections.get_by_id(id)
+      pcollection.pipeline = p
+
+    # Inject PBegin input where necessary.
+    from apache_beam.io.iobase import Read
+    from apache_beam.transforms.core import Create
+    has_pbegin = [Read, Create]
+    for id in proto.components.transforms:
+      transform = context.transforms.get_by_id(id)
+      if not transform.inputs and transform.transform.__class__ in has_pbegin:
+        transform.inputs = (pvalue.PBegin(p),)
+
     return p
 
 
@@ -537,7 +565,7 @@ class PipelineVisitor(object):
     pass
 
   def visit_transform(self, transform_node):
-    """Callback for visiting a transform node in the pipeline DAG."""
+    """Callback for visiting a transform leaf node in the pipeline DAG."""
     pass
 
   def enter_composite_transform(self, transform_node):
@@ -702,7 +730,8 @@ class AppliedPTransform(object):
     return beam_runner_api_pb2.PTransform(
         unique_name=self.full_label,
         spec=transform_to_runner_api(self.transform, context),
-        subtransforms=[context.transforms.get_id(part) for part in self.parts],
+        subtransforms=[context.transforms.get_id(part, label=part.full_label)
+                       for part in self.parts],
         # TODO(BEAM-115): Side inputs.
         inputs={tag: context.pcollections.get_id(pc)
                 for tag, pc in self.named_inputs().items()},
@@ -724,6 +753,10 @@ class AppliedPTransform(object):
     result.outputs = {
         None if tag == 'None' else tag: context.pcollections.get_by_id(id)
         for tag, id in proto.outputs.items()}
+    # This annotation is expected by some runners.
+    if proto.spec.urn == urns.PARDO_TRANSFORM:
+      result.transform.output_tags = set(proto.outputs.keys()).difference(
+          {'None'})
     if not result.parts:
       for tag, pc in result.outputs.items():
         if pc not in result.inputs:

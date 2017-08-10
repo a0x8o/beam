@@ -59,7 +59,8 @@ class DataflowRunnerTest(unittest.TestCase):
       '--project=test-project',
       '--staging_location=ignored',
       '--temp_location=/dev/null',
-      '--no_auth=True']
+      '--no_auth=True',
+      '--dry_run=True']
 
   @mock.patch('time.sleep', return_value=None)
   def test_wait_until_finish(self, patched_time_sleep):
@@ -108,8 +109,22 @@ class DataflowRunnerTest(unittest.TestCase):
     (p | ptransform.Create([1, 2, 3])  # pylint: disable=expression-not-assigned
      | 'Do' >> ptransform.FlatMap(lambda x: [(x, x)])
      | ptransform.GroupByKey())
-    remote_runner.job = apiclient.Job(p._options)
-    super(DataflowRunner, remote_runner).run(p)
+    p.run()
+
+  def test_streaming_create_translation(self):
+    remote_runner = DataflowRunner()
+    self.default_properties.append("--streaming")
+    p = Pipeline(remote_runner, PipelineOptions(self.default_properties))
+    p | ptransform.Create([1])  # pylint: disable=expression-not-assigned
+    p.run()
+    job_dict = json.loads(str(remote_runner.job))
+    self.assertEqual(len(job_dict[u'steps']), 2)
+
+    self.assertEqual(job_dict[u'steps'][0][u'kind'], u'ParallelRead')
+    self.assertEqual(
+        job_dict[u'steps'][0][u'properties'][u'pubsub_subscription'],
+        '_starting_signal/')
+    self.assertEqual(job_dict[u'steps'][1][u'kind'], u'ParallelDo')
 
   def test_remote_runner_display_data(self):
     remote_runner = DataflowRunner()
@@ -142,8 +157,7 @@ class DataflowRunnerTest(unittest.TestCase):
     (p | ptransform.Create([1, 2, 3, 4, 5])
      | 'Do' >> SpecialParDo(SpecialDoFn(), now))
 
-    remote_runner.job = apiclient.Job(p._options)
-    super(DataflowRunner, remote_runner).run(p)
+    p.run()
     job_dict = json.loads(str(remote_runner.job))
     steps = [step
              for step in job_dict['steps']
@@ -241,6 +255,28 @@ class DataflowRunnerTest(unittest.TestCase):
     DataflowRunner.flatten_input_visitor().visit_transform(flatten)
     for _ in range(num_inputs):
       self.assertEqual(inputs[0].element_type, output_type)
+
+  def test_gbk_then_flatten_input_visitor(self):
+    p = TestPipeline(
+        runner=DataflowRunner(),
+        options=PipelineOptions(self.default_properties))
+    none_str_pc = p | 'c1' >> beam.Create({None: 'a'})
+    none_int_pc = p | 'c2' >> beam.Create({None: 3})
+    flat = (none_str_pc, none_int_pc) | beam.Flatten()
+    _ = flat | beam.GroupByKey()
+
+    # This may change if type inference changes, but we assert it here
+    # to make sure the check below is not vacuous.
+    self.assertNotIsInstance(flat.element_type, typehints.TupleConstraint)
+
+    p.visit(DataflowRunner.group_by_key_input_visitor())
+    p.visit(DataflowRunner.flatten_input_visitor())
+
+    # The dataflow runner requires gbk input to be tuples *and* flatten
+    # inputs to be equal to their outputs. Assert both hold.
+    self.assertIsInstance(flat.element_type, typehints.TupleConstraint)
+    self.assertEqual(flat.element_type, none_str_pc.element_type)
+    self.assertEqual(flat.element_type, none_int_pc.element_type)
 
   def test_serialize_windowing_strategy(self):
     # This just tests the basic path; more complete tests

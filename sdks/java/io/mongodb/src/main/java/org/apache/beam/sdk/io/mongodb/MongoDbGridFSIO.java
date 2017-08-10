@@ -117,7 +117,7 @@ import org.joda.time.Instant;
  * to the file separated with line feeds.
  * </p>
  */
-@Experimental
+@Experimental(Experimental.Kind.SOURCE_SINK)
 public class MongoDbGridFSIO {
 
   /**
@@ -440,7 +440,7 @@ public class MongoDbGridFSIO {
       }
 
       @Override
-      public Coder<ObjectId> getDefaultOutputCoder() {
+      public Coder<ObjectId> getOutputCoder() {
         return SerializableCoder.of(ObjectId.class);
       }
 

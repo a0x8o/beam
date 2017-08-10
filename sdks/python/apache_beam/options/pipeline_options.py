@@ -465,7 +465,14 @@ class WorkerOptions(PipelineOptions):
     parser.add_argument(
         '--use_public_ips',
         default=None,
-        help='Whether to assign public IP addresses to the worker machines.')
+        action='store_true',
+        help='Whether to assign public IP addresses to the worker VMs.')
+    parser.add_argument(
+        '--no_use_public_ips',
+        dest='use_public_ips',
+        default=None,
+        action='store_false',
+        help='Whether to assign only private IP addresses to the worker VMs.')
 
   def validate(self, validator):
     errors = []
@@ -545,13 +552,17 @@ class SetupOptions(PipelineOptions):
          'worker will install the resulting package before running any custom '
          'code.'))
     parser.add_argument(
-        '--beam_plugins',
+        '--beam_plugin', '--beam_plugin',
+        dest='beam_plugins',
+        action='append',
         default=None,
         help=
         ('Bootstrap the python process before executing any code by importing '
          'all the plugins used in the pipeline. Please pass a comma separated'
          'list of import paths to be included. This is currently an '
-         'experimental flag and provides no stability.'))
+         'experimental flag and provides no stability. Multiple '
+         '--beam_plugin options can be specified if more than one plugin '
+         'is needed.'))
     parser.add_argument(
         '--save_main_session',
         default=False,
@@ -598,6 +609,11 @@ class TestOptions(PipelineOptions):
         help=('Verify state/output of e2e test pipeline. This is pickled '
               'version of the matcher which should extends '
               'hamcrest.core.base_matcher.BaseMatcher.'))
+    parser.add_argument(
+        '--dry_run',
+        default=False,
+        help=('Used in unit testing runners without submitting the '
+              'actual job.'))
 
   def validate(self, validator):
     errors = []

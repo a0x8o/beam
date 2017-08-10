@@ -17,9 +17,9 @@
  */
 package org.apache.beam.sdk.transforms;
 
-import static com.google.common.base.Preconditions.checkArgument;
+import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
-import static org.apache.beam.sdk.TestUtils.checkCombineFn;
+import static org.apache.beam.sdk.testing.CombineFnTester.testCombineFn;
 import static org.apache.beam.sdk.transforms.display.DisplayDataMatchers.hasDisplayItem;
 import static org.apache.beam.sdk.transforms.display.DisplayDataMatchers.hasNamespace;
 import static org.apache.beam.sdk.transforms.display.DisplayDataMatchers.includesDisplayDataFor;
@@ -29,11 +29,13 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertThat;
 
 import com.google.common.base.MoreObjects;
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.Serializable;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
@@ -45,7 +47,6 @@ import org.apache.beam.sdk.coders.AtomicCoder;
 import org.apache.beam.sdk.coders.BigEndianIntegerCoder;
 import org.apache.beam.sdk.coders.BigEndianLongCoder;
 import org.apache.beam.sdk.coders.Coder;
-import org.apache.beam.sdk.coders.CoderException;
 import org.apache.beam.sdk.coders.CoderRegistry;
 import org.apache.beam.sdk.coders.DoubleCoder;
 import org.apache.beam.sdk.coders.KvCoder;
@@ -85,7 +86,6 @@ import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
-import org.mockito.Mock;
 
 /**
  * Tests for Combine transforms.
@@ -96,8 +96,6 @@ public class CombineTest implements Serializable {
   // anonymous inner classes inside the non-static test methods.
 
   static final List<KV<String, Integer>> EMPTY_TABLE = Collections.emptyList();
-
-  @Mock private DoFn<?, ?>.ProcessContext processContext;
 
   @Rule
   public final transient TestPipeline pipeline = TestPipeline.create();
@@ -142,12 +140,12 @@ public class CombineTest implements Serializable {
     PCollection<KV<String, String>> combinePerKey =
         perKeyInput.apply(
             Combine.<String, Integer, String>perKey(new TestCombineFnWithContext(globallySumView))
-                .withSideInputs(Arrays.asList(globallySumView)));
+                .withSideInputs(globallySumView));
 
     PCollection<String> combineGlobally = globallyInput
         .apply(Combine.globally(new TestCombineFnWithContext(globallySumView))
             .withoutDefaults()
-            .withSideInputs(Arrays.asList(globallySumView)));
+            .withSideInputs(globallySumView));
 
     PAssert.that(sum).containsInAnyOrder(globalSum);
     PAssert.that(combinePerKey).containsInAnyOrder(perKeyCombines);
@@ -280,11 +278,9 @@ public class CombineTest implements Serializable {
         .apply(Combine.<String, Integer, String>perKey(new TestCombineFn()));
 
     PAssert.that(sum).containsInAnyOrder(2, 5, 13);
-    PAssert.that(sumPerKey).containsInAnyOrder(
-        KV.of("a", "11"),
-        KV.of("a", "4"),
-        KV.of("b", "1"),
-        KV.of("b", "13"));
+    PAssert.that(sumPerKey)
+        .containsInAnyOrder(
+            Arrays.asList(KV.of("a", "11"), KV.of("a", "4"), KV.of("b", "1"), KV.of("b", "13")));
     pipeline.run();
   }
 
@@ -313,20 +309,80 @@ public class CombineTest implements Serializable {
     PCollection<KV<String, String>> combinePerKeyWithContext =
         perKeyInput.apply(
             Combine.<String, Integer, String>perKey(new TestCombineFnWithContext(globallySumView))
-                .withSideInputs(Arrays.asList(globallySumView)));
+                .withSideInputs(globallySumView));
 
     PCollection<String> combineGloballyWithContext = globallyInput
         .apply(Combine.globally(new TestCombineFnWithContext(globallySumView))
             .withoutDefaults()
-            .withSideInputs(Arrays.asList(globallySumView)));
+            .withSideInputs(globallySumView));
 
     PAssert.that(sum).containsInAnyOrder(2, 5, 13);
-    PAssert.that(combinePerKeyWithContext).containsInAnyOrder(
-        KV.of("a", "2:11"),
-        KV.of("a", "5:4"),
-        KV.of("b", "5:1"),
-        KV.of("b", "13:13"));
+    PAssert.that(combinePerKeyWithContext)
+        .containsInAnyOrder(
+            Arrays.asList(
+                KV.of("a", "2:11"), KV.of("a", "5:4"), KV.of("b", "5:1"), KV.of("b", "13:13")));
     PAssert.that(combineGloballyWithContext).containsInAnyOrder("2:11", "5:14", "13:13");
+    pipeline.run();
+  }
+
+  @Test
+  @Category(ValidatesRunner.class)
+  public void testSlidingWindowsCombine() {
+    PCollection<String> input =
+        pipeline
+            .apply(
+                Create.timestamped(
+                    TimestampedValue.of("a", new Instant(1L)),
+                    TimestampedValue.of("b", new Instant(2L)),
+                    TimestampedValue.of("c", new Instant(3L))))
+            .apply(
+                Window.<String>into(
+                    SlidingWindows.of(Duration.millis(3)).every(Duration.millis(1L))));
+    PCollection<List<String>> combined =
+        input.apply(
+            Combine.globally(
+                    new CombineFn<String, List<String>, List<String>>() {
+                      @Override
+                      public List<String> createAccumulator() {
+                        return new ArrayList<>();
+                      }
+
+                      @Override
+                      public List<String> addInput(List<String> accumulator, String input) {
+                        accumulator.add(input);
+                        return accumulator;
+                      }
+
+                      @Override
+                      public List<String> mergeAccumulators(Iterable<List<String>> accumulators) {
+                        // Mutate all of the accumulators. Instances should be used in only one
+                        // place, and not
+                        // reused after merging.
+                        List<String> cur = createAccumulator();
+                        for (List<String> accumulator : accumulators) {
+                          accumulator.addAll(cur);
+                          cur = accumulator;
+                        }
+                        return cur;
+                      }
+
+                      @Override
+                      public List<String> extractOutput(List<String> accumulator) {
+                        List<String> result = new ArrayList<>(accumulator);
+                        Collections.sort(result);
+                        return result;
+                      }
+                    })
+                .withoutDefaults());
+
+    PAssert.that(combined)
+        .containsInAnyOrder(
+            ImmutableList.of("a"),
+            ImmutableList.of("a", "b"),
+            ImmutableList.of("a", "b", "c"),
+            ImmutableList.of("b", "c"),
+            ImmutableList.of("c"));
+
     pipeline.run();
   }
 
@@ -355,23 +411,25 @@ public class CombineTest implements Serializable {
     PCollection<KV<String, String>> combinePerKeyWithContext =
         perKeyInput.apply(
             Combine.<String, Integer, String>perKey(new TestCombineFnWithContext(globallySumView))
-                .withSideInputs(Arrays.asList(globallySumView)));
+                .withSideInputs(globallySumView));
 
     PCollection<String> combineGloballyWithContext = globallyInput
         .apply(Combine.globally(new TestCombineFnWithContext(globallySumView))
             .withoutDefaults()
-            .withSideInputs(Arrays.asList(globallySumView)));
+            .withSideInputs(globallySumView));
 
     PAssert.that(sum).containsInAnyOrder(1, 2, 1, 4, 5, 14, 13);
-    PAssert.that(combinePerKeyWithContext).containsInAnyOrder(
-        KV.of("a", "1:1"),
-        KV.of("a", "2:11"),
-        KV.of("a", "1:1"),
-        KV.of("a", "4:4"),
-        KV.of("a", "5:4"),
-        KV.of("b", "5:1"),
-        KV.of("b", "14:113"),
-        KV.of("b", "13:13"));
+    PAssert.that(combinePerKeyWithContext)
+        .containsInAnyOrder(
+            Arrays.asList(
+                KV.of("a", "1:1"),
+                KV.of("a", "2:11"),
+                KV.of("a", "1:1"),
+                KV.of("a", "4:4"),
+                KV.of("a", "5:4"),
+                KV.of("b", "5:1"),
+                KV.of("b", "14:113"),
+                KV.of("b", "13:13")));
     PAssert.that(combineGloballyWithContext).containsInAnyOrder(
       "1:1", "2:11", "1:1", "4:4", "5:14", "14:113", "13:13");
     pipeline.run();
@@ -433,10 +491,8 @@ public class CombineTest implements Serializable {
         .apply(Combine.<String, Integer, String>perKey(new TestCombineFn()));
 
     PAssert.that(sum).containsInAnyOrder(7, 13);
-    PAssert.that(sumPerKey).containsInAnyOrder(
-        KV.of("a", "114"),
-        KV.of("b", "1"),
-        KV.of("b", "13"));
+    PAssert.that(sumPerKey)
+        .containsInAnyOrder(Arrays.asList(KV.of("a", "114"), KV.of("b", "1"), KV.of("b", "13")));
     pipeline.run();
   }
 
@@ -471,7 +527,7 @@ public class CombineTest implements Serializable {
             .apply(
                 Combine.<String, Integer, String>perKey(
                         new TestCombineFnWithContext(globallyFixedWindowsView))
-                    .withSideInputs(Arrays.asList(globallyFixedWindowsView)));
+                    .withSideInputs(globallyFixedWindowsView));
 
     PCollection<String> sessionsCombineGlobally =
         globallyInput
@@ -481,13 +537,12 @@ public class CombineTest implements Serializable {
             .apply(
                 Combine.globally(new TestCombineFnWithContext(globallyFixedWindowsView))
                     .withoutDefaults()
-                    .withSideInputs(Arrays.asList(globallyFixedWindowsView)));
+                    .withSideInputs(globallyFixedWindowsView));
 
     PAssert.that(fixedWindowsSum).containsInAnyOrder(2, 4, 1, 13);
-    PAssert.that(sessionsCombinePerKey).containsInAnyOrder(
-        KV.of("a", "1:114"),
-        KV.of("b", "1:1"),
-        KV.of("b", "0:13"));
+    PAssert.that(sessionsCombinePerKey)
+        .containsInAnyOrder(
+            Arrays.asList(KV.of("a", "1:114"), KV.of("b", "1:1"), KV.of("b", "0:13")));
     PAssert.that(sessionsCombineGlobally).containsInAnyOrder("1:1114", "0:13");
     pipeline.run();
   }
@@ -640,11 +695,11 @@ public class CombineTest implements Serializable {
 
   @Test
   public void testBinaryCombineFnWithNulls() {
-    checkCombineFn(new NullCombiner(), Arrays.asList(3, 3, 5), 45);
-    checkCombineFn(new NullCombiner(), Arrays.asList(null, 3, 5), 30);
-    checkCombineFn(new NullCombiner(), Arrays.asList(3, 3, null), 18);
-    checkCombineFn(new NullCombiner(), Arrays.asList(null, 3, null), 12);
-    checkCombineFn(new NullCombiner(), Arrays.<Integer>asList(null, null, null), 8);
+    testCombineFn(new NullCombiner(), Arrays.asList(3, 3, 5), 45);
+    testCombineFn(new NullCombiner(), Arrays.asList(null, 3, 5), 30);
+    testCombineFn(new NullCombiner(), Arrays.asList(3, 3, null), 18);
+    testCombineFn(new NullCombiner(), Arrays.asList(null, 3, null), 12);
+    testCombineFn(new NullCombiner(), Arrays.<Integer>asList(null, null, null), 8);
   }
 
   private static final class TestProdInt extends Combine.BinaryCombineIntegerFn {
@@ -716,7 +771,7 @@ public class CombineTest implements Serializable {
         pipeline
             .apply(
                 "CreateMainInput",
-                Create.<Void>timestamped(nonEmptyElement, emptyElement).withCoder(VoidCoder.of()))
+                Create.timestamped(nonEmptyElement, emptyElement).withCoder(VoidCoder.of()))
             .apply("WindowMainInput", Window.<Void>into(windowFn))
             .apply(
                 "OutputSideInput",
@@ -941,15 +996,13 @@ public class CombineTest implements Serializable {
      */
     private class CountSumCoder extends AtomicCoder<CountSum> {
       @Override
-      public void encode(CountSum value, OutputStream outStream)
-          throws CoderException, IOException {
+      public void encode(CountSum value, OutputStream outStream) throws IOException {
         LONG_CODER.encode(value.count, outStream);
         DOUBLE_CODER.encode(value.sum, outStream);
       }
 
       @Override
-      public CountSum decode(InputStream inStream)
-          throws CoderException, IOException {
+      public CountSum decode(InputStream inStream) throws IOException {
         long count = LONG_CODER.decode(inStream);
         double sum = DOUBLE_CODER.decode(inStream);
         return new CountSum(count, sum);
@@ -992,29 +1045,16 @@ public class CombineTest implements Serializable {
       public static Coder<Accumulator> getCoder() {
         return new AtomicCoder<Accumulator>() {
           @Override
-          public void encode(Accumulator accumulator, OutputStream outStream)
-              throws CoderException, IOException {
-            encode(accumulator, outStream, Coder.Context.NESTED);
+          public void encode(Accumulator accumulator, OutputStream outStream) throws IOException {
+            StringUtf8Coder.of().encode(accumulator.seed, outStream);
+            StringUtf8Coder.of().encode(accumulator.value, outStream);
           }
 
           @Override
-          public void encode(Accumulator accumulator, OutputStream outStream, Coder.Context context)
-              throws CoderException, IOException {
-            StringUtf8Coder.of().encode(accumulator.seed, outStream, context);
-            StringUtf8Coder.of().encode(accumulator.value, outStream, context);
-          }
-
-          @Override
-          public Accumulator decode(InputStream inStream) throws CoderException, IOException {
-            return decode(inStream, Coder.Context.NESTED);
-          }
-
-          @Override
-          public Accumulator decode(InputStream inStream, Coder.Context context)
-              throws CoderException, IOException {
-            return new Accumulator(
-                StringUtf8Coder.of().decode(inStream, context),
-                StringUtf8Coder.of().decode(inStream, context));
+          public Accumulator decode(InputStream inStream) throws IOException {
+            String seed = StringUtf8Coder.of().decode(inStream);
+            String value = StringUtf8Coder.of().decode(inStream);
+            return new Accumulator(seed, value);
           }
         };
       }
@@ -1042,18 +1082,22 @@ public class CombineTest implements Serializable {
 
     @Override
     public Accumulator mergeAccumulators(Iterable<Accumulator> accumulators) {
-      String seed = null;
-      String all = "";
+      Accumulator seedAccumulator = null;
+      StringBuilder all = new StringBuilder();
       for (Accumulator accumulator : accumulators) {
-        if (seed == null) {
-          seed = accumulator.seed;
+        if (seedAccumulator == null) {
+          seedAccumulator = accumulator;
         } else {
-          checkArgument(seed.equals(accumulator.seed), "Different seed values in accumulator");
+          assertEquals(
+              String.format(
+                  "Different seed values in accumulator: %s vs. %s", seedAccumulator, accumulator),
+              seedAccumulator.seed,
+              accumulator.seed);
         }
-        all += accumulator.value;
+        all.append(accumulator.value);
         accumulator.value = "cleared in mergeAccumulators";
       }
-      return new Accumulator(seed, all);
+      return new Accumulator(checkNotNull(seedAccumulator).seed, all.toString());
     }
 
     @Override
@@ -1161,7 +1205,7 @@ public class CombineTest implements Serializable {
       @Override
       public void mergeAccumulator(Counter accumulator) {
         checkState(outputs == 0);
-        checkArgument(accumulator.outputs == 0);
+        assertEquals(0, accumulator.outputs);
 
         merges += accumulator.merges + 1;
         inputs += accumulator.inputs;

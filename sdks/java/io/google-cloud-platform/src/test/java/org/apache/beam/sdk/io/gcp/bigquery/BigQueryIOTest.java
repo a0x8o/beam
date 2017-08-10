@@ -82,10 +82,10 @@ import org.apache.beam.sdk.coders.Coder.Context;
 import org.apache.beam.sdk.coders.CoderException;
 import org.apache.beam.sdk.coders.IterableCoder;
 import org.apache.beam.sdk.coders.KvCoder;
+import org.apache.beam.sdk.coders.ShardedKeyCoder;
 import org.apache.beam.sdk.coders.StringUtf8Coder;
 import org.apache.beam.sdk.coders.VarIntCoder;
 import org.apache.beam.sdk.io.BoundedSource;
-import org.apache.beam.sdk.io.CountingSource;
 import org.apache.beam.sdk.io.FileSystems;
 import org.apache.beam.sdk.io.GenerateSequence;
 import org.apache.beam.sdk.io.fs.ResourceId;
@@ -131,6 +131,7 @@ import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.PCollection.IsBounded;
 import org.apache.beam.sdk.values.PCollectionView;
 import org.apache.beam.sdk.values.PCollectionViews;
+import org.apache.beam.sdk.values.ShardedKey;
 import org.apache.beam.sdk.values.TupleTag;
 import org.apache.beam.sdk.values.TypeDescriptor;
 import org.apache.beam.sdk.values.ValueInSingleWindow;
@@ -400,7 +401,17 @@ public class BigQueryIOTest implements Serializable {
   }
 
   @Test
-  public void testReadFromTable() throws IOException, InterruptedException {
+  public void testReadFromTableOldSource() throws IOException, InterruptedException {
+    testReadFromTable(false);
+  }
+
+  @Test
+  public void testReadFromTableTemplateCompatibility() throws IOException, InterruptedException {
+    testReadFromTable(true);
+  }
+
+  private void testReadFromTable(boolean useTemplateCompatibility)
+      throws IOException, InterruptedException {
     BigQueryOptions bqOptions = TestPipeline.testingPipelineOptions().as(BigQueryOptions.class);
     bqOptions.setProject("defaultproject");
     bqOptions.setTempLocation(testFolder.newFolder("BigQueryIOTest").getAbsolutePath());
@@ -442,17 +453,27 @@ public class BigQueryIOTest implements Serializable {
         .withDatasetService(fakeDatasetService);
 
     Pipeline p = TestPipeline.create(bqOptions);
-    PCollection<KV<String, Long>> output = p
-        .apply(BigQueryIO.read().from("non-executing-project:somedataset.sometable")
+    BigQueryIO.Read read =
+        BigQueryIO.read()
+            .from("non-executing-project:somedataset.sometable")
             .withTestServices(fakeBqServices)
-            .withoutValidation())
-        .apply(ParDo.of(new DoFn<TableRow, KV<String, Long>>() {
-          @ProcessElement
-          public void processElement(ProcessContext c) throws Exception {
-            c.output(KV.of((String) c.element().get("name"),
-                Long.valueOf((String) c.element().get("number"))));
-          }
-        }));
+            .withoutValidation();
+    if (useTemplateCompatibility) {
+      read = read.withTemplateCompatibility();
+    }
+    PCollection<KV<String, Long>> output =
+        p.apply(read)
+            .apply(
+                ParDo.of(
+                    new DoFn<TableRow, KV<String, Long>>() {
+                      @ProcessElement
+                      public void processElement(ProcessContext c) throws Exception {
+                        c.output(
+                            KV.of(
+                                (String) c.element().get("name"),
+                                Long.valueOf((String) c.element().get("number"))));
+                      }
+                    }));
 
     PAssert.that(output)
         .containsInAnyOrder(ImmutableList.of(KV.of("a", 1L), KV.of("b", 2L), KV.of("c", 3L)));
@@ -1488,8 +1509,6 @@ public class BigQueryIOTest implements Serializable {
     // Simulate a repeated call to split(), like a Dataflow worker will sometimes do.
     sources = bqSource.split(200, options);
     assertEquals(2, sources.size());
-    BoundedSource<TableRow> actual = sources.get(0);
-    assertThat(actual, CoreMatchers.instanceOf(TransformingSource.class));
 
     // A repeated call to split() should not have caused a duplicate extract job.
     assertEquals(1, fakeJobService.getNumExtractJobCalls());
@@ -1572,8 +1591,6 @@ public class BigQueryIOTest implements Serializable {
 
     List<? extends BoundedSource<TableRow>> sources = bqSource.split(100, options);
     assertEquals(2, sources.size());
-    BoundedSource<TableRow> actual = sources.get(0);
-    assertThat(actual, CoreMatchers.instanceOf(TransformingSource.class));
   }
 
   @Test
@@ -1651,81 +1668,22 @@ public class BigQueryIOTest implements Serializable {
 
     List<? extends BoundedSource<TableRow>> sources = bqSource.split(100, options);
     assertEquals(2, sources.size());
-    BoundedSource<TableRow> actual = sources.get(0);
-    assertThat(actual, CoreMatchers.instanceOf(TransformingSource.class));
-  }
-
-  @Test
-  public void testTransformingSource() throws Exception {
-    int numElements = 10000;
-    @SuppressWarnings("deprecation")
-    BoundedSource<Long> longSource = CountingSource.upTo(numElements);
-    SerializableFunction<Long, String> toStringFn =
-        new SerializableFunction<Long, String>() {
-          @Override
-          public String apply(Long input) {
-            return input.toString();
-         }};
-    BoundedSource<String> stringSource = new TransformingSource<>(
-        longSource, toStringFn, StringUtf8Coder.of());
-
-    List<String> expected = Lists.newArrayList();
-    for (int i = 0; i < numElements; i++) {
-      expected.add(String.valueOf(i));
-    }
-
-    PipelineOptions options = PipelineOptionsFactory.create();
-    Assert.assertThat(
-        SourceTestUtils.readFromSource(stringSource, options),
-        CoreMatchers.is(expected));
-    SourceTestUtils.assertSplitAtFractionBehavior(
-        stringSource, 100, 0.3, ExpectedSplitOutcome.MUST_SUCCEED_AND_BE_CONSISTENT, options);
-
-    SourceTestUtils.assertSourcesEqualReferenceSource(
-        stringSource, stringSource.split(100, options), options);
-  }
-
-  @Test
-  public void testTransformingSourceUnsplittable() throws Exception {
-    int numElements = 10000;
-    @SuppressWarnings("deprecation")
-    BoundedSource<Long> longSource =
-        SourceTestUtils.toUnsplittableSource(CountingSource.upTo(numElements));
-    SerializableFunction<Long, String> toStringFn =
-        new SerializableFunction<Long, String>() {
-          @Override
-          public String apply(Long input) {
-            return input.toString();
-          }
-        };
-    BoundedSource<String> stringSource =
-        new TransformingSource<>(longSource, toStringFn, StringUtf8Coder.of());
-
-    List<String> expected = Lists.newArrayList();
-    for (int i = 0; i < numElements; i++) {
-      expected.add(String.valueOf(i));
-    }
-
-    PipelineOptions options = PipelineOptionsFactory.create();
-    Assert.assertThat(
-        SourceTestUtils.readFromSource(stringSource, options), CoreMatchers.is(expected));
-    SourceTestUtils.assertSplitAtFractionBehavior(
-        stringSource, 100, 0.3, ExpectedSplitOutcome.MUST_BE_CONSISTENT_IF_SUCCEEDS, options);
-
-    SourceTestUtils.assertSourcesEqualReferenceSource(
-        stringSource, stringSource.split(100, options), options);
   }
 
   @Test
   public void testPassThroughThenCleanup() throws Exception {
 
-    PCollection<Integer> output = p
-        .apply(Create.of(1, 2, 3))
-        .apply(new PassThroughThenCleanup<Integer>(new CleanupOperation() {
-          @Override
-          void cleanup(PipelineOptions options) throws Exception {
-            // no-op
-          }}));
+    PCollection<Integer> output =
+        p.apply(Create.of(1, 2, 3))
+            .apply(
+                new PassThroughThenCleanup<Integer>(
+                    new CleanupOperation() {
+                      @Override
+                      void cleanup(PassThroughThenCleanup.ContextContainer c) throws Exception {
+                        // no-op
+                      }
+                    },
+                    p.apply("Create1", Create.of("")).apply(View.<String>asSingleton())));
 
     PAssert.that(output).containsInAnyOrder(1, 2, 3);
 
@@ -1736,11 +1694,15 @@ public class BigQueryIOTest implements Serializable {
   public void testPassThroughThenCleanupExecuted() throws Exception {
 
     p.apply(Create.empty(VarIntCoder.of()))
-        .apply(new PassThroughThenCleanup<Integer>(new CleanupOperation() {
-          @Override
-          void cleanup(PipelineOptions options) throws Exception {
-            throw new RuntimeException("cleanup executed");
-          }}));
+        .apply(
+            new PassThroughThenCleanup<Integer>(
+                new CleanupOperation() {
+                  @Override
+                  void cleanup(PassThroughThenCleanup.ContextContainer c) throws Exception {
+                    throw new RuntimeException("cleanup executed");
+                  }
+                },
+                p.apply("Create1", Create.of("")).apply(View.<String>asSingleton())));
 
     thrown.expect(RuntimeException.class);
     thrown.expectMessage("cleanup executed");

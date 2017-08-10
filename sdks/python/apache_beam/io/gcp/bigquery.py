@@ -1002,12 +1002,23 @@ class BigQueryWrapper(object):
     if found_table and write_disposition != BigQueryDisposition.WRITE_TRUNCATE:
       return found_table
     else:
+      created_table = self._create_table(project_id=project_id,
+                                         dataset_id=dataset_id,
+                                         table_id=table_id,
+                                         schema=schema or found_table.schema)
       # if write_disposition == BigQueryDisposition.WRITE_TRUNCATE we delete
       # the table before this point.
-      return self._create_table(project_id=project_id,
-                                dataset_id=dataset_id,
-                                table_id=table_id,
-                                schema=schema or found_table.schema)
+      if write_disposition == BigQueryDisposition.WRITE_TRUNCATE:
+        # BigQuery can route data to the old table for 2 mins max so wait
+        # that much time before creating the table and writing it
+        logging.warning('Sleeping for 150 seconds before the write as ' +
+                        'BigQuery inserts can be routed to deleted table ' +
+                        'for 2 mins after the delete and create.')
+        # TODO(BEAM-2673): Remove this sleep by migrating to load api
+        time.sleep(150)
+        return created_table
+      else:
+        return created_table
 
   def run_query(self, project_id, query, use_legacy_sql, flatten_results,
                 dry_run=False):
@@ -1191,22 +1202,20 @@ class BigQueryWriteFn(DoFn):
 
   @staticmethod
   def get_table_schema(schema):
-    # Transform the table schema into a bigquery.TableSchema instance.
-    if isinstance(schema, basestring):
-      table_schema = bigquery.TableSchema()
-      schema_list = [s.strip() for s in schema.split(',')]
-      for field_and_type in schema_list:
-        field_name, field_type = field_and_type.split(':')
-        field_schema = bigquery.TableFieldSchema()
-        field_schema.name = field_name
-        field_schema.type = field_type
-        field_schema.mode = 'NULLABLE'
-        table_schema.fields.append(field_schema)
-      return table_schema
-    elif schema is None:
+    """Transform the table schema into a bigquery.TableSchema instance.
+
+    Args:
+      schema: The schema to be used if the BigQuery table to write has to be
+        created. This is a dictionary object created in the WriteToBigQuery
+        transform.
+    Returns:
+      table_schema: The schema to be used if the BigQuery table to write has
+         to be created but in the bigquery.TableSchema format.
+    """
+    if schema is None:
       return schema
-    elif isinstance(schema, bigquery.TableSchema):
-      return schema
+    elif isinstance(schema, dict):
+      return parse_table_schema_from_json(json.dumps(schema))
     else:
       raise TypeError('Unexpected schema argument: %s.' % schema)
 
@@ -1289,13 +1298,83 @@ class WriteToBigQuery(PTransform):
     self.batch_size = batch_size
     self.test_client = test_client
 
+  @staticmethod
+  def get_table_schema_from_string(schema):
+    """Transform the string table schema into a bigquery.TableSchema instance.
+
+    Args:
+      schema: The sting schema to be used if the BigQuery table to write has
+         to be created.
+    Returns:
+      table_schema: The schema to be used if the BigQuery table to write has
+         to be created but in the bigquery.TableSchema format.
+    """
+    table_schema = bigquery.TableSchema()
+    schema_list = [s.strip() for s in schema.split(',')]
+    for field_and_type in schema_list:
+      field_name, field_type = field_and_type.split(':')
+      field_schema = bigquery.TableFieldSchema()
+      field_schema.name = field_name
+      field_schema.type = field_type
+      field_schema.mode = 'NULLABLE'
+      table_schema.fields.append(field_schema)
+    return table_schema
+
+  @staticmethod
+  def table_schema_to_dict(table_schema):
+    """Create a dictionary representation of table schema for serialization
+    """
+    def get_table_field(field):
+      """Create a dictionary representation of a table field
+      """
+      result = {}
+      result['name'] = field.name
+      result['type'] = field.type
+      result['mode'] = getattr(field, 'mode', 'NULLABLE')
+      if hasattr(field, 'description') and field.description is not None:
+        result['description'] = field.description
+      if hasattr(field, 'fields') and field.fields:
+        result['fields'] = [get_table_field(f) for f in field.fields]
+      return result
+
+    if not isinstance(table_schema, bigquery.TableSchema):
+      raise ValueError("Table schema must be of the type bigquery.TableSchema")
+    schema = {'fields': []}
+    for field in table_schema.fields:
+      schema['fields'].append(get_table_field(field))
+    return schema
+
+  @staticmethod
+  def get_dict_table_schema(schema):
+    """Transform the table schema into a dictionary instance.
+
+    Args:
+      schema: The schema to be used if the BigQuery table to write has to be
+        created. This can either be a dict or string or in the TableSchema
+        format.
+    Returns:
+      table_schema: The schema to be used if the BigQuery table to write has
+         to be created but in the dictionary format.
+    """
+    if isinstance(schema, dict):
+      return schema
+    elif schema is None:
+      return schema
+    elif isinstance(schema, basestring):
+      table_schema = WriteToBigQuery.get_table_schema_from_string(schema)
+      return WriteToBigQuery.table_schema_to_dict(table_schema)
+    elif isinstance(schema, bigquery.TableSchema):
+      return WriteToBigQuery.table_schema_to_dict(schema)
+    else:
+      raise TypeError('Unexpected schema argument: %s.' % schema)
+
   def expand(self, pcoll):
     bigquery_write_fn = BigQueryWriteFn(
         table_id=self.table_reference.tableId,
         dataset_id=self.table_reference.datasetId,
         project_id=self.table_reference.projectId,
         batch_size=self.batch_size,
-        schema=self.schema,
+        schema=self.get_dict_table_schema(self.schema),
         create_disposition=self.create_disposition,
         write_disposition=self.write_disposition,
         client=self.test_client)

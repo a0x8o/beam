@@ -98,7 +98,7 @@ import org.slf4j.LoggerFactory;
  *
  * }</pre>
  */
-@Experimental
+@Experimental(Experimental.Kind.SOURCE_SINK)
 public class JmsIO {
 
   private static final Logger LOG = LoggerFactory.getLogger(JmsIO.class);
@@ -373,7 +373,7 @@ public class JmsIO {
     }
 
     @Override
-    public Coder<JmsRecord> getDefaultOutputCoder() {
+    public Coder<JmsRecord> getOutputCoder() {
       return SerializableCoder.of(JmsRecord.class);
     }
 

@@ -40,7 +40,6 @@ import org.apache.beam.runners.apex.ApexRunner;
 import org.apache.beam.runners.apex.translation.utils.ApexStateInternals.ApexStateBackend;
 import org.apache.beam.runners.apex.translation.utils.ApexStreamTuple;
 import org.apache.beam.runners.apex.translation.utils.NoOpStepContext;
-import org.apache.beam.runners.apex.translation.utils.SerializablePipelineOptions;
 import org.apache.beam.runners.apex.translation.utils.StateInternalsProxy;
 import org.apache.beam.runners.apex.translation.utils.ValueAndCoderKryoSerializable;
 import org.apache.beam.runners.core.DoFnRunner;
@@ -64,6 +63,7 @@ import org.apache.beam.runners.core.StatefulDoFnRunner;
 import org.apache.beam.runners.core.TimerInternals;
 import org.apache.beam.runners.core.TimerInternals.TimerData;
 import org.apache.beam.runners.core.TimerInternalsFactory;
+import org.apache.beam.runners.core.construction.SerializablePipelineOptions;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.coders.KvCoder;
 import org.apache.beam.sdk.coders.ListCoder;
@@ -359,10 +359,7 @@ public class ApexParDoOperator<InputT, OutputT> extends BaseOperator implements 
       }
     }
     if (sideInputs.isEmpty()) {
-      if (traceTuples) {
-        LOG.debug("\nemitting watermark {}\n", mark);
-      }
-      output.emit(mark);
+      outputWatermark(mark);
       return;
     }
 
@@ -370,16 +367,28 @@ public class ApexParDoOperator<InputT, OutputT> extends BaseOperator implements 
         Math.min(pushedBackWatermark.get(), currentInputWatermark);
     if (potentialOutputWatermark > currentOutputWatermark) {
       currentOutputWatermark = potentialOutputWatermark;
-      if (traceTuples) {
-        LOG.debug("\nemitting watermark {}\n", currentOutputWatermark);
+      outputWatermark(ApexStreamTuple.WatermarkTuple.of(currentOutputWatermark));
+    }
+  }
+
+  private void outputWatermark(ApexStreamTuple.WatermarkTuple<?> mark) {
+    if (traceTuples) {
+      LOG.debug("\nemitting {}\n", mark);
+    }
+    output.emit(mark);
+    if (!additionalOutputPortMapping.isEmpty()) {
+      for (DefaultOutputPort<ApexStreamTuple<?>> additionalOutput :
+          additionalOutputPortMapping.values()) {
+        additionalOutput.emit(mark);
       }
-      output.emit(ApexStreamTuple.WatermarkTuple.of(currentOutputWatermark));
     }
   }
 
   @Override
   public void setup(OperatorContext context) {
-    this.traceTuples = ApexStreamTuple.Logging.isDebugEnabled(pipelineOptions.get(), this);
+    this.traceTuples =
+        ApexStreamTuple.Logging.isDebugEnabled(
+            pipelineOptions.get().as(ApexPipelineOptions.class), this);
     SideInputReader sideInputReader = NullSideInputReader.of(sideInputs);
     if (!sideInputs.isEmpty()) {
       sideInputHandler = new SideInputHandler(sideInputs, sideInputStateInternals);

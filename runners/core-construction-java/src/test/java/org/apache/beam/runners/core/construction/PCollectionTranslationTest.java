@@ -113,13 +113,37 @@ public class PCollectionTranslationTest {
 
   @Test
   public void testEncodeDecodeCycle() throws Exception {
+    // Encode
+    SdkComponents sdkComponents = SdkComponents.create();
+    RunnerApi.PCollection protoCollection =
+        PCollectionTranslation.toProto(testCollection, sdkComponents);
+    RehydratedComponents protoComponents =
+        RehydratedComponents.forComponents(sdkComponents.toComponents());
+
+    // Decode
+    Pipeline pipeline = Pipeline.create();
+    PCollection<?> decodedCollection =
+        PCollectionTranslation.fromProto(protoCollection, pipeline, protoComponents);
+
+    // Verify
+    assertThat(decodedCollection.getCoder(), Matchers.<Coder<?>>equalTo(testCollection.getCoder()));
+    assertThat(
+        decodedCollection.getWindowingStrategy(),
+        Matchers.<WindowingStrategy<?, ?>>equalTo(
+            testCollection.getWindowingStrategy().fixDefaults()));
+    assertThat(decodedCollection.isBounded(), equalTo(testCollection.isBounded()));
+  }
+
+  @Test
+  public void testEncodeDecodeFields() throws Exception {
     SdkComponents sdkComponents = SdkComponents.create();
     RunnerApi.PCollection protoCollection = PCollectionTranslation
         .toProto(testCollection, sdkComponents);
-    RunnerApi.Components protoComponents = sdkComponents.toComponents();
-    Coder<?> decodedCoder = PCollectionTranslation.getCoder(protoCollection, protoComponents);
+    RehydratedComponents protoComponents =
+        RehydratedComponents.forComponents(sdkComponents.toComponents());
+    Coder<?> decodedCoder = protoComponents.getCoder(protoCollection.getCoderId());
     WindowingStrategy<?, ?> decodedStrategy =
-        PCollectionTranslation.getWindowingStrategy(protoCollection, protoComponents);
+        protoComponents.getWindowingStrategy(protoCollection.getWindowingStrategyId());
     IsBounded decodedIsBounded = PCollectionTranslation.isBounded(protoCollection);
 
     assertThat(decodedCoder, Matchers.<Coder<?>>equalTo(testCollection.getCoder()));
