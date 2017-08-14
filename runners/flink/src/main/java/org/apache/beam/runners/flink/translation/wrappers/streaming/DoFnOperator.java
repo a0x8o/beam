@@ -47,10 +47,10 @@ import org.apache.beam.runners.core.StateTags;
 import org.apache.beam.runners.core.StatefulDoFnRunner;
 import org.apache.beam.runners.core.TimerInternals;
 import org.apache.beam.runners.core.TimerInternals.TimerData;
+import org.apache.beam.runners.core.construction.SerializablePipelineOptions;
 import org.apache.beam.runners.flink.FlinkPipelineOptions;
 import org.apache.beam.runners.flink.metrics.DoFnRunnerWithMetricsUpdate;
 import org.apache.beam.runners.flink.translation.types.CoderTypeSerializer;
-import org.apache.beam.runners.flink.translation.utils.SerializedPipelineOptions;
 import org.apache.beam.runners.flink.translation.wrappers.streaming.state.FlinkBroadcastStateInternals;
 import org.apache.beam.runners.flink.translation.wrappers.streaming.state.FlinkKeyGroupStateInternals;
 import org.apache.beam.runners.flink.translation.wrappers.streaming.state.FlinkSplitStateInternals;
@@ -106,7 +106,7 @@ public class DoFnOperator<InputT, OutputT>
 
   protected DoFn<InputT, OutputT> doFn;
 
-  protected final SerializedPipelineOptions serializedOptions;
+  protected final SerializablePipelineOptions serializedOptions;
 
   protected final TupleTag<OutputT> mainOutputTag;
   protected final List<TupleTag<?>> additionalOutputTags;
@@ -174,7 +174,7 @@ public class DoFnOperator<InputT, OutputT>
     this.additionalOutputTags = additionalOutputTags;
     this.sideInputTagMapping = sideInputTagMapping;
     this.sideInputs = sideInputs;
-    this.serializedOptions = new SerializedPipelineOptions(options);
+    this.serializedOptions = new SerializablePipelineOptions(options);
     this.windowingStrategy = windowingStrategy;
     this.outputManagerFactory = outputManagerFactory;
 
@@ -256,7 +256,7 @@ public class DoFnOperator<InputT, OutputT>
     org.apache.beam.runners.core.StepContext stepContext = createStepContext();
 
     doFnRunner = DoFnRunners.simpleRunner(
-        serializedOptions.getPipelineOptions(),
+        serializedOptions.get(),
         doFn,
         sideInputReader,
         outputManager,
@@ -301,7 +301,7 @@ public class DoFnOperator<InputT, OutputT>
           stateCleaner);
     }
 
-    if ((serializedOptions.getPipelineOptions().as(FlinkPipelineOptions.class))
+    if ((serializedOptions.get().as(FlinkPipelineOptions.class))
         .getEnableMetrics()) {
       doFnRunner = new DoFnRunnerWithMetricsUpdate<>(stepName, doFnRunner, getRuntimeContext());
     }
@@ -334,7 +334,7 @@ public class DoFnOperator<InputT, OutputT>
   protected final long getPushbackWatermarkHold() {
     // if we don't have side inputs we never hold the watermark
     if (sideInputs.isEmpty()) {
-      return BoundedWindow.TIMESTAMP_MAX_VALUE.getMillis();
+      return Long.MAX_VALUE;
     }
 
     try {
@@ -353,7 +353,7 @@ public class DoFnOperator<InputT, OutputT>
       BagState<WindowedValue<InputT>> pushedBack =
           pushbackStateInternals.state(StateNamespaces.global(), pushedBackTag);
 
-      long min = BoundedWindow.TIMESTAMP_MAX_VALUE.getMillis();
+      long min = Long.MAX_VALUE;
       for (WindowedValue<InputT> value : pushedBack.read()) {
         min = Math.min(min, value.getTimestamp().getMillis());
       }
@@ -426,7 +426,7 @@ public class DoFnOperator<InputT, OutputT>
     }
 
     pushedBack.clear();
-    long min = BoundedWindow.TIMESTAMP_MAX_VALUE.getMillis();
+    long min = Long.MAX_VALUE;
     for (WindowedValue<InputT> pushedBackValue : newPushedBack) {
       min = Math.min(min, pushedBackValue.getTimestamp().getMillis());
       pushedBack.add(pushedBackValue);
@@ -470,15 +470,15 @@ public class DoFnOperator<InputT, OutputT>
       setCurrentInputWatermark(mark.getTimestamp());
 
       // hold back by the pushed back values waiting for side inputs
-      long actualInputWatermark = Math.min(getPushbackWatermarkHold(), mark.getTimestamp());
+      long pushedBackInputWatermark = Math.min(getPushbackWatermarkHold(), mark.getTimestamp());
 
-      timerService.advanceWatermark(actualInputWatermark);
+      timerService.advanceWatermark(toFlinkRuntimeWatermark(pushedBackInputWatermark));
 
       Instant watermarkHold = stateInternals.watermarkHold();
 
       long combinedWatermarkHold = Math.min(watermarkHold.getMillis(), getPushbackWatermarkHold());
 
-      long potentialOutputWatermark = Math.min(currentInputWatermark, combinedWatermarkHold);
+      long potentialOutputWatermark = Math.min(pushedBackInputWatermark, combinedWatermarkHold);
 
       if (potentialOutputWatermark > currentOutputWatermark) {
         setCurrentOutputWatermark(potentialOutputWatermark);
@@ -498,6 +498,17 @@ public class DoFnOperator<InputT, OutputT>
       // maybe output a new watermark
       processWatermark1(new Watermark(currentInputWatermark));
     }
+  }
+
+  /**
+   * Converts a Beam watermark to a Flink watermark. This is only relevant when considering what
+   * event-time timers to fire: in Beam, a watermark {@code T} says there will not be any elements
+   * with a timestamp {@code < T} in the future. A Flink watermark {@code T} says there will not be
+   * any elements with a timestamp {@code <= T} in the future. We correct this by subtracting
+   * {@code 1} from a Beam watermark before passing to any relevant Flink runtime components.
+   */
+  private static long toFlinkRuntimeWatermark(long beamWatermark) {
+    return beamWatermark - 1;
   }
 
   /**
@@ -524,7 +535,7 @@ public class DoFnOperator<InputT, OutputT>
 
     pushedBack.clear();
 
-    setPushedBackWatermark(BoundedWindow.TIMESTAMP_MAX_VALUE.getMillis());
+    setPushedBackWatermark(Long.MAX_VALUE);
 
     pushbackDoFnRunner.finishBundle();
   }
@@ -752,6 +763,9 @@ public class DoFnOperator<InputT, OutputT>
       setTimer(TimerData.of(timerId, namespace, target, timeDomain));
     }
 
+    /**
+     * @deprecated use {@link #setTimer(StateNamespace, String, Instant, TimeDomain)}.
+     */
     @Deprecated
     @Override
     public void setTimer(TimerData timerKey) {
@@ -770,6 +784,9 @@ public class DoFnOperator<InputT, OutputT>
       }
     }
 
+    /**
+     * @deprecated use {@link #deleteTimer(StateNamespace, String, TimeDomain)}.
+     */
     @Deprecated
     @Override
     public void deleteTimer(StateNamespace namespace, String timerId) {
@@ -783,6 +800,9 @@ public class DoFnOperator<InputT, OutputT>
           "Canceling of a timer by ID is not yet supported.");
     }
 
+    /**
+     * @deprecated use {@link #deleteTimer(StateNamespace, String, TimeDomain)}.
+     */
     @Deprecated
     @Override
     public void deleteTimer(TimerData timerKey) {

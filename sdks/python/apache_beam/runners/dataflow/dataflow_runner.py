@@ -21,6 +21,7 @@ The runner will create a JSON description of the job graph and then submit it
 to the Dataflow Service for remote execution by a worker.
 """
 
+from collections import defaultdict
 import logging
 import threading
 import time
@@ -46,8 +47,8 @@ from apache_beam.runners.runner import PipelineRunner
 from apache_beam.runners.runner import PipelineState
 from apache_beam.transforms.display import DisplayData
 from apache_beam.typehints import typehints
-from apache_beam.options.pipeline_options import StandardOptions
 from apache_beam.options.pipeline_options import SetupOptions
+from apache_beam.options.pipeline_options import StandardOptions
 from apache_beam.options.pipeline_options import TestOptions
 from apache_beam.utils.plugin import BeamPlugin
 
@@ -64,12 +65,6 @@ class DataflowRunner(PipelineRunner):
   after the service created the job and  will not wait for the job to finish
   if blocking is set to False.
   """
-
-  # Environment version information. It is passed to the service during a
-  # a job submission and is used by the service to establish what features
-  # are expected by the workers.
-  BATCH_ENVIRONMENT_MAJOR_VERSION = '6'
-  STREAMING_ENVIRONMENT_MAJOR_VERSION = '1'
 
   # A list of PTransformOverride objects to be applied before running a pipeline
   # using DataflowRunner.
@@ -193,18 +188,31 @@ class DataflowRunner(PipelineRunner):
           if not input_type:
             input_type = typehints.Any
 
-          if not isinstance(input_type, typehints.TupleHint.TupleConstraint):
-            if isinstance(input_type, typehints.AnyTypeConstraint):
+          def coerce_to_kv_type(element_type):
+            if isinstance(element_type, typehints.TupleHint.TupleConstraint):
+              if len(element_type.tuple_types) == 2:
+                return element_type
+              else:
+                raise ValueError(
+                    "Tuple input to GroupByKey must be have two components. "
+                    "Found %s for %s" % (element_type, pcoll))
+            elif isinstance(input_type, typehints.AnyTypeConstraint):
               # `Any` type needs to be replaced with a KV[Any, Any] to
               # force a KV coder as the main output coder for the pcollection
               # preceding a GroupByKey.
-              pcoll.element_type = typehints.KV[typehints.Any, typehints.Any]
+              return typehints.KV[typehints.Any, typehints.Any]
+            elif isinstance(element_type, typehints.UnionConstraint):
+              union_types = [
+                  coerce_to_kv_type(t) for t in element_type.union_types]
+              return typehints.KV[
+                  typehints.Union[tuple(t.tuple_types[0] for t in union_types)],
+                  typehints.Union[tuple(t.tuple_types[1] for t in union_types)]]
             else:
-              # TODO: Handle other valid types,
-              # e.g. Union[KV[str, int], KV[str, float]]
+              # TODO: Possibly handle other valid types.
               raise ValueError(
                   "Input to GroupByKey must be of Tuple or Any type. "
-                  "Found %s for %s" % (input_type, pcoll))
+                  "Found %s for %s" % (element_type, pcoll))
+          pcoll.element_type = coerce_to_kv_type(input_type)
 
     return GroupByKeyInputVisitor()
 
@@ -268,15 +276,9 @@ class DataflowRunner(PipelineRunner):
     if test_options.dry_run:
       return None
 
-    standard_options = pipeline._options.view_as(StandardOptions)
-    if standard_options.streaming:
-      job_version = DataflowRunner.STREAMING_ENVIRONMENT_MAJOR_VERSION
-    else:
-      job_version = DataflowRunner.BATCH_ENVIRONMENT_MAJOR_VERSION
-
     # Get a Dataflow API client and set its options
     self.dataflow_client = apiclient.DataflowApplicationClient(
-        pipeline._options, job_version)
+        pipeline._options)
 
     # Create the job
     result = DataflowPipelineResult(
@@ -429,6 +431,9 @@ class DataflowRunner(PipelineRunner):
           PropertyNames.OUTPUT_NAME: PropertyNames.OUT}])
 
   def apply_WriteToBigQuery(self, transform, pcoll):
+    # Make sure this is the WriteToBigQuery class that we expected
+    if not isinstance(transform, beam.io.WriteToBigQuery):
+      return self.apply_PTransform(transform, pcoll)
     standard_options = pcoll.pipeline._options.view_as(StandardOptions)
     if standard_options.streaming:
       if (transform.write_disposition ==
@@ -497,11 +502,24 @@ class DataflowRunner(PipelineRunner):
     si_dict = {}
     # We must call self._cache.get_pvalue exactly once due to refcounting.
     si_labels = {}
+    full_label_counts = defaultdict(int)
     lookup_label = lambda side_pval: si_labels[side_pval]
     for side_pval in transform_node.side_inputs:
       assert isinstance(side_pval, AsSideInput)
-      si_label = 'SideInput-' + self._get_unique_step_name()
-      si_full_label = '%s/%s' % (transform_node.full_label, si_label)
+      step_number = self._get_unique_step_name()
+      si_label = 'SideInput-' + step_number
+      pcollection_label = '%s.%s' % (
+          side_pval.pvalue.producer.full_label.split('/')[-1],
+          side_pval.pvalue.tag if side_pval.pvalue.tag else 'out')
+      si_full_label = '%s/%s(%s.%s)' % (transform_node.full_label,
+                                        side_pval.__class__.__name__,
+                                        pcollection_label,
+                                        full_label_counts[pcollection_label])
+
+      # Count the number of times the same PCollection is a side input
+      # to the same ParDo.
+      full_label_counts[pcollection_label] += 1
+
       self._add_singleton_step(
           si_label, si_full_label, side_pval.pvalue.tag,
           self._cache.get_pvalue(side_pval.pvalue))
@@ -512,10 +530,12 @@ class DataflowRunner(PipelineRunner):
       si_labels[side_pval] = si_label
 
     # Now create the step for the ParDo transform being handled.
+    transform_name = transform_node.full_label.rsplit('/', 1)[-1]
     step = self._add_step(
         TransformNames.DO,
         transform_node.full_label + (
-            '/Do' if transform_node.side_inputs else ''),
+            '/{}'.format(transform_name)
+            if transform_node.side_inputs else ''),
         transform_node,
         transform_node.transform.output_tags)
     fn_data = self._pardo_fn_data(transform_node, lookup_label)
@@ -586,8 +606,8 @@ class DataflowRunner(PipelineRunner):
          PropertyNames.OUTPUT_NAME: input_step.get_output(input_tag)})
     # Note that the accumulator must not have a WindowedValue encoding, while
     # the output of this step does in fact have a WindowedValue encoding.
-    accumulator_encoding = self._get_encoded_output_coder(transform_node,
-                                                          window_value=False)
+    accumulator_encoding = self._get_cloud_encoding(
+        transform_node.transform.fn.get_accumulator_coder())
     output_encoding = self._get_encoded_output_coder(transform_node)
 
     step.encoding = output_encoding
