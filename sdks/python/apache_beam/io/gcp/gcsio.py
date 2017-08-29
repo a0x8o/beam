@@ -105,7 +105,7 @@ class GcsIO(object):
   def __new__(cls, storage_client=None):
     if storage_client:
       # This path is only used for testing.
-      return super(GcsIO, cls).__new__(cls, storage_client)
+      return super(GcsIO, cls).__new__(cls)
     else:
       # Create a single storage client for each thread.  We would like to avoid
       # creating more than one storage client for each thread, since each
@@ -137,16 +137,16 @@ class GcsIO(object):
     """Open a GCS file path for reading or writing.
 
     Args:
-      filename: GCS file path in the form gs://<bucket>/<object>.
-      mode: 'r' for reading or 'w' for writing.
-      read_buffer_size: Buffer size to use during read operations.
-      mime_type: Mime type to set for write operations.
+      filename (str): GCS file path in the form ``gs://<bucket>/<object>``.
+      mode (str): ``'r'`` for reading or ``'w'`` for writing.
+      read_buffer_size (int): Buffer size to use during read operations.
+      mime_type (str): Mime type to set for write operations.
 
     Returns:
-      file object.
+      GCS file object.
 
     Raises:
-      ValueError: Invalid open file mode.
+      ~exceptions.ValueError: Invalid open file mode.
     """
     if mode == 'r' or mode == 'rb':
       return GcsBufferedReader(self.client, filename, mode=mode,
