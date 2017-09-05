@@ -58,6 +58,9 @@ class _ExecutorService(object):
       self._default_name = 'ExecutorServiceWorker-' + str(index)
       self._update_name()
       self.shutdown_requested = False
+
+      # Stop worker thread when main thread exits.
+      self.daemon = True
       self.start()
 
     def _update_name(self, task=None):
@@ -78,7 +81,6 @@ class _ExecutorService(object):
         return None
 
     def run(self):
-
       while not self.shutdown_requested:
         task = self._get_task_or_none()
         if task:
@@ -260,6 +262,8 @@ class TransformExecutor(_ExecutorService.CallableTask):
   completion callback.
   """
 
+  _MAX_RETRY_PER_BUNDLE = 4
+
   def __init__(self, transform_evaluator_registry, evaluation_context,
                input_bundle, fired_timers, applied_ptransform,
                completion_callback, transform_evaluation_state):
@@ -276,12 +280,11 @@ class TransformExecutor(_ExecutorService.CallableTask):
     self._retry_count = 0
     # Switch to turn on/off the retry of bundles.
     pipeline_options = self._evaluation_context.pipeline_options
+    # TODO(mariagh): Remove once "bundle retry" is no longer experimental.
     if not pipeline_options.view_as(DirectOptions).direct_runner_bundle_retry:
       self._max_retries_per_bundle = 1
     else:
-      self._max_retries_per_bundle = 4
-    # TODO(mariagh): make _max_retries_per_bundle a constant
-    # once "bundle retry" is no longer experimental.
+      self._max_retries_per_bundle = TransformExecutor._MAX_RETRY_PER_BUNDLE
 
   def call(self):
     self._call_count += 1
@@ -310,12 +313,17 @@ class TransformExecutor(_ExecutorService.CallableTask):
         break
       except Exception as e:
         self._retry_count += 1
-        logging.info(
-            'Exception at bundle %r, due to an exception: %s',
+        logging.error(
+            'Exception at bundle %r, due to an exception.\n %s',
             self._input_bundle, traceback.format_exc())
         if self._retry_count == self._max_retries_per_bundle:
           logging.error('Giving up after %s attempts.',
                         self._max_retries_per_bundle)
+          if self._retry_count == 1:
+            logging.info(
+                'Use the experimental flag --direct_runner_bundle_retry'
+                ' to retry failed bundles (up to %d times).',
+                TransformExecutor._MAX_RETRY_PER_BUNDLE)
           self._completion_callback.handle_exception(self, e)
 
     self._evaluation_context.metrics().commit_physical(
@@ -413,6 +421,7 @@ class _ExecutorServiceParallelExecutor(object):
         raise t, v, tb
     finally:
       self.executor_service.shutdown()
+      self.executor_service.await_completion()
 
   def schedule_consumers(self, committed_bundle):
     if committed_bundle.pcollection in self.value_to_consumers:
@@ -460,9 +469,17 @@ class _ExecutorServiceParallelExecutor(object):
         return None
 
     def take(self):
-      item = self._queue.get()
-      self._queue.task_done()
-      return item
+      # The implementation of Queue.Queue.get() does not propagate
+      # KeyboardInterrupts when a timeout is not used.  We therefore use a
+      # one-second timeout in the following loop to allow KeyboardInterrupts
+      # to be correctly propagated.
+      while True:
+        try:
+          item = self._queue.get(timeout=1)
+          self._queue.task_done()
+          return item
+        except Queue.Empty:
+          pass
 
     def offer(self, item):
       assert isinstance(item, self._item_type)

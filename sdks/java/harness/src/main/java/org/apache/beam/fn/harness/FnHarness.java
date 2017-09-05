@@ -29,6 +29,7 @@ import org.apache.beam.fn.harness.control.RegisterHandler;
 import org.apache.beam.fn.harness.data.BeamFnDataGrpcClient;
 import org.apache.beam.fn.harness.fn.ThrowingFunction;
 import org.apache.beam.fn.harness.logging.BeamFnLoggingClient;
+import org.apache.beam.fn.harness.state.BeamFnStateGrpcClientCache;
 import org.apache.beam.fn.harness.stream.StreamObserverFactory;
 import org.apache.beam.fn.v1.BeamFnApi;
 import org.apache.beam.sdk.extensions.gcp.options.GcsOptions;
@@ -109,8 +110,17 @@ public class FnHarness {
       BeamFnDataGrpcClient beamFnDataMultiplexer = new BeamFnDataGrpcClient(
           options, channelFactory::forDescriptor, streamObserverFactory::from);
 
-      ProcessBundleHandler processBundleHandler =
-          new ProcessBundleHandler(options, fnApiRegistry::getById, beamFnDataMultiplexer);
+      BeamFnStateGrpcClientCache beamFnStateGrpcClientCache = new BeamFnStateGrpcClientCache(
+          options,
+          IdGenerator::generate,
+          channelFactory::forDescriptor,
+          streamObserverFactory::from);
+
+      ProcessBundleHandler processBundleHandler = new ProcessBundleHandler(
+          options,
+          fnApiRegistry::getById,
+          beamFnDataMultiplexer,
+          beamFnStateGrpcClientCache);
       handlers.put(BeamFnApi.InstructionRequest.RequestCase.REGISTER,
           fnApiRegistry::register);
       handlers.put(BeamFnApi.InstructionRequest.RequestCase.PROCESS_BUNDLE,

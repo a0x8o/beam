@@ -17,15 +17,15 @@
  */
 package org.apache.beam.sdk.io;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.apache.beam.sdk.TestUtils.LINES_ARRAY;
 import static org.apache.beam.sdk.TestUtils.NO_LINES_ARRAY;
-import static org.apache.beam.sdk.io.TextIO.CompressionType.AUTO;
-import static org.apache.beam.sdk.io.TextIO.CompressionType.BZIP2;
-import static org.apache.beam.sdk.io.TextIO.CompressionType.DEFLATE;
-import static org.apache.beam.sdk.io.TextIO.CompressionType.GZIP;
-import static org.apache.beam.sdk.io.TextIO.CompressionType.UNCOMPRESSED;
-import static org.apache.beam.sdk.io.TextIO.CompressionType.ZIP;
-import static org.apache.beam.sdk.transforms.Watch.Growth.afterTimeSinceNewOutput;
+import static org.apache.beam.sdk.io.Compression.AUTO;
+import static org.apache.beam.sdk.io.Compression.BZIP2;
+import static org.apache.beam.sdk.io.Compression.DEFLATE;
+import static org.apache.beam.sdk.io.Compression.GZIP;
+import static org.apache.beam.sdk.io.Compression.UNCOMPRESSED;
+import static org.apache.beam.sdk.io.Compression.ZIP;
 import static org.apache.beam.sdk.transforms.display.DisplayDataMatchers.hasDisplayItem;
 import static org.apache.beam.sdk.transforms.display.DisplayDataMatchers.hasValue;
 import static org.hamcrest.Matchers.containsInAnyOrder;
@@ -40,10 +40,13 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertThat;
 import static org.junit.Assert.assertTrue;
 
+import com.google.common.base.Joiner;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
+import com.google.common.collect.Lists;
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.PrintStream;
@@ -63,7 +66,6 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 import org.apache.beam.sdk.coders.StringUtf8Coder;
 import org.apache.beam.sdk.io.BoundedSource.BoundedReader;
-import org.apache.beam.sdk.io.TextIO.CompressionType;
 import org.apache.beam.sdk.io.fs.EmptyMatchTreatment;
 import org.apache.beam.sdk.options.PipelineOptions;
 import org.apache.beam.sdk.options.PipelineOptionsFactory;
@@ -75,6 +77,7 @@ import org.apache.beam.sdk.testing.TestPipeline;
 import org.apache.beam.sdk.testing.UsesSplittableParDo;
 import org.apache.beam.sdk.testing.ValidatesRunner;
 import org.apache.beam.sdk.transforms.Create;
+import org.apache.beam.sdk.transforms.Watch;
 import org.apache.beam.sdk.transforms.display.DisplayData;
 import org.apache.beam.sdk.transforms.display.DisplayDataEvaluator;
 import org.apache.beam.sdk.util.CoderUtils;
@@ -121,7 +124,7 @@ public class TextIOReadTest {
 
   @Rule public ExpectedException expectedException = ExpectedException.none();
 
-  private static File writeToFile(List<String> lines, String filename, CompressionType compression)
+  private static File writeToFile(List<String> lines, String filename, Compression compression)
       throws IOException {
     File file = tempFolder.resolve(filename).toFile();
     OutputStream output = new FileOutputStream(file);
@@ -153,19 +156,19 @@ public class TextIOReadTest {
   public static void setupClass() throws IOException {
     tempFolder = Files.createTempDirectory("TextIOTest");
     // empty files
-    emptyTxt = writeToFile(EMPTY, "empty.txt", CompressionType.UNCOMPRESSED);
+    emptyTxt = writeToFile(EMPTY, "empty.txt", UNCOMPRESSED);
     emptyGz = writeToFile(EMPTY, "empty.gz", GZIP);
     emptyBzip2 = writeToFile(EMPTY, "empty.bz2", BZIP2);
     emptyZip = writeToFile(EMPTY, "empty.zip", ZIP);
     emptyDeflate = writeToFile(EMPTY, "empty.deflate", DEFLATE);
     // tiny files
-    tinyTxt = writeToFile(TINY, "tiny.txt", CompressionType.UNCOMPRESSED);
+    tinyTxt = writeToFile(TINY, "tiny.txt", UNCOMPRESSED);
     tinyGz = writeToFile(TINY, "tiny.gz", GZIP);
     tinyBzip2 = writeToFile(TINY, "tiny.bz2", BZIP2);
     tinyZip = writeToFile(TINY, "tiny.zip", ZIP);
     tinyDeflate = writeToFile(TINY, "tiny.deflate", DEFLATE);
     // large files
-    largeTxt = writeToFile(LARGE, "large.txt", CompressionType.UNCOMPRESSED);
+    largeTxt = writeToFile(LARGE, "large.txt", UNCOMPRESSED);
     largeGz = writeToFile(LARGE, "large.gz", GZIP);
     largeBzip2 = writeToFile(LARGE, "large.bz2", BZIP2);
     largeZip = writeToFile(LARGE, "large.zip", ZIP);
@@ -213,6 +216,60 @@ public class TextIOReadTest {
   }
 
   @Test
+  public void testDelimiterSelfOverlaps(){
+    assertFalse(TextIO.Read.isSelfOverlapping(new byte[]{'a', 'b', 'c'}));
+    assertFalse(TextIO.Read.isSelfOverlapping(new byte[]{'c', 'a', 'b', 'd', 'a', 'b'}));
+    assertFalse(TextIO.Read.isSelfOverlapping(new byte[]{'a', 'b', 'c', 'a', 'b', 'd'}));
+    assertTrue(TextIO.Read.isSelfOverlapping(new byte[]{'a', 'b', 'a'}));
+    assertTrue(TextIO.Read.isSelfOverlapping(new byte[]{'a', 'b', 'c', 'a', 'b'}));
+  }
+
+  @Test
+  @Category(NeedsRunner.class)
+  public void testReadStringsWithCustomDelimiter() throws Exception {
+    final String[] inputStrings = new String[] {
+        // incomplete delimiter
+        "To be, or not to be: that |is the question: ",
+        // incomplete delimiter
+        "To be, or not to be: that *is the question: ",
+        // complete delimiter
+        "Whether 'tis nobler in the mind to suffer |*",
+        // truncated delimiter
+        "The slings and arrows of outrageous fortune,|" };
+
+    File tmpFile = Files.createTempFile(tempFolder, "file", "txt").toFile();
+    String filename = tmpFile.getPath();
+
+    try (FileWriter writer = new FileWriter(tmpFile)) {
+      writer.write(Joiner.on("").join(inputStrings));
+    }
+
+    PAssert.that(p.apply(TextIO.read().from(filename).withDelimiter(new byte[] {'|', '*'})))
+        .containsInAnyOrder(
+            "To be, or not to be: that |is the question: To be, or not to be: "
+                + "that *is the question: Whether 'tis nobler in the mind to suffer ",
+            "The slings and arrows of outrageous fortune,|");
+    p.run();
+  }
+
+  @Test
+  public void testSplittingSourceWithCustomDelimiter() throws Exception {
+    List<String> testCases = Lists.newArrayList();
+    String infix = "first|*second|*|*third";
+    String[] affixes = new String[] {"", "|", "*", "|*"};
+    for (String prefix : affixes) {
+      for (String suffix : affixes) {
+        testCases.add(prefix + infix + suffix);
+      }
+    }
+    for (String testCase : testCases) {
+      SourceTestUtils.assertSplitAtFractionExhaustive(
+          prepareSource(testCase.getBytes(StandardCharsets.UTF_8), new byte[] {'|', '*'}),
+          PipelineOptionsFactory.create());
+    }
+  }
+
+  @Test
   @Category(NeedsRunner.class)
   public void testReadStrings() throws Exception {
     runTestRead(LINES_ARRAY);
@@ -235,7 +292,7 @@ public class TextIOReadTest {
 
   @Test
   public void testReadDisplayData() {
-    TextIO.Read read = TextIO.read().from("foo.*").withCompressionType(BZIP2);
+    TextIO.Read read = TextIO.read().from("foo.*").withCompression(BZIP2);
 
     DisplayData displayData = DisplayData.from(read);
 
@@ -274,11 +331,11 @@ public class TextIOReadTest {
   }
 
   @Test
-  public void testCompressionTypeIsSet() throws Exception {
+  public void testCompressionIsSet() throws Exception {
     TextIO.Read read = TextIO.read().from("/tmp/test");
-    assertEquals(AUTO, read.getCompressionType());
-    read = TextIO.read().from("/tmp/test").withCompressionType(GZIP);
-    assertEquals(GZIP, read.getCompressionType());
+    assertEquals(AUTO, read.getCompression());
+    read = TextIO.read().from("/tmp/test").withCompression(GZIP);
+    assertEquals(GZIP, read.getCompression());
   }
 
   /**
@@ -299,34 +356,34 @@ public class TextIOReadTest {
    *
    * <p>The transforms being verified are:
    * <ul>
-   *   <li>TextIO.read().from(filename).withCompressionType(compressionType)
-   *   <li>TextIO.read().from(filename).withCompressionType(compressionType)
+   *   <li>TextIO.read().from(filename).withCompression(compressionType)
+   *   <li>TextIO.read().from(filename).withCompression(compressionType)
    *     .withHintMatchesManyFiles()
-   *   <li>TextIO.readAll().withCompressionType(compressionType)
+   *   <li>TextIO.readAll().withCompression(compressionType)
    * </ul> and
    */
   private void assertReadingCompressedFileMatchesExpected(
-      File file, CompressionType compressionType, List<String> expected) {
+      File file, Compression compression, List<String> expected) {
 
     int thisUniquifier = ++uniquifier;
 
-    TextIO.Read read = TextIO.read().from(file.getPath()).withCompressionType(compressionType);
+    TextIO.Read read = TextIO.read().from(file.getPath()).withCompression(compression);
 
     PAssert.that(
-            p.apply("Read_" + file + "_" + compressionType.toString() + "_" + thisUniquifier, read))
+            p.apply("Read_" + file + "_" + compression.toString() + "_" + thisUniquifier, read))
         .containsInAnyOrder(expected);
 
     PAssert.that(
             p.apply(
-                "Read_" + file + "_" + compressionType.toString() + "_many" + "_" + thisUniquifier,
+                "Read_" + file + "_" + compression.toString() + "_many" + "_" + thisUniquifier,
                 read.withHintMatchesManyFiles()))
         .containsInAnyOrder(expected);
 
     TextIO.ReadAll readAll =
-        TextIO.readAll().withCompressionType(compressionType).withDesiredBundleSizeBytes(10);
+        TextIO.readAll().withCompression(compression);
     PAssert.that(
             p.apply("Create_" + file + "_" + thisUniquifier, Create.of(file.getPath()))
-                .apply("Read_" + compressionType.toString() + "_" + thisUniquifier, readAll))
+                .apply("Read_" + compression.toString() + "_" + thisUniquifier, readAll))
         .containsInAnyOrder(expected);
   }
 
@@ -357,7 +414,7 @@ public class TextIOReadTest {
   @Category(NeedsRunner.class)
   public void testSmallCompressedGzipReadActuallyUncompressed() throws Exception {
     File smallGzNotCompressed =
-        writeToFile(TINY, "tiny_uncompressed.gz", CompressionType.UNCOMPRESSED);
+        writeToFile(TINY, "tiny_uncompressed.gz", UNCOMPRESSED);
     // Should work with GZIP compression set.
     assertReadingCompressedFileMatchesExpected(smallGzNotCompressed, GZIP, TINY);
     // Should also work with AUTO mode set.
@@ -412,7 +469,7 @@ public class TextIOReadTest {
   @Category(NeedsRunner.class)
   public void testTxtRead() throws Exception {
     // Files with non-compressed extensions should work in AUTO and UNCOMPRESSED modes.
-    for (CompressionType type : new CompressionType[] {AUTO, UNCOMPRESSED}) {
+    for (Compression type : new Compression[] {AUTO, UNCOMPRESSED}) {
       assertReadingCompressedFileMatchesExpected(emptyTxt, type, EMPTY);
       assertReadingCompressedFileMatchesExpected(tinyTxt, type, TINY);
       assertReadingCompressedFileMatchesExpected(largeTxt, type, LARGE);
@@ -424,7 +481,7 @@ public class TextIOReadTest {
   @Category(NeedsRunner.class)
   public void testGzipCompressedRead() throws Exception {
     // Files with the right extensions should work in AUTO and GZIP modes.
-    for (CompressionType type : new CompressionType[] {AUTO, GZIP}) {
+    for (Compression type : new Compression[] {AUTO, GZIP}) {
       assertReadingCompressedFileMatchesExpected(emptyGz, type, EMPTY);
       assertReadingCompressedFileMatchesExpected(tinyGz, type, TINY);
       assertReadingCompressedFileMatchesExpected(largeGz, type, LARGE);
@@ -443,7 +500,7 @@ public class TextIOReadTest {
   @Category(NeedsRunner.class)
   public void testBzip2CompressedRead() throws Exception {
     // Files with the right extensions should work in AUTO and BZIP2 modes.
-    for (CompressionType type : new CompressionType[] {AUTO, BZIP2}) {
+    for (Compression type : new Compression[] {AUTO, BZIP2}) {
       assertReadingCompressedFileMatchesExpected(emptyBzip2, type, EMPTY);
       assertReadingCompressedFileMatchesExpected(tinyBzip2, type, TINY);
       assertReadingCompressedFileMatchesExpected(largeBzip2, type, LARGE);
@@ -462,7 +519,7 @@ public class TextIOReadTest {
   @Category(NeedsRunner.class)
   public void testZipCompressedRead() throws Exception {
     // Files with the right extensions should work in AUTO and ZIP modes.
-    for (CompressionType type : new CompressionType[] {AUTO, ZIP}) {
+    for (Compression type : new Compression[] {AUTO, ZIP}) {
       assertReadingCompressedFileMatchesExpected(emptyZip, type, EMPTY);
       assertReadingCompressedFileMatchesExpected(tinyZip, type, TINY);
       assertReadingCompressedFileMatchesExpected(largeZip, type, LARGE);
@@ -481,7 +538,7 @@ public class TextIOReadTest {
   @Category(NeedsRunner.class)
   public void testDeflateCompressedRead() throws Exception {
     // Files with the right extensions should work in AUTO and ZIP modes.
-    for (CompressionType type : new CompressionType[] {AUTO, DEFLATE}) {
+    for (Compression type : new Compression[] {AUTO, DEFLATE}) {
       assertReadingCompressedFileMatchesExpected(emptyDeflate, type, EMPTY);
       assertReadingCompressedFileMatchesExpected(tinyDeflate, type, TINY);
       assertReadingCompressedFileMatchesExpected(largeDeflate, type, LARGE);
@@ -504,7 +561,7 @@ public class TextIOReadTest {
   @Category(NeedsRunner.class)
   public void testZipCompressedReadWithNoEntries() throws Exception {
     String filename = createZipFile(new ArrayList<String>(), "empty zip file");
-    assertReadingCompressedFileMatchesExpected(new File(filename), CompressionType.ZIP, EMPTY);
+    assertReadingCompressedFileMatchesExpected(new File(filename), ZIP, EMPTY);
     p.run();
   }
 
@@ -522,7 +579,7 @@ public class TextIOReadTest {
     List<String> expected = new ArrayList<>();
 
     String filename = createZipFile(expected, "multiple entries", entry0, entry1, entry2);
-    assertReadingCompressedFileMatchesExpected(new File(filename), CompressionType.ZIP, expected);
+    assertReadingCompressedFileMatchesExpected(new File(filename), ZIP, expected);
     p.run();
   }
 
@@ -543,7 +600,7 @@ public class TextIOReadTest {
             new String[] {"dog"});
 
     assertReadingCompressedFileMatchesExpected(
-        new File(filename), CompressionType.ZIP, Arrays.asList("cat", "dog"));
+        new File(filename), ZIP, Arrays.asList("cat", "dog"));
     p.run();
   }
 
@@ -556,7 +613,7 @@ public class TextIOReadTest {
   @Test
   public void testProgressEmptyFile() throws IOException {
     try (BoundedReader<String> reader =
-        prepareSource(new byte[0]).createReader(PipelineOptionsFactory.create())) {
+        prepareSource(new byte[0], null).createReader(PipelineOptionsFactory.create())) {
       // Check preconditions before starting.
       assertEquals(0.0, reader.getFractionConsumed(), 1e-6);
       assertEquals(0, reader.getSplitPointsConsumed());
@@ -576,7 +633,7 @@ public class TextIOReadTest {
   public void testProgressTextFile() throws IOException {
     String file = "line1\nline2\nline3";
     try (BoundedReader<String> reader =
-        prepareSource(file.getBytes()).createReader(PipelineOptionsFactory.create())) {
+        prepareSource(file.getBytes(), null).createReader(PipelineOptionsFactory.create())) {
       // Check preconditions before starting
       assertEquals(0.0, reader.getFractionConsumed(), 1e-6);
       assertEquals(0, reader.getSplitPointsConsumed());
@@ -734,65 +791,69 @@ public class TextIOReadTest {
 
   @Test
   public void testSplittingSourceWithEmptyLines() throws Exception {
-    TextSource source = prepareSource("\n\n\n".getBytes(StandardCharsets.UTF_8));
+    TextSource source = prepareSource("\n\n\n".getBytes(UTF_8));
     SourceTestUtils.assertSplitAtFractionExhaustive(source, PipelineOptionsFactory.create());
   }
 
   @Test
   public void testSplittingSourceWithLineFeedDelimiter() throws Exception {
-    TextSource source = prepareSource("asdf\nhjkl\nxyz\n".getBytes(StandardCharsets.UTF_8));
+    TextSource source = prepareSource("asdf\nhjkl\nxyz\n".getBytes(UTF_8));
     SourceTestUtils.assertSplitAtFractionExhaustive(source, PipelineOptionsFactory.create());
   }
 
   @Test
   public void testSplittingSourceWithCarriageReturnDelimiter() throws Exception {
-    TextSource source = prepareSource("asdf\rhjkl\rxyz\r".getBytes(StandardCharsets.UTF_8));
+    TextSource source = prepareSource("asdf\rhjkl\rxyz\r".getBytes(UTF_8));
     SourceTestUtils.assertSplitAtFractionExhaustive(source, PipelineOptionsFactory.create());
   }
 
   @Test
   public void testSplittingSourceWithCarriageReturnAndLineFeedDelimiter() throws Exception {
-    TextSource source = prepareSource("asdf\r\nhjkl\r\nxyz\r\n".getBytes(StandardCharsets.UTF_8));
+    TextSource source = prepareSource("asdf\r\nhjkl\r\nxyz\r\n".getBytes(UTF_8));
     SourceTestUtils.assertSplitAtFractionExhaustive(source, PipelineOptionsFactory.create());
   }
 
   @Test
   public void testSplittingSourceWithMixedDelimiters() throws Exception {
-    TextSource source = prepareSource("asdf\rhjkl\r\nxyz\n".getBytes(StandardCharsets.UTF_8));
+    TextSource source = prepareSource("asdf\rhjkl\r\nxyz\n".getBytes(UTF_8));
     SourceTestUtils.assertSplitAtFractionExhaustive(source, PipelineOptionsFactory.create());
   }
 
   @Test
   public void testSplittingSourceWithLineFeedDelimiterAndNonEmptyBytesAtEnd() throws Exception {
-    TextSource source = prepareSource("asdf\nhjkl\nxyz".getBytes(StandardCharsets.UTF_8));
+    TextSource source = prepareSource("asdf\nhjkl\nxyz".getBytes(UTF_8));
     SourceTestUtils.assertSplitAtFractionExhaustive(source, PipelineOptionsFactory.create());
   }
 
   @Test
   public void testSplittingSourceWithCarriageReturnDelimiterAndNonEmptyBytesAtEnd()
       throws Exception {
-    TextSource source = prepareSource("asdf\rhjkl\rxyz".getBytes(StandardCharsets.UTF_8));
+    TextSource source = prepareSource("asdf\rhjkl\rxyz".getBytes(UTF_8));
     SourceTestUtils.assertSplitAtFractionExhaustive(source, PipelineOptionsFactory.create());
   }
 
   @Test
   public void testSplittingSourceWithCarriageReturnAndLineFeedDelimiterAndNonEmptyBytesAtEnd()
       throws Exception {
-    TextSource source = prepareSource("asdf\r\nhjkl\r\nxyz".getBytes(StandardCharsets.UTF_8));
+    TextSource source = prepareSource("asdf\r\nhjkl\r\nxyz".getBytes(UTF_8));
     SourceTestUtils.assertSplitAtFractionExhaustive(source, PipelineOptionsFactory.create());
   }
 
   @Test
   public void testSplittingSourceWithMixedDelimitersAndNonEmptyBytesAtEnd() throws Exception {
-    TextSource source = prepareSource("asdf\rhjkl\r\nxyz".getBytes(StandardCharsets.UTF_8));
+    TextSource source = prepareSource("asdf\rhjkl\r\nxyz".getBytes(UTF_8));
     SourceTestUtils.assertSplitAtFractionExhaustive(source, PipelineOptionsFactory.create());
   }
 
   private TextSource prepareSource(byte[] data) throws IOException {
+    return prepareSource(data, null /* default delimiters */);
+  }
+
+  private TextSource prepareSource(byte[] data, byte[] delimiter) throws IOException {
     Path path = Files.createTempFile(tempFolder, "tempfile", "ext");
     Files.write(path, data);
-    return new TextSource(
-        ValueProvider.StaticValueProvider.of(path.toString()), EmptyMatchTreatment.DISALLOW);
+    return new TextSource(ValueProvider.StaticValueProvider.of(path.toString()),
+        EmptyMatchTreatment.DISALLOW, delimiter);
   }
 
   @Test
@@ -836,7 +897,7 @@ public class TextIOReadTest {
     assertThat(largeTxt.length(), greaterThan(2 * desiredBundleSize));
 
     FileBasedSource<String> source =
-        TextIO.read().from(largeTxt.getPath()).withCompressionType(GZIP).getSource();
+        TextIO.read().from(largeTxt.getPath()).withCompression(GZIP).getSource();
     List<? extends FileBasedSource<String>> splits = source.split(desiredBundleSize, options);
 
     // Exactly 1 split, even though splittable text file, since using GZIP mode.
@@ -853,7 +914,7 @@ public class TextIOReadTest {
     assertThat(largeGz.length(), greaterThan(2 * desiredBundleSize));
 
     FileBasedSource<String> source =
-        TextIO.read().from(largeGz.getPath()).withCompressionType(GZIP).getSource();
+        TextIO.read().from(largeGz.getPath()).withCompression(GZIP).getSource();
     List<? extends FileBasedSource<String>> splits = source.split(desiredBundleSize, options);
 
     // Exactly 1 split using .gz extension and using GZIP mode.
@@ -865,15 +926,34 @@ public class TextIOReadTest {
   @Category(NeedsRunner.class)
   public void testReadAll() throws IOException {
     writeToFile(TINY, "readAllTiny1.zip", ZIP);
-    writeToFile(TINY, "readAllTiny2.zip", ZIP);
+    writeToFile(TINY, "readAllTiny2.txt", UNCOMPRESSED);
     writeToFile(LARGE, "readAllLarge1.zip", ZIP);
-    writeToFile(LARGE, "readAllLarge2.zip", ZIP);
+    writeToFile(LARGE, "readAllLarge2.txt", UNCOMPRESSED);
     PCollection<String> lines =
         p.apply(
                 Create.of(
                     tempFolder.resolve("readAllTiny*").toString(),
                     tempFolder.resolve("readAllLarge*").toString()))
-            .apply(TextIO.readAll().withCompressionType(AUTO));
+            .apply(TextIO.readAll().withCompression(AUTO));
+    PAssert.that(lines).containsInAnyOrder(Iterables.concat(TINY, TINY, LARGE, LARGE));
+    p.run();
+  }
+
+  @Test
+  @Category(NeedsRunner.class)
+  public void testReadFiles() throws IOException {
+    writeToFile(TINY, "readAllTiny1.zip", ZIP);
+    writeToFile(TINY, "readAllTiny2.txt", UNCOMPRESSED);
+    writeToFile(LARGE, "readAllLarge1.zip", ZIP);
+    writeToFile(LARGE, "readAllLarge2.txt", UNCOMPRESSED);
+    PCollection<String> lines =
+        p.apply(
+                Create.of(
+                    tempFolder.resolve("readAllTiny*").toString(),
+                    tempFolder.resolve("readAllLarge*").toString()))
+            .apply(FileIO.matchAll())
+            .apply(FileIO.readMatches().withCompression(AUTO))
+            .apply(TextIO.readFiles().withDesiredBundleSizeBytes(10));
     PAssert.that(lines).containsInAnyOrder(Iterables.concat(TINY, TINY, LARGE, LARGE));
     p.run();
   }
@@ -888,9 +968,10 @@ public class TextIOReadTest {
             TextIO.read()
                 .from(basePath.resolve("*").toString())
                 // Make sure that compression type propagates into readAll()
-                .withCompressionType(ZIP)
+                .withCompression(ZIP)
                 .watchForNewFiles(
-                    Duration.millis(100), afterTimeSinceNewOutput(Duration.standardSeconds(3))));
+                    Duration.millis(100),
+                    Watch.Growth.<String>afterTimeSinceNewOutput(Duration.standardSeconds(3))));
 
     Thread writer =
         new Thread() {
@@ -901,17 +982,17 @@ public class TextIOReadTest {
               writeToFile(
                   Arrays.asList("a.1", "a.2"),
                   basePath.resolve("fileA").toString(),
-                  CompressionType.ZIP);
+                  ZIP);
               Thread.sleep(300);
               writeToFile(
                   Arrays.asList("b.1", "b.2"),
                   basePath.resolve("fileB").toString(),
-                  CompressionType.ZIP);
+                  ZIP);
               Thread.sleep(300);
               writeToFile(
                   Arrays.asList("c.1", "c.2"),
                   basePath.resolve("fileC").toString(),
-                  CompressionType.ZIP);
+                  ZIP);
             } catch (IOException | InterruptedException e) {
               throw new RuntimeException(e);
             }
