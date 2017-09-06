@@ -20,12 +20,14 @@
 Triggers control when in processing time windows get emitted.
 """
 
-from abc import ABCMeta
-from abc import abstractmethod
 import collections
 import copy
+import itertools
+from abc import ABCMeta
+from abc import abstractmethod
 
 from apache_beam.coders import observable
+from apache_beam.portability.api import beam_runner_api_pb2
 from apache_beam.transforms import combiners
 from apache_beam.transforms import core
 from apache_beam.transforms.timeutil import TimeDomain
@@ -33,7 +35,6 @@ from apache_beam.transforms.window import GlobalWindow
 from apache_beam.transforms.window import TimestampCombiner
 from apache_beam.transforms.window import WindowedValue
 from apache_beam.transforms.window import WindowFn
-from apache_beam.portability.api import beam_runner_api_pb2
 from apache_beam.utils.timestamp import MAX_TIMESTAMP
 from apache_beam.utils.timestamp import MIN_TIMESTAMP
 from apache_beam.utils.timestamp import TIME_GRANULARITY
@@ -878,6 +879,17 @@ class _UnwindowedValues(observable.ObservableMixin):
   def __reduce__(self):
     return list, (list(self),)
 
+  def __eq__(self, other):
+    if isinstance(other, collections.Iterable):
+      return all(
+          a == b
+          for a, b in itertools.izip_longest(self, other, fillvalue=object()))
+    else:
+      return NotImplemented
+
+  def __ne__(self, other):
+    return not self == other
+
 
 class DefaultGlobalBatchTriggerDriver(TriggerDriver):
   """Breaks a bundles into window (pane)s according to the default triggering.
@@ -888,11 +900,10 @@ class DefaultGlobalBatchTriggerDriver(TriggerDriver):
     pass
 
   def process_elements(self, state, windowed_values, unused_output_watermark):
-    if isinstance(windowed_values, list):
-      unwindowed = [wv.value for wv in windowed_values]
-    else:
-      unwindowed = _UnwindowedValues(windowed_values)
-    yield WindowedValue(unwindowed, MIN_TIMESTAMP, self.GLOBAL_WINDOW_TUPLE)
+    yield WindowedValue(
+        _UnwindowedValues(windowed_values),
+        MIN_TIMESTAMP,
+        self.GLOBAL_WINDOW_TUPLE)
 
   def process_timer(self, window_id, name, time_domain, timestamp, state):
     raise TypeError('Triggers never set or called for batch default windowing.')

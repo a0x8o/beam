@@ -31,10 +31,14 @@ string. The tags can contain only letters, digits and _.
 """
 
 import apache_beam as beam
+from apache_beam.io import iobase
+from apache_beam.io.range_trackers import OffsetRangeTracker
 from apache_beam.metrics import Metrics
+from apache_beam.options.pipeline_options import PipelineOptions
 from apache_beam.testing.test_pipeline import TestPipeline
 from apache_beam.testing.util import assert_that
 from apache_beam.testing.util import equal_to
+from apache_beam.transforms.core import PTransform
 
 # Quiet some pylint warnings that happen because of the somewhat special
 # format for the code snippets.
@@ -655,13 +659,6 @@ def examples_ptransforms_templated(renames):
   result.wait_until_finish()
 
 
-import apache_beam as beam
-from apache_beam.io import iobase
-from apache_beam.io.range_trackers import OffsetRangeTracker
-from apache_beam.transforms.core import PTransform
-from apache_beam.options.pipeline_options import PipelineOptions
-
-
 # Defining a new source.
 # [START model_custom_source_new_source]
 class CountingSource(iobase.BoundedSource):
@@ -1136,7 +1133,7 @@ def model_group_by_key(contents, output_path):
     grouped_words = words_and_counts | beam.GroupByKey()
     # [END model_group_by_key_transform]
     (grouped_words
-     | 'count words' >> beam.Map(lambda (word, counts): (word, len(counts)))
+     | 'count words' >> beam.Map(lambda (word, counts): (word, sum(counts)))
      | beam.io.WriteToText(output_path))
 
 

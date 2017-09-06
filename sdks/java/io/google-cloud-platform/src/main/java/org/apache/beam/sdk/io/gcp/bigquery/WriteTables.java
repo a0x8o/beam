@@ -23,9 +23,11 @@ import com.google.api.services.bigquery.model.JobConfigurationLoad;
 import com.google.api.services.bigquery.model.JobReference;
 import com.google.api.services.bigquery.model.TableReference;
 import com.google.api.services.bigquery.model.TableSchema;
+import com.google.api.services.bigquery.model.TimePartitioning;
 import com.google.common.base.Strings;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
+import com.google.common.collect.Maps;
 import java.io.IOException;
 import java.util.Collection;
 import java.util.List;
@@ -42,6 +44,7 @@ import org.apache.beam.sdk.io.gcp.bigquery.BigQueryServices.JobService;
 import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollectionView;
+import org.apache.beam.sdk.values.ShardedKey;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -64,35 +67,48 @@ class WriteTables<DestinationT>
   private final boolean singlePartition;
   private final BigQueryServices bqServices;
   private final PCollectionView<String> jobIdToken;
-  private final PCollectionView<Map<DestinationT, String>> schemasView;
-  private final WriteDisposition writeDisposition;
-  private final CreateDisposition createDisposition;
+  private final WriteDisposition firstPaneWriteDisposition;
+  private final CreateDisposition firstPaneCreateDisposition;
   private final DynamicDestinations<?, DestinationT> dynamicDestinations;
+  private Map<DestinationT, String> jsonSchemas = Maps.newHashMap();
 
   public WriteTables(
       boolean singlePartition,
       BigQueryServices bqServices,
       PCollectionView<String> jobIdToken,
-      PCollectionView<Map<DestinationT, String>> schemasView,
       WriteDisposition writeDisposition,
       CreateDisposition createDisposition,
       DynamicDestinations<?, DestinationT> dynamicDestinations) {
     this.singlePartition = singlePartition;
     this.bqServices = bqServices;
     this.jobIdToken = jobIdToken;
-    this.schemasView = schemasView;
-    this.writeDisposition = writeDisposition;
-    this.createDisposition = createDisposition;
+    this.firstPaneWriteDisposition = writeDisposition;
+    this.firstPaneCreateDisposition = createDisposition;
     this.dynamicDestinations = dynamicDestinations;
+  }
+
+  @StartBundle
+  public void startBundle(StartBundleContext c) {
+    // Clear the map on each bundle so we can notice side-input updates.
+    // (alternative is to use a cache with a TTL).
+    jsonSchemas.clear();
   }
 
   @ProcessElement
   public void processElement(ProcessContext c) throws Exception {
     dynamicDestinations.setSideInputAccessorFromProcessContext(c);
     DestinationT destination = c.element().getKey().getKey();
-    TableSchema tableSchema =
-        BigQueryHelpers.fromJsonString(
-            c.sideInput(schemasView).get(destination), TableSchema.class);
+    TableSchema tableSchema;
+    String jsonSchema = jsonSchemas.get(destination);
+    if (jsonSchema != null) {
+      tableSchema = BigQueryHelpers.fromJsonString(jsonSchema, TableSchema.class);
+    } else {
+      tableSchema = dynamicDestinations.getSchema(destination);
+      if (tableSchema != null) {
+        jsonSchemas.put(destination, BigQueryHelpers.toJsonString(tableSchema));
+      }
+    }
+
     TableDestination tableDestination = dynamicDestinations.getTable(destination);
     TableReference tableReference = tableDestination.getTableReference();
     if (Strings.isNullOrEmpty(tableReference.getProjectId())) {
@@ -104,18 +120,23 @@ class WriteTables<DestinationT>
 
     Integer partition = c.element().getKey().getShardNumber();
     List<String> partitionFiles = Lists.newArrayList(c.element().getValue());
-    String jobIdPrefix =
-        BigQueryHelpers.createJobId(c.sideInput(jobIdToken), tableDestination, partition);
+    String jobIdPrefix = BigQueryHelpers.createJobId(
+            c.sideInput(jobIdToken), tableDestination, partition, c.pane().getIndex());
 
     if (!singlePartition) {
       tableReference.setTableId(jobIdPrefix);
     }
 
+    WriteDisposition writeDisposition =
+        (c.pane().getIndex() == 0) ? firstPaneWriteDisposition : WriteDisposition.WRITE_APPEND;
+    CreateDisposition createDisposition =
+        (c.pane().getIndex() == 0) ? firstPaneCreateDisposition : CreateDisposition.CREATE_NEVER;
     load(
         bqServices.getJobService(c.getPipelineOptions().as(BigQueryOptions.class)),
         bqServices.getDatasetService(c.getPipelineOptions().as(BigQueryOptions.class)),
         jobIdPrefix,
         tableReference,
+        tableDestination.getTimePartitioning(),
         tableSchema,
         partitionFiles,
         writeDisposition,
@@ -131,6 +152,7 @@ class WriteTables<DestinationT>
       DatasetService datasetService,
       String jobIdPrefix,
       TableReference ref,
+      TimePartitioning timePartitioning,
       @Nullable TableSchema schema,
       List<String> gcsUris,
       WriteDisposition writeDisposition,
@@ -145,7 +167,9 @@ class WriteTables<DestinationT>
             .setWriteDisposition(writeDisposition.name())
             .setCreateDisposition(createDisposition.name())
             .setSourceFormat("NEWLINE_DELIMITED_JSON");
-
+    if (timePartitioning != null) {
+      loadConfig.setTimePartitioning(timePartitioning);
+    }
     String projectId = ref.getProjectId();
     Job lastFailedLoadJob = null;
     for (int i = 0; i < BatchLoads.MAX_RETRY_JOBS; ++i) {

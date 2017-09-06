@@ -21,16 +21,13 @@ import logging
 import platform
 import unittest
 
-# TODO(BEAM-1555): Test is failing on the service, with FakeSource.
-# from nose.plugins.attrib import attr
-
 import apache_beam as beam
 from apache_beam.io import Read
 from apache_beam.metrics import Metrics
 from apache_beam.pipeline import Pipeline
-from apache_beam.pipeline import PTransformOverride
 from apache_beam.pipeline import PipelineOptions
 from apache_beam.pipeline import PipelineVisitor
+from apache_beam.pipeline import PTransformOverride
 from apache_beam.pvalue import AsSingleton
 from apache_beam.runners import DirectRunner
 from apache_beam.runners.dataflow.native_io.iobase import NativeSource
@@ -39,15 +36,18 @@ from apache_beam.testing.util import assert_that
 from apache_beam.testing.util import equal_to
 from apache_beam.transforms import CombineGlobally
 from apache_beam.transforms import Create
+from apache_beam.transforms import DoFn
 from apache_beam.transforms import FlatMap
 from apache_beam.transforms import Map
-from apache_beam.transforms import DoFn
 from apache_beam.transforms import ParDo
 from apache_beam.transforms import PTransform
 from apache_beam.transforms import WindowInto
 from apache_beam.transforms.window import SlidingWindows
 from apache_beam.transforms.window import TimestampedValue
 from apache_beam.utils.timestamp import MIN_TIMESTAMP
+
+# TODO(BEAM-1555): Test is failing on the service, with FakeSource.
+# from nose.plugins.attrib import attr
 
 
 class FakeSource(NativeSource):
@@ -497,6 +497,36 @@ class RunnerApiTest(unittest.TestCase):
       p | 'Iter%s' % k >> MyPTransform()  # pylint: disable=expression-not-assigned
     p.to_runner_api()
     self.assertEqual(MyPTransform.pickle_count[0], 20)
+
+
+class DirectRunnerRetryTests(unittest.TestCase):
+
+  def test_retry_fork_graph(self):
+    pipeline_options = PipelineOptions(['--direct_runner_bundle_retry'])
+    p = beam.Pipeline(options=pipeline_options)
+
+    # TODO(mariagh): Remove the use of globals from the test.
+    global count_b, count_c # pylint: disable=global-variable-undefined
+    count_b, count_c = 0, 0
+
+    def f_b(x):
+      global count_b  # pylint: disable=global-variable-undefined
+      count_b += 1
+      raise Exception('exception in f_b')
+
+    def f_c(x):
+      global count_c  # pylint: disable=global-variable-undefined
+      count_c += 1
+      raise Exception('exception in f_c')
+
+    names = p | 'CreateNodeA' >> beam.Create(['Ann', 'Joe'])
+
+    fork_b = names | 'SendToB' >> beam.Map(f_b) # pylint: disable=unused-variable
+    fork_c = names | 'SendToC' >> beam.Map(f_c) # pylint: disable=unused-variable
+
+    with self.assertRaises(Exception):
+      p.run().wait_until_finish()
+    assert count_b == count_c == 4
 
 
 if __name__ == '__main__':

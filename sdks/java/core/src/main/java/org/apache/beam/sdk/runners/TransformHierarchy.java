@@ -34,6 +34,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
+import javax.annotation.Nullable;
 import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.Pipeline.PipelineVisitor;
 import org.apache.beam.sdk.Pipeline.PipelineVisitor.CompositeBehavior;
@@ -98,6 +99,48 @@ public class TransformHierarchy {
     return current;
   }
 
+  @Internal
+  public Node pushFinalizedNode(
+      String name,
+      Map<TupleTag<?>, PValue> inputs,
+      PTransform<?, ?> transform,
+      Map<TupleTag<?>, PValue> outputs) {
+    checkNotNull(
+        transform, "A %s must be provided for all Nodes", PTransform.class.getSimpleName());
+    checkNotNull(
+        name, "A name must be provided for all %s Nodes", PTransform.class.getSimpleName());
+    checkNotNull(
+        inputs, "An input must be provided for all %s Nodes", PTransform.class.getSimpleName());
+    Node node = new Node(current, transform, name, inputs, outputs);
+    node.finishedSpecifying = true;
+    current.addComposite(node);
+    current = node;
+    return current;
+  }
+
+  @Internal
+  public Node addFinalizedPrimitiveNode(
+      String name,
+      Map<TupleTag<?>, PValue> inputs,
+      PTransform<?, ?> transform,
+      Map<TupleTag<?>, PValue> outputs) {
+    checkNotNull(
+        transform, "A %s must be provided for all Nodes", PTransform.class.getSimpleName());
+    checkNotNull(
+        name, "A name must be provided for all %s Nodes", PTransform.class.getSimpleName());
+    checkNotNull(
+        inputs, "Inputs must be provided for all %s Nodes", PTransform.class.getSimpleName());
+    checkNotNull(
+        outputs, "Outputs must be provided for all %s Nodes", PTransform.class.getSimpleName());
+    Node node = new Node(current, transform, name, inputs, outputs);
+    node.finishedSpecifying = true;
+    for (PValue output : outputs.values()) {
+      producers.put(output, node);
+    }
+    current.addComposite(node);
+    return node;
+  }
+
   public Node replaceNode(Node existing, PInput input, PTransform<?, ?> transform) {
     checkNotNull(existing);
     checkNotNull(input);
@@ -145,14 +188,6 @@ public class TransformHierarchy {
       Node producerNode = getProducer(inputValue);
       PInput input = producerInput.remove(inputValue);
       inputValue.finishSpecifying(input, producerNode.getTransform());
-      checkState(
-          producers.get(inputValue) != null,
-          "Producer unknown for input %s",
-          inputValue);
-      checkState(
-          producers.get(inputValue) != null,
-          "Producer unknown for input %s",
-          inputValue);
     }
   }
 
@@ -201,7 +236,7 @@ public class TransformHierarchy {
   }
 
   Node getProducer(PValue produced) {
-    return producers.get(produced);
+    return checkNotNull(producers.get(produced), "No producer found for %s", produced);
   }
 
   public Set<PValue> visit(PipelineVisitor visitor) {
@@ -329,6 +364,32 @@ public class TransformHierarchy {
     }
 
     /**
+     * Creates a new {@link Node} with the given parent and transform, where inputs and outputs
+     * are already known.
+     *
+     * <p>EnclosingNode and transform may both be null for a root-level node, which holds all other
+     * nodes.
+     *
+     * @param enclosingNode the composite node containing this node
+     * @param transform the PTransform tracked by this node
+     * @param fullName the fully qualified name of the transform
+     * @param inputs the expanded inputs to the transform
+     * @param outputs the expanded outputs of the transform
+     */
+    private Node(
+        @Nullable Node enclosingNode,
+        @Nullable PTransform<?, ?> transform,
+        String fullName,
+        @Nullable Map<TupleTag<?>, PValue> inputs,
+        @Nullable Map<TupleTag<?>, PValue> outputs) {
+      this.enclosingNode = enclosingNode;
+      this.transform = transform;
+      this.fullName = fullName;
+      this.inputs = inputs == null ? Collections.<TupleTag<?>, PValue>emptyMap() : inputs;
+      this.outputs = outputs == null ? Collections.<TupleTag<?>, PValue>emptyMap() : outputs;
+    }
+
+    /**
      * Returns the transform associated with this transform node.
      */
     public PTransform<?, ?> getTransform() {
@@ -406,7 +467,7 @@ public class TransformHierarchy {
       return fullName;
     }
 
-    /** Returns the transform input, in unexpanded form. */
+    /** Returns the transform input, in fully expanded form. */
     public Map<TupleTag<?>, PValue> getInputs() {
       return inputs == null ? Collections.<TupleTag<?>, PValue>emptyMap() : inputs;
     }

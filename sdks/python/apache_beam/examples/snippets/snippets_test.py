@@ -30,16 +30,14 @@ from apache_beam import coders
 from apache_beam import pvalue
 from apache_beam import typehints
 from apache_beam.coders.coders import ToStringCoder
-from apache_beam.options.pipeline_options import PipelineOptions
 from apache_beam.examples.snippets import snippets
 from apache_beam.metrics import Metrics
 from apache_beam.metrics.metric import MetricsFilter
+from apache_beam.options.pipeline_options import PipelineOptions
+from apache_beam.testing.test_pipeline import TestPipeline
 from apache_beam.testing.util import assert_that
 from apache_beam.testing.util import equal_to
 from apache_beam.utils.windowed_value import WindowedValue
-
-# pylint: disable=expression-not-assigned
-from apache_beam.testing.test_pipeline import TestPipeline
 
 # Protect against environments where apitools library is not available.
 # pylint: disable=wrong-import-order, wrong-import-position
@@ -588,22 +586,6 @@ class SnippetsTest(unittest.TestCase):
       self.temp_files.append(gzip_file_name)
     snippets.model_textio_compressed(
         {'read': gzip_file_name}, ['aa', 'bb', 'cc'])
-
-  def test_model_textio_gzip_concatenated(self):
-    temp_path_1 = self.create_temp_file('a\nb\nc\n')
-    temp_path_2 = self.create_temp_file('p\nq\nr\n')
-    temp_path_3 = self.create_temp_file('x\ny\nz')
-    gzip_file_name = temp_path_1 + '.gz'
-    with open(temp_path_1) as src, gzip.open(gzip_file_name, 'wb') as dst:
-      dst.writelines(src)
-    with open(temp_path_2) as src, gzip.open(gzip_file_name, 'ab') as dst:
-      dst.writelines(src)
-    with open(temp_path_3) as src, gzip.open(gzip_file_name, 'ab') as dst:
-      dst.writelines(src)
-      # Add the temporary gzip file to be cleaned up as well.
-      self.temp_files.append(gzip_file_name)
-    snippets.model_textio_compressed(
-        {'read': gzip_file_name}, ['a', 'b', 'c', 'p', 'q', 'r', 'x', 'y', 'z'])
 
   @unittest.skipIf(datastore_pb2 is None, 'GCP dependencies are not installed')
   def test_model_datastoreio(self):

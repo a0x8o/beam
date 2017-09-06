@@ -82,7 +82,7 @@ import org.slf4j.LoggerFactory;
  *        .withEntity(Person.class));
  * }</pre>
  */
-@Experimental
+@Experimental(Experimental.Kind.SOURCE_SINK)
 public class CassandraIO {
 
   private static final Logger LOG = LoggerFactory.getLogger(CassandraIO.class);
@@ -289,7 +289,7 @@ public class CassandraIO {
     }
 
     @Override
-    public Coder<T> getDefaultOutputCoder() {
+    public Coder<T> getOutputCoder() {
       return spec.coder();
     }
 

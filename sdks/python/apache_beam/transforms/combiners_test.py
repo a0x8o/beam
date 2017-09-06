@@ -22,9 +22,10 @@ import unittest
 import hamcrest as hc
 
 import apache_beam as beam
-from apache_beam.testing.test_pipeline import TestPipeline
 import apache_beam.transforms.combiners as combine
-from apache_beam.testing.util import assert_that, equal_to
+from apache_beam.testing.test_pipeline import TestPipeline
+from apache_beam.testing.util import assert_that
+from apache_beam.testing.util import equal_to
 from apache_beam.transforms.core import CombineGlobally
 from apache_beam.transforms.core import Create
 from apache_beam.transforms.core import Map
@@ -156,14 +157,11 @@ class CombineTest(unittest.TestCase):
 
   def test_combine_sample_display_data(self):
     def individual_test_per_key_dd(sampleFn, args, kwargs):
-      trs = [beam.CombinePerKey(sampleFn(*args, **kwargs)),
-             beam.CombineGlobally(sampleFn(*args, **kwargs))]
+      trs = [sampleFn(*args, **kwargs)]
       for transform in trs:
         dd = DisplayData.create_from(transform)
         expected_items = [
-            DisplayDataItemMatcher('fn', sampleFn.fn.__name__),
-            DisplayDataItemMatcher('combine_fn',
-                                   transform.fn.__class__)]
+            DisplayDataItemMatcher('fn', transform._fn.__name__)]
         if args:
           expected_items.append(
               DisplayDataItemMatcher('args', str(args)))

@@ -18,6 +18,7 @@
 package org.apache.beam.sdk.io.kinesis;
 
 import com.amazonaws.services.kinesis.AmazonKinesis;
+
 import java.io.Serializable;
 
 /**
@@ -26,6 +27,7 @@ import java.io.Serializable;
  * <p>Please note, that any instance of {@link KinesisClientProvider} must be
  * {@link Serializable} to ensure it can be sent to worker machines.
  */
-interface KinesisClientProvider extends Serializable {
-    AmazonKinesis get();
+public interface KinesisClientProvider extends Serializable {
+
+  AmazonKinesis get();
 }

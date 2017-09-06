@@ -253,6 +253,39 @@ public class CompressedSourceTest {
   }
 
   /**
+   * Test a bzip2 file containing multiple streams is correctly decompressed.
+   *
+   * <p>A bzip2 file may contain multiple streams and should decompress as the concatenation of
+   * those streams.
+   */
+  @Test
+  @Category(NeedsRunner.class)
+  public void testReadMultiStreamBzip2() throws IOException {
+    CompressionMode mode = CompressionMode.BZIP2;
+    byte[] input1 = generateInput(5, 587973);
+    byte[] input2 = generateInput(5, 387374);
+
+    ByteArrayOutputStream stream1 = new ByteArrayOutputStream();
+    try (OutputStream os = getOutputStreamForMode(mode, stream1)) {
+      os.write(input1);
+    }
+
+    ByteArrayOutputStream stream2 = new ByteArrayOutputStream();
+    try (OutputStream os = getOutputStreamForMode(mode, stream2)) {
+      os.write(input2);
+    }
+
+    File tmpFile = tmpFolder.newFile();
+    try (OutputStream os = new FileOutputStream(tmpFile)) {
+      os.write(stream1.toByteArray());
+      os.write(stream2.toByteArray());
+    }
+
+    byte[] output = Bytes.concat(input1, input2);
+    verifyReadContents(output, tmpFile, mode);
+  }
+
+  /**
    * Test reading empty input with bzip2.
    */
   @Test
@@ -325,7 +358,7 @@ public class CompressedSourceTest {
   }
 
   @Test
-  public void testUncompressedFileIsSplittable() throws Exception {
+  public void testUncompressedFileWithAutoIsSplittable() throws Exception {
     String baseName = "test-input";
 
     File uncompressedFile = tmpFolder.newFile(baseName + ".bin");
@@ -333,6 +366,21 @@ public class CompressedSourceTest {
 
     CompressedSource<Byte> source =
         CompressedSource.from(new ByteSource(uncompressedFile.getPath(), 1));
+    assertTrue(source.isSplittable());
+    SourceTestUtils.assertSplitAtFractionExhaustive(source, PipelineOptionsFactory.create());
+  }
+
+
+  @Test
+  public void testUncompressedFileWithUncompressedIsSplittable() throws Exception {
+    String baseName = "test-input";
+
+    File uncompressedFile = tmpFolder.newFile(baseName + ".bin");
+    Files.write(generateInput(10), uncompressedFile);
+
+    CompressedSource<Byte> source =
+        CompressedSource.from(new ByteSource(uncompressedFile.getPath(), 1))
+            .withDecompression(CompressionMode.UNCOMPRESSED);
     assertTrue(source.isSplittable());
     SourceTestUtils.assertSplitAtFractionExhaustive(source, PipelineOptionsFactory.create());
   }
@@ -470,7 +518,16 @@ public class CompressedSourceTest {
    */
   private byte[] generateInput(int size) {
     // Arbitrary but fixed seed
-    Random random = new Random(285930);
+    return generateInput(size, 285930);
+  }
+
+
+    /**
+     * Generate byte array of given size.
+     */
+  private byte[] generateInput(int size, int seed) {
+    // Arbitrary but fixed seed
+    Random random = new Random(seed);
     byte[] buff = new byte[size];
     random.nextBytes(buff);
     return buff;
@@ -596,7 +653,7 @@ public class CompressedSourceTest {
     }
 
     @Override
-    public Coder<Byte> getDefaultOutputCoder() {
+    public Coder<Byte> getOutputCoder() {
       return SerializableCoder.of(Byte.class);
     }
 

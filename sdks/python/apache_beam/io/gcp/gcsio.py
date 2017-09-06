@@ -32,6 +32,8 @@ import threading
 import time
 import traceback
 
+import httplib2
+
 from apache_beam.utils import retry
 
 __all__ = ['GcsIO']
@@ -68,6 +70,10 @@ except ImportError:
 # +---------------+------------+-------------+-------------+-------------+
 DEFAULT_READ_BUFFER_SIZE = 16 * 1024 * 1024
 
+# This is the number of seconds the library will wait for GCS operations to
+# complete.
+DEFAULT_HTTP_TIMEOUT_SECONDS = 60
+
 # This is the number of seconds the library will wait for a partial-file read
 # operation from GCS to complete before retrying.
 DEFAULT_READ_SEGMENT_TIMEOUT_SECONDS = 60
@@ -99,7 +105,8 @@ class GcsIO(object):
 
   def __new__(cls, storage_client=None):
     if storage_client:
-      return super(GcsIO, cls).__new__(cls, storage_client)
+      # This path is only used for testing.
+      return super(GcsIO, cls).__new__(cls)
     else:
       # Create a single storage client for each thread.  We would like to avoid
       # creating more than one storage client for each thread, since each
@@ -108,7 +115,9 @@ class GcsIO(object):
       local_state = threading.local()
       if getattr(local_state, 'gcsio_instance', None) is None:
         credentials = auth.get_service_credentials()
-        storage_client = storage.StorageV1(credentials=credentials)
+        storage_client = storage.StorageV1(
+            credentials=credentials,
+            http=httplib2.Http(timeout=DEFAULT_HTTP_TIMEOUT_SECONDS))
         local_state.gcsio_instance = (
             super(GcsIO, cls).__new__(cls, storage_client))
         local_state.gcsio_instance.client = storage_client
@@ -129,16 +138,16 @@ class GcsIO(object):
     """Open a GCS file path for reading or writing.
 
     Args:
-      filename: GCS file path in the form gs://<bucket>/<object>.
-      mode: 'r' for reading or 'w' for writing.
-      read_buffer_size: Buffer size to use during read operations.
-      mime_type: Mime type to set for write operations.
+      filename (str): GCS file path in the form ``gs://<bucket>/<object>``.
+      mode (str): ``'r'`` for reading or ``'w'`` for writing.
+      read_buffer_size (int): Buffer size to use during read operations.
+      mime_type (str): Mime type to set for write operations.
 
     Returns:
-      file object.
+      GCS file object.
 
     Raises:
-      ValueError: Invalid open file mode.
+      ~exceptions.ValueError: Invalid open file mode.
     """
     if mode == 'r' or mode == 'rb':
       return GcsBufferedReader(self.client, filename, mode=mode,

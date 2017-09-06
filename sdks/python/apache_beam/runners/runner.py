@@ -25,7 +25,6 @@ import shelve
 import shutil
 import tempfile
 
-
 __all__ = ['PipelineRunner', 'PipelineState', 'PipelineResult']
 
 
@@ -41,7 +40,11 @@ _DIRECT_RUNNER_PATH = 'apache_beam.runners.direct.direct_runner.'
 _DATAFLOW_RUNNER_PATH = (
     'apache_beam.runners.dataflow.dataflow_runner.')
 _TEST_RUNNER_PATH = 'apache_beam.runners.test.'
+_PYTHON_RPC_DIRECT_RUNNER = (
+    'apache_beam.runners.experimental.python_rpc_direct.'
+    'python_rpc_direct_runner.')
 
+_KNOWN_PYTHON_RPC_DIRECT_RUNNER = ('PythonRPCDirectRunner',)
 _KNOWN_DIRECT_RUNNERS = ('DirectRunner', 'EagerRunner')
 _KNOWN_DATAFLOW_RUNNERS = ('DataflowRunner',)
 _KNOWN_TEST_RUNNERS = ('TestDataflowRunner',)
@@ -51,6 +54,8 @@ _RUNNER_MAP.update(_get_runner_map(_KNOWN_DIRECT_RUNNERS,
                                    _DIRECT_RUNNER_PATH))
 _RUNNER_MAP.update(_get_runner_map(_KNOWN_DATAFLOW_RUNNERS,
                                    _DATAFLOW_RUNNER_PATH))
+_RUNNER_MAP.update(_get_runner_map(_KNOWN_PYTHON_RPC_DIRECT_RUNNER,
+                                   _PYTHON_RPC_DIRECT_RUNNER))
 _RUNNER_MAP.update(_get_runner_map(_KNOWN_TEST_RUNNERS,
                                    _TEST_RUNNER_PATH))
 
@@ -277,10 +282,10 @@ class PValueCache(object):
 
 
 class PipelineState(object):
-  """State of the Pipeline, as returned by PipelineResult.state.
+  """State of the Pipeline, as returned by :attr:`PipelineResult.state`.
 
   This is meant to be the union of all the states any runner can put a
-  pipeline in.  Currently, it represents the values of the dataflow
+  pipeline in. Currently, it represents the values of the dataflow
   API JobState enum.
   """
   UNKNOWN = 'UNKNOWN'  # not specified
@@ -292,10 +297,13 @@ class PipelineState(object):
   UPDATED = 'UPDATED'  # replaced by another job (terminal state)
   DRAINING = 'DRAINING'  # still processing, no longer reading data
   DRAINED = 'DRAINED'  # draining completed (terminal state)
+  PENDING = 'PENDING' # the job has been created but is not yet running.
+  CANCELLING = 'CANCELLING' # job has been explicitly cancelled and is
+                            # in the process of stopping
 
 
 class PipelineResult(object):
-  """A PipelineResult provides access to info about a pipeline."""
+  """A :class:`PipelineResult` provides access to info about a pipeline."""
 
   def __init__(self, state):
     self._state = state
@@ -309,15 +317,18 @@ class PipelineResult(object):
     """Waits until the pipeline finishes and returns the final status.
 
     Args:
-      duration: The time to wait (in milliseconds) for job to finish. If it is
-        set to None, it will wait indefinitely until the job is finished.
+      duration (int): The time to wait (in milliseconds) for job to finish.
+        If it is set to :data:`None`, it will wait indefinitely until the job
+        is finished.
 
     Raises:
-      IOError: If there is a persistent problem getting job information.
-      NotImplementedError: If the runner does not support this operation.
+      ~exceptions.IOError: If there is a persistent problem getting job
+        information.
+      ~exceptions.NotImplementedError: If the runner does not support this
+        operation.
 
     Returns:
-      The final state of the pipeline, or None on timeout.
+      The final state of the pipeline, or :data:`None` on timeout.
     """
     raise NotImplementedError
 
@@ -325,8 +336,10 @@ class PipelineResult(object):
     """Cancels the pipeline execution.
 
     Raises:
-      IOError: If there is a persistent problem getting job information.
-      NotImplementedError: If the runner does not support this operation.
+      ~exceptions.IOError: If there is a persistent problem getting job
+        information.
+      ~exceptions.NotImplementedError: If the runner does not support this
+        operation.
 
     Returns:
       The final state of the pipeline.
@@ -334,10 +347,12 @@ class PipelineResult(object):
     raise NotImplementedError
 
   def metrics(self):
-    """Returns MetricsResult object to query metrics from the runner.
+    """Returns :class:`~apache_beam.metrics.metric.MetricResults` object to
+    query metrics from the runner.
 
     Raises:
-      NotImplementedError: If the runner does not support this operation.
+      ~exceptions.NotImplementedError: If the runner does not support this
+        operation.
     """
     raise NotImplementedError
 

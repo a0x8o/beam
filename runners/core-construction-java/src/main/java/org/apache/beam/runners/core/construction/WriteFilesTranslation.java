@@ -19,27 +19,33 @@
 package org.apache.beam.runners.core.construction;
 
 import static com.google.common.base.Preconditions.checkArgument;
+import static com.google.common.base.Preconditions.checkNotNull;
 
 import com.google.auto.service.AutoService;
 import com.google.common.annotations.VisibleForTesting;
-import com.google.protobuf.Any;
+import com.google.common.collect.Lists;
+import com.google.common.collect.Maps;
 import com.google.protobuf.ByteString;
-import com.google.protobuf.BytesValue;
 import java.io.IOException;
+import java.io.Serializable;
 import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 import org.apache.beam.runners.core.construction.PTransformTranslation.TransformPayloadTranslator;
 import org.apache.beam.sdk.common.runner.v1.RunnerApi;
 import org.apache.beam.sdk.common.runner.v1.RunnerApi.FunctionSpec;
 import org.apache.beam.sdk.common.runner.v1.RunnerApi.SdkFunctionSpec;
+import org.apache.beam.sdk.common.runner.v1.RunnerApi.SideInput;
 import org.apache.beam.sdk.common.runner.v1.RunnerApi.WriteFilesPayload;
 import org.apache.beam.sdk.io.FileBasedSink;
 import org.apache.beam.sdk.io.WriteFiles;
+import org.apache.beam.sdk.io.WriteFilesResult;
 import org.apache.beam.sdk.runners.AppliedPTransform;
 import org.apache.beam.sdk.transforms.PTransform;
 import org.apache.beam.sdk.util.SerializableUtils;
 import org.apache.beam.sdk.values.PCollection;
-import org.apache.beam.sdk.values.PDone;
+import org.apache.beam.sdk.values.PCollectionView;
+import org.apache.beam.sdk.values.TupleTag;
 
 /**
  * Utility methods for translating a {@link WriteFiles} to and from {@link RunnerApi}
@@ -52,31 +58,37 @@ public class WriteFilesTranslation {
       "urn:beam:file_based_sink:javasdk:0.1";
 
   @VisibleForTesting
-  static WriteFilesPayload toProto(WriteFiles<?> transform) {
+  static WriteFilesPayload toProto(WriteFiles<?, ?, ?> transform) {
+    Map<String, SideInput> sideInputs = Maps.newHashMap();
+    for (PCollectionView<?> view : transform.getSink().getDynamicDestinations().getSideInputs()) {
+      sideInputs.put(view.getTagInternal().getId(), ParDoTranslation.toProto(view));
+    }
     return WriteFilesPayload.newBuilder()
         .setSink(toProto(transform.getSink()))
         .setWindowedWrites(transform.isWindowedWrites())
         .setRunnerDeterminedSharding(
             transform.getNumShards() == null && transform.getSharding() == null)
+        .putAllSideInputs(sideInputs)
         .build();
   }
 
-  private static SdkFunctionSpec toProto(FileBasedSink<?> sink) {
+  private static SdkFunctionSpec toProto(FileBasedSink<?, ?, ?> sink) {
+    return toProto(CUSTOM_JAVA_FILE_BASED_SINK_URN, sink);
+  }
+
+  private static SdkFunctionSpec toProto(String urn, Serializable serializable) {
     return SdkFunctionSpec.newBuilder()
         .setSpec(
             FunctionSpec.newBuilder()
-                .setUrn(CUSTOM_JAVA_FILE_BASED_SINK_URN)
-                .setParameter(
-                    Any.pack(
-                        BytesValue.newBuilder()
-                            .setValue(
-                                ByteString.copyFrom(SerializableUtils.serializeToByteArray(sink)))
-                            .build())))
+                .setUrn(urn)
+                .setPayload(
+                    ByteString.copyFrom(SerializableUtils.serializeToByteArray(serializable)))
+                .build())
         .build();
   }
 
   @VisibleForTesting
-  static FileBasedSink<?> sinkFromProto(SdkFunctionSpec sinkProto) throws IOException {
+  static FileBasedSink<?, ?, ?> sinkFromProto(SdkFunctionSpec sinkProto) throws IOException {
     checkArgument(
         sinkProto.getSpec().getUrn().equals(CUSTOM_JAVA_FILE_BASED_SINK_URN),
         "Cannot extract %s instance from %s with URN %s",
@@ -84,58 +96,95 @@ public class WriteFilesTranslation {
         FunctionSpec.class.getSimpleName(),
         sinkProto.getSpec().getUrn());
 
-    byte[] serializedSink =
-        sinkProto.getSpec().getParameter().unpack(BytesValue.class).getValue().toByteArray();
+    byte[] serializedSink = sinkProto.getSpec().getPayload().toByteArray();
 
-    return (FileBasedSink<?>)
+    return (FileBasedSink<?, ?, ?>)
         SerializableUtils.deserializeFromByteArray(
             serializedSink, FileBasedSink.class.getSimpleName());
   }
 
-  public static <T> FileBasedSink<T> getSink(
-      AppliedPTransform<PCollection<T>, PDone, ? extends PTransform<PCollection<T>, PDone>>
+  public static <UserT, DestinationT, OutputT> FileBasedSink<UserT, DestinationT, OutputT> getSink(
+      AppliedPTransform<
+              PCollection<UserT>, WriteFilesResult<DestinationT>,
+              ? extends PTransform<PCollection<UserT>, WriteFilesResult<DestinationT>>>
           transform)
       throws IOException {
-    return (FileBasedSink<T>) sinkFromProto(getWriteFilesPayload(transform).getSink());
+    return (FileBasedSink<UserT, DestinationT, OutputT>)
+        sinkFromProto(getWriteFilesPayload(transform).getSink());
   }
 
-  public static <T> boolean isWindowedWrites(
-      AppliedPTransform<PCollection<T>, PDone, ? extends PTransform<PCollection<T>, PDone>>
+  public static <UserT, DestinationT> List<PCollectionView<?>> getDynamicDestinationSideInputs(
+      AppliedPTransform<
+              PCollection<UserT>, WriteFilesResult<DestinationT>,
+              ? extends PTransform<PCollection<UserT>, WriteFilesResult<DestinationT>>>
+          transform)
+      throws IOException {
+    SdkComponents sdkComponents = SdkComponents.create();
+    RunnerApi.PTransform transformProto = PTransformTranslation.toProto(transform, sdkComponents);
+    List<PCollectionView<?>> views = Lists.newArrayList();
+    Map<String, SideInput> sideInputs = getWriteFilesPayload(transform).getSideInputsMap();
+    for (Map.Entry<String, SideInput> entry : sideInputs.entrySet()) {
+      PCollection<?> originalPCollection =
+          checkNotNull(
+              (PCollection<?>) transform.getInputs().get(new TupleTag<>(entry.getKey())),
+              "no input with tag %s",
+              entry.getKey());
+      views.add(
+          ParDoTranslation.viewFromProto(
+              entry.getValue(),
+              entry.getKey(),
+              originalPCollection,
+              transformProto,
+              RehydratedComponents.forComponents(sdkComponents.toComponents())));
+    }
+    return views;
+  }
+
+  public static <T, DestinationT> boolean isWindowedWrites(
+      AppliedPTransform<
+              PCollection<T>, WriteFilesResult<DestinationT>,
+              ? extends PTransform<PCollection<T>, WriteFilesResult<DestinationT>>>
           transform)
       throws IOException {
     return getWriteFilesPayload(transform).getWindowedWrites();
   }
 
-  public static <T> boolean isRunnerDeterminedSharding(
-      AppliedPTransform<PCollection<T>, PDone, ? extends PTransform<PCollection<T>, PDone>>
+  public static <T, DestinationT> boolean isRunnerDeterminedSharding(
+      AppliedPTransform<
+              PCollection<T>, WriteFilesResult<DestinationT>,
+              ? extends PTransform<PCollection<T>, WriteFilesResult<DestinationT>>>
           transform)
       throws IOException {
     return getWriteFilesPayload(transform).getRunnerDeterminedSharding();
   }
 
-  private static <T> WriteFilesPayload getWriteFilesPayload(
-      AppliedPTransform<PCollection<T>, PDone, ? extends PTransform<PCollection<T>, PDone>>
+  private static <T, DestinationT> WriteFilesPayload getWriteFilesPayload(
+      AppliedPTransform<
+              PCollection<T>, WriteFilesResult<DestinationT>,
+              ? extends PTransform<PCollection<T>, WriteFilesResult<DestinationT>>>
           transform)
       throws IOException {
-    return PTransformTranslation.toProto(
-            transform, Collections.<AppliedPTransform<?, ?, ?>>emptyList(), SdkComponents.create())
-        .getSpec()
-        .getParameter()
-        .unpack(WriteFilesPayload.class);
+    return WriteFilesPayload.parseFrom(
+        PTransformTranslation.toProto(
+                transform,
+                Collections.<AppliedPTransform<?, ?, ?>>emptyList(),
+                SdkComponents.create())
+            .getSpec()
+            .getPayload());
   }
 
-  static class WriteFilesTranslator implements TransformPayloadTranslator<WriteFiles<?>> {
+  static class WriteFilesTranslator implements TransformPayloadTranslator<WriteFiles<?, ?, ?>> {
     @Override
-    public String getUrn(WriteFiles<?> transform) {
+    public String getUrn(WriteFiles<?, ?, ?> transform) {
       return PTransformTranslation.WRITE_FILES_TRANSFORM_URN;
     }
 
     @Override
     public FunctionSpec translate(
-        AppliedPTransform<?, ?, WriteFiles<?>> transform, SdkComponents components) {
+        AppliedPTransform<?, ?, WriteFiles<?, ?, ?>> transform, SdkComponents components) {
       return FunctionSpec.newBuilder()
           .setUrn(getUrn(transform.getTransform()))
-          .setParameter(Any.pack(toProto(transform.getTransform())))
+          .setPayload(toProto(transform.getTransform()).toByteString())
           .build();
     }
   }
