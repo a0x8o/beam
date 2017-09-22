@@ -25,38 +25,36 @@ import types
 
 from google.protobuf import wrappers_pb2
 
+from apache_beam import coders
 from apache_beam import pvalue
 from apache_beam import typehints
-from apache_beam import coders
 from apache_beam.coders import typecoders
 from apache_beam.internal import pickler
 from apache_beam.internal import util
+from apache_beam.options.pipeline_options import TypeOptions
 from apache_beam.portability.api import beam_runner_api_pb2
 from apache_beam.transforms import ptransform
 from apache_beam.transforms.display import DisplayDataItem
 from apache_beam.transforms.display import HasDisplayData
 from apache_beam.transforms.ptransform import PTransform
 from apache_beam.transforms.ptransform import PTransformWithSideInputs
-from apache_beam.transforms.window import MIN_TIMESTAMP
-from apache_beam.transforms.window import TimestampCombiner
-from apache_beam.transforms.window import WindowedValue
-from apache_beam.transforms.window import TimestampedValue
 from apache_beam.transforms.window import GlobalWindows
+from apache_beam.transforms.window import TimestampCombiner
+from apache_beam.transforms.window import TimestampedValue
+from apache_beam.transforms.window import WindowedValue
 from apache_beam.transforms.window import WindowFn
+from apache_beam.typehints import KV
 from apache_beam.typehints import Any
 from apache_beam.typehints import Iterable
-from apache_beam.typehints import KV
-from apache_beam.typehints import trivial_inference
 from apache_beam.typehints import Union
-from apache_beam.typehints.decorators import get_type_hints
+from apache_beam.typehints import trivial_inference
 from apache_beam.typehints.decorators import TypeCheckError
 from apache_beam.typehints.decorators import WithTypeHints
+from apache_beam.typehints.decorators import get_type_hints
 from apache_beam.typehints.trivial_inference import element_type
 from apache_beam.typehints.typehints import is_consistent_with
 from apache_beam.utils import proto_utils
 from apache_beam.utils import urns
-from apache_beam.options.pipeline_options import TypeOptions
-
 
 __all__ = [
     'DoFn',
@@ -1187,6 +1185,8 @@ class GroupByKey(PTransform):
       # Initialize type-hints used below to enforce type-checking and to pass
       # downstream to further PTransforms.
       key_type, value_type = trivial_inference.key_value_types(input_type)
+      # Enforce the input to a GBK has a KV element type.
+      pcoll.element_type = KV[key_type, value_type]
       typecoders.registry.verify_deterministic(
           typecoders.registry.get_coder(key_type),
           'GroupByKey operation "%s"' % self.label)
@@ -1282,24 +1282,13 @@ class _GroupAlsoByWindowDoFn(DoFn):
 
   def start_bundle(self):
     # pylint: disable=wrong-import-order, wrong-import-position
-    from apache_beam.transforms.trigger import InMemoryUnmergedState
     from apache_beam.transforms.trigger import create_trigger_driver
     # pylint: enable=wrong-import-order, wrong-import-position
     self.driver = create_trigger_driver(self.windowing, True)
-    self.state_type = InMemoryUnmergedState
 
   def process(self, element):
     k, vs = element
-    state = self.state_type()
-    # TODO(robertwb): Conditionally process in smaller chunks.
-    for wvalue in self.driver.process_elements(state, vs, MIN_TIMESTAMP):
-      yield wvalue.with_value((k, wvalue.value))
-    while state.timers:
-      fired = state.get_and_clear_timers()
-      for timer_window, (name, time_domain, fire_time) in fired:
-        for wvalue in self.driver.process_timer(
-            timer_window, name, time_domain, fire_time, state):
-          yield wvalue.with_value((k, wvalue.value))
+    return self.driver.process_entire_key(k, vs)
 
 
 class Partition(PTransformWithSideInputs):
@@ -1361,7 +1350,7 @@ class Windowing(object):
     if not windowfn.get_window_coder().is_deterministic():
       raise ValueError(
           'window fn (%s) does not have a determanistic coder (%s)' % (
-              window_fn, windowfn.get_window_coder()))
+              windowfn, windowfn.get_window_coder()))
     self.windowfn = windowfn
     self.triggerfn = triggerfn
     self.accumulation_mode = accumulation_mode

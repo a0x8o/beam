@@ -31,10 +31,14 @@ string. The tags can contain only letters, digits and _.
 """
 
 import apache_beam as beam
+from apache_beam.io import iobase
+from apache_beam.io.range_trackers import OffsetRangeTracker
 from apache_beam.metrics import Metrics
+from apache_beam.options.pipeline_options import PipelineOptions
 from apache_beam.testing.test_pipeline import TestPipeline
 from apache_beam.testing.util import assert_that
 from apache_beam.testing.util import equal_to
+from apache_beam.transforms.core import PTransform
 
 # Quiet some pylint warnings that happen because of the somewhat special
 # format for the code snippets.
@@ -655,13 +659,6 @@ def examples_ptransforms_templated(renames):
   result.wait_until_finish()
 
 
-import apache_beam as beam
-from apache_beam.io import iobase
-from apache_beam.io.range_trackers import OffsetRangeTracker
-from apache_beam.transforms.core import PTransform
-from apache_beam.options.pipeline_options import PipelineOptions
-
-
 # Defining a new source.
 # [START model_custom_source_new_source]
 class CountingSource(iobase.BoundedSource):
@@ -1151,24 +1148,24 @@ def model_co_group_by_key_tuple(email_list, phone_list, output_path):
     # multiple possible values for each key.
     # The phone_list contains values such as: ('mary': '111-222-3333') with
     # multiple possible values for each key.
-    emails = p | 'email' >> beam.Create(email_list)
-    phones = p | 'phone' >> beam.Create(phone_list)
+    emails_pcoll = p | 'create emails' >> beam.Create(email_list)
+    phones_pcoll = p | 'create phones' >> beam.Create(phone_list)
+
     # The result PCollection contains one key-value element for each key in the
     # input PCollections. The key of the pair will be the key from the input and
     # the value will be a dictionary with two entries: 'emails' - an iterable of
     # all values for the current key in the emails PCollection and 'phones': an
     # iterable of all values for the current key in the phones PCollection.
     # For instance, if 'emails' contained ('joe', 'joe@example.com') and
-    # ('joe', 'joe@gmail.com'), then 'result' will contain the element
+    # ('joe', 'joe@gmail.com'), then 'result' will contain the element:
     # ('joe', {'emails': ['joe@example.com', 'joe@gmail.com'], 'phones': ...})
-    result = {'emails': emails, 'phones': phones} | beam.CoGroupByKey()
+    result = ({'emails': emails_pcoll, 'phones': phones_pcoll}
+              | beam.CoGroupByKey())
 
-    def join_info((name, info)):
-      return '; '.join(['%s' % name,
-                        '%s' % ','.join(info['emails']),
-                        '%s' % ','.join(info['phones'])])
-
-    contact_lines = result | beam.Map(join_info)
+    contact_lines = result | beam.Map(
+        lambda (name, info):\
+           '%s; %s; %s' %\
+           (name, sorted(info['emails']), sorted(info['phones'])))
     # [END model_group_by_key_cogroupbykey_tuple]
     contact_lines | beam.io.WriteToText(output_path)
 

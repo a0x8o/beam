@@ -31,8 +31,10 @@ import com.google.api.services.bigquery.model.JobStatistics;
 import com.google.api.services.bigquery.model.TableReference;
 import com.google.api.services.bigquery.model.TableRow;
 import com.google.api.services.bigquery.model.TableSchema;
+import com.google.api.services.bigquery.model.TimePartitioning;
 import com.google.auto.value.AutoValue;
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.base.MoreObjects;
 import com.google.common.base.Predicates;
 import com.google.common.base.Strings;
 import com.google.common.collect.ImmutableList;
@@ -60,9 +62,11 @@ import org.apache.beam.sdk.io.gcp.bigquery.BigQueryHelpers.JsonTableRefToTableRe
 import org.apache.beam.sdk.io.gcp.bigquery.BigQueryHelpers.TableRefToJson;
 import org.apache.beam.sdk.io.gcp.bigquery.BigQueryHelpers.TableSchemaToJsonSchema;
 import org.apache.beam.sdk.io.gcp.bigquery.BigQueryHelpers.TableSpecToTableRef;
+import org.apache.beam.sdk.io.gcp.bigquery.BigQueryHelpers.TimePartitioningToJson;
 import org.apache.beam.sdk.io.gcp.bigquery.BigQueryServices.DatasetService;
 import org.apache.beam.sdk.io.gcp.bigquery.BigQueryServices.JobService;
 import org.apache.beam.sdk.io.gcp.bigquery.DynamicDestinationsHelpers.ConstantSchemaDestinations;
+import org.apache.beam.sdk.io.gcp.bigquery.DynamicDestinationsHelpers.ConstantTimePartitioningDestinations;
 import org.apache.beam.sdk.io.gcp.bigquery.DynamicDestinationsHelpers.SchemaFromViewDestinations;
 import org.apache.beam.sdk.io.gcp.bigquery.DynamicDestinationsHelpers.TableFunctionDestinations;
 import org.apache.beam.sdk.options.PipelineOptions;
@@ -448,8 +452,7 @@ public class BigQueryIO {
 
     private BigQuerySourceBase createSource(String jobUuid) {
       BigQuerySourceBase source;
-      if (getQuery() == null
-          || (getQuery().isAccessible() && Strings.isNullOrEmpty(getQuery().get()))) {
+      if (getQuery() == null) {
         source = BigQueryTableSource.create(jobUuid, getTableProvider(), getBigQueryServices());
       } else {
         source =
@@ -483,19 +486,48 @@ public class BigQueryIO {
 
       ValueProvider<TableReference> table = getTableProvider();
 
-      checkState(
-          table == null || getQuery() == null,
-          "Invalid BigQueryIO.Read: table reference and query may not both be set");
-      checkState(
-          table != null || getQuery() != null,
-          "Invalid BigQueryIO.Read: one of table reference and query must be set");
+      // Note that a table or query check can fail if the table or dataset are created by
+      // earlier stages of the pipeline or if a query depends on earlier stages of a pipeline.
+      // For these cases the withoutValidation method can be used to disable the check.
+      if (getValidate()) {
+        if (table != null) {
+          checkArgument(table.isAccessible(), "Cannot call validate if table is dynamically set.");
+        }
+        if (table != null && table.get().getProjectId() != null) {
+          // Check for source table presence for early failure notification.
+          DatasetService datasetService = getBigQueryServices().getDatasetService(bqOptions);
+          BigQueryHelpers.verifyDatasetPresence(datasetService, table.get());
+          BigQueryHelpers.verifyTablePresence(datasetService, table.get());
+        } else if (getQuery() != null) {
+          checkArgument(
+              getQuery().isAccessible(), "Cannot call validate if query is dynamically set.");
+          JobService jobService = getBigQueryServices().getJobService(bqOptions);
+          try {
+            jobService.dryRunQuery(
+                bqOptions.getProject(),
+                new JobConfigurationQuery()
+                    .setQuery(getQuery().get())
+                    .setFlattenResults(getFlattenResults())
+                    .setUseLegacySql(getUseLegacySql()));
+          } catch (Exception e) {
+            throw new IllegalArgumentException(
+                String.format(QUERY_VALIDATION_FAILURE_ERROR, getQuery().get()), e);
+          }
+        }
+      }
+    }
+
+    @Override
+    public PCollection<TableRow> expand(PBegin input) {
+      ValueProvider<TableReference> table = getTableProvider();
 
       if (table != null) {
-        checkState(
+        checkArgument(getQuery() == null, "from() and fromQuery() are exclusive");
+        checkArgument(
             getFlattenResults() == null,
             "Invalid BigQueryIO.Read: Specifies a table with a result flattening"
                 + " preference, which only applies to queries");
-        checkState(
+        checkArgument(
             getUseLegacySql() == null,
             "Invalid BigQueryIO.Read: Specifies a table with a SQL dialect"
                 + " preference, which only applies to queries");
@@ -505,41 +537,13 @@ public class BigQueryIO {
               TableReference.class.getSimpleName(),
               BigQueryOptions.class.getSimpleName());
         }
-      } else /* query != null */ {
-        checkState(
+      } else {
+        checkArgument(getQuery() != null, "Either from() or fromQuery() is required");
+        checkArgument(
             getFlattenResults() != null, "flattenResults should not be null if query is set");
-        checkState(getUseLegacySql() != null, "useLegacySql should not be null if query is set");
+        checkArgument(getUseLegacySql() != null, "useLegacySql should not be null if query is set");
       }
 
-      // Note that a table or query check can fail if the table or dataset are created by
-      // earlier stages of the pipeline or if a query depends on earlier stages of a pipeline.
-      // For these cases the withoutValidation method can be used to disable the check.
-      if (getValidate() && table != null && table.isAccessible()
-          && table.get().getProjectId() != null) {
-        checkState(table.isAccessible(), "Cannot call validate if table is dynamically set.");
-        // Check for source table presence for early failure notification.
-        DatasetService datasetService = getBigQueryServices().getDatasetService(bqOptions);
-        BigQueryHelpers.verifyDatasetPresence(datasetService, table.get());
-        BigQueryHelpers.verifyTablePresence(datasetService, table.get());
-      } else if (getValidate() && getQuery() != null) {
-        checkState(getQuery().isAccessible(), "Cannot call validate if query is dynamically set.");
-        JobService jobService = getBigQueryServices().getJobService(bqOptions);
-        try {
-          jobService.dryRunQuery(
-              bqOptions.getProject(),
-              new JobConfigurationQuery()
-                  .setQuery(getQuery().get())
-                  .setFlattenResults(getFlattenResults())
-                  .setUseLegacySql(getUseLegacySql()));
-        } catch (Exception e) {
-          throw new IllegalArgumentException(
-              String.format(QUERY_VALIDATION_FAILURE_ERROR, getQuery().get()), e);
-        }
-      }
-    }
-
-    @Override
-    public PCollection<TableRow> expand(PBegin input) {
       Pipeline p = input.getPipeline();
       final PCollectionView<String> jobIdTokenView;
       PCollection<String> jobIdTokenCollection = null;
@@ -824,6 +828,7 @@ public class BigQueryIO {
     @Nullable abstract DynamicDestinations<T, ?> getDynamicDestinations();
     @Nullable abstract PCollectionView<Map<String, String>> getSchemaFromView();
     @Nullable abstract ValueProvider<String> getJsonSchema();
+    @Nullable abstract ValueProvider<String> getJsonTimePartitioning();
     abstract CreateDisposition getCreateDisposition();
     abstract WriteDisposition getWriteDisposition();
     /** Table description. Default is empty. */
@@ -854,6 +859,7 @@ public class BigQueryIO {
       abstract Builder<T> setDynamicDestinations(DynamicDestinations<T, ?> dynamicDestinations);
       abstract Builder<T> setSchemaFromView(PCollectionView<Map<String, String>> view);
       abstract Builder<T> setJsonSchema(ValueProvider<String> jsonSchema);
+      abstract Builder<T> setJsonTimePartitioning(ValueProvider<String> jsonTimePartitioning);
       abstract Builder<T> setCreateDisposition(CreateDisposition createDisposition);
       abstract Builder<T> setWriteDisposition(WriteDisposition writeDisposition);
       abstract Builder<T> setTableDescription(String tableDescription);
@@ -1022,6 +1028,33 @@ public class BigQueryIO {
       return toBuilder().setSchemaFromView(view).build();
     }
 
+    /**
+     * Allows newly created tables to include a {@link TimePartitioning} class. Can only be used
+     * when writing to a single table. If {@link #to(SerializableFunction)} or
+     * {@link #to(DynamicDestinations)} is used to write dynamic tables, time partitioning can be
+     * directly in the returned {@link TableDestination}.
+     */
+    public Write<T> withTimePartitioning(TimePartitioning partitioning) {
+      return withJsonTimePartitioning(
+          StaticValueProvider.of(BigQueryHelpers.toJsonString(partitioning)));
+    }
+
+    /**
+     * Like {@link #withTimePartitioning(TimePartitioning)} but using a deferred
+     * {@link ValueProvider}.
+     */
+    public Write<T> withTimePartitioning(ValueProvider<TimePartitioning> partition) {
+      return withJsonTimePartitioning(NestedValueProvider.of(
+          partition, new TimePartitioningToJson()));
+    }
+
+    /**
+     * The same as {@link #withTimePartitioning}, but takes a JSON-serialized object.
+     */
+    public Write<T> withJsonTimePartitioning(ValueProvider<String> partition) {
+      return toBuilder().setJsonTimePartitioning(partition).build();
+    }
+
     /** Specifies whether the table should be created if it does not exist. */
     public Write<T> withCreateDisposition(CreateDisposition createDisposition) {
       return toBuilder().setCreateDisposition(createDisposition).build();
@@ -1138,7 +1171,7 @@ public class BigQueryIO {
     @Override
     public WriteResult expand(PCollection<T> input) {
       // We must have a destination to write to!
-      checkState(
+      checkArgument(
           getTableFunction() != null || getJsonTableRef() != null
               || getDynamicDestinations() != null,
           "must set the table reference of a BigQueryIO.Write transform");
@@ -1183,6 +1216,15 @@ public class BigQueryIO {
             input.isBounded(),
             method);
       }
+      if (getJsonTimePartitioning() != null) {
+        checkArgument(getDynamicDestinations() == null,
+            "The supplied DynamicDestinations object can directly set TimePartitioning."
+                + " There is no need to call BigQueryIO.Write.withTimePartitioning.");
+        checkArgument(getTableFunction() == null,
+            "The supplied getTableFunction object can directly set TimePartitioning."
+                + " There is no need to call BigQueryIO.Write.withTimePartitioning.");
+      }
+
       DynamicDestinations<T, ?> dynamicDestinations = getDynamicDestinations();
       if (dynamicDestinations == null) {
         if (getJsonTableRef() != null) {
@@ -1204,6 +1246,12 @@ public class BigQueryIO {
               new SchemaFromViewDestinations<>(
                   (DynamicDestinations<T, TableDestination>) dynamicDestinations,
                   getSchemaFromView());
+        }
+
+        // Wrap with a DynamicDestinations class that will provide the proper TimePartitioning.
+        if (getJsonTimePartitioning() != null) {
+          dynamicDestinations = new ConstantTimePartitioningDestinations(
+              dynamicDestinations, getJsonTimePartitioning());
         }
       }
       return expandTyped(input, dynamicDestinations);
@@ -1231,9 +1279,12 @@ public class BigQueryIO {
             getWriteDisposition() != WriteDisposition.WRITE_TRUNCATE,
             "WriteDisposition.WRITE_TRUNCATE is not supported for an unbounded"
                 + " PCollection.");
+        InsertRetryPolicy retryPolicy = MoreObjects.firstNonNull(
+            getFailedInsertRetryPolicy(), InsertRetryPolicy.alwaysRetry());
+
         StreamingInserts<DestinationT> streamingInserts =
             new StreamingInserts<>(getCreateDisposition(), dynamicDestinations)
-                .withInsertRetryPolicy(getFailedInsertRetryPolicy())
+                .withInsertRetryPolicy(retryPolicy)
                 .withTestServices((getBigQueryServices()));
         return rowsWithDestination.apply(streamingInserts);
       } else {

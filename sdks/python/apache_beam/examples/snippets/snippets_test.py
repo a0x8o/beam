@@ -30,16 +30,14 @@ from apache_beam import coders
 from apache_beam import pvalue
 from apache_beam import typehints
 from apache_beam.coders.coders import ToStringCoder
-from apache_beam.options.pipeline_options import PipelineOptions
 from apache_beam.examples.snippets import snippets
 from apache_beam.metrics import Metrics
 from apache_beam.metrics.metric import MetricsFilter
+from apache_beam.options.pipeline_options import PipelineOptions
+from apache_beam.testing.test_pipeline import TestPipeline
 from apache_beam.testing.util import assert_that
 from apache_beam.testing.util import equal_to
 from apache_beam.utils.windowed_value import WindowedValue
-
-# pylint: disable=expression-not-assigned
-from apache_beam.testing.test_pipeline import TestPipeline
 
 # Protect against environments where apitools library is not available.
 # pylint: disable=wrong-import-order, wrong-import-position
@@ -696,12 +694,31 @@ class SnippetsTest(unittest.TestCase):
     self.assertEqual([str(s) for s in expected], self.get_output(result_path))
 
   def test_model_co_group_by_key_tuple(self):
-    email_list = [['a', 'a@example.com'], ['b', 'b@example.com']]
-    phone_list = [['a', 'x4312'], ['b', 'x8452']]
+    # [START model_group_by_key_cogroupbykey_tuple_inputs]
+    email_list = [
+        ('amy', 'amy@example.com'),
+        ('carl', 'carl@example.com'),
+        ('julia', 'julia@example.com'),
+        ('carl', 'carl@email.com'),
+    ]
+    phone_list = [
+        ('amy', '111-222-3333'),
+        ('james', '222-333-4444'),
+        ('amy', '333-444-5555'),
+        ('carl', '444-555-6666'),
+    ]
+    # [END model_group_by_key_cogroupbykey_tuple_inputs]
     result_path = self.create_temp_file()
     snippets.model_co_group_by_key_tuple(email_list, phone_list, result_path)
-    expect = ['a; a@example.com; x4312', 'b; b@example.com; x8452']
-    self.assertEqual(expect, self.get_output(result_path))
+    # [START model_group_by_key_cogroupbykey_tuple_outputs]
+    contact_lines = [
+        "amy; ['amy@example.com']; ['111-222-3333', '333-444-5555']",
+        "carl; ['carl@email.com', 'carl@example.com']; ['444-555-6666']",
+        "james; []; ['222-333-4444']",
+        "julia; ['julia@example.com']; []",
+    ]
+    # [END model_group_by_key_cogroupbykey_tuple_outputs]
+    self.assertEqual(contact_lines, self.get_output(result_path))
 
   def test_model_use_and_query_metrics(self):
     """DebuggingWordCount example snippets."""

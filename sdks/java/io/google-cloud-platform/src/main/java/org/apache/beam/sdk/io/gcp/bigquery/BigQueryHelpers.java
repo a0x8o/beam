@@ -24,6 +24,7 @@ import com.google.api.services.bigquery.model.Job;
 import com.google.api.services.bigquery.model.JobStatus;
 import com.google.api.services.bigquery.model.TableReference;
 import com.google.api.services.bigquery.model.TableSchema;
+import com.google.api.services.bigquery.model.TimePartitioning;
 import com.google.cloud.hadoop.util.ApiErrorExtractor;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.hash.Hashing;
@@ -109,6 +110,14 @@ public class BigQueryHelpers {
     ref.setProjectId(match.group("PROJECT"));
 
     return ref.setDatasetId(match.group("DATASET")).setTableId(match.group("TABLE"));
+  }
+
+  /**
+   * Strip off any partition decorator information from a tablespec.
+   */
+  public static String stripPartitionDecorator(String tableSpec) {
+    int index = tableSpec.lastIndexOf('$');
+    return  (index  == -1) ? tableSpec : tableSpec.substring(0, index);
   }
 
   static String jobToPrettyString(@Nullable Job job) throws IOException {
@@ -288,6 +297,13 @@ public class BigQueryHelpers {
     @Override
     public TableReference apply(String from) {
       return parseTableSpec(from);
+    }
+  }
+
+  static class TimePartitioningToJson implements SerializableFunction<TimePartitioning, String> {
+    @Override
+    public String apply(TimePartitioning partitioning) {
+      return toJsonString(partitioning);
     }
   }
 

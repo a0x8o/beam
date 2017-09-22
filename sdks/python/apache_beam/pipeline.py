@@ -55,20 +55,19 @@ import tempfile
 
 from apache_beam import pvalue
 from apache_beam.internal import pickler
-from apache_beam.pvalue import PCollection
-from apache_beam.runners import create_runner
-from apache_beam.runners import PipelineRunner
-from apache_beam.transforms import ptransform
-from apache_beam.typehints import typehints
-from apache_beam.typehints import TypeCheckError
 from apache_beam.options.pipeline_options import PipelineOptions
 from apache_beam.options.pipeline_options import SetupOptions
 from apache_beam.options.pipeline_options import StandardOptions
 from apache_beam.options.pipeline_options import TypeOptions
 from apache_beam.options.pipeline_options_validator import PipelineOptionsValidator
-from apache_beam.utils.annotations import deprecated
+from apache_beam.pvalue import PCollection
+from apache_beam.runners import PipelineRunner
+from apache_beam.runners import create_runner
+from apache_beam.transforms import ptransform
+from apache_beam.typehints import TypeCheckError
+from apache_beam.typehints import typehints
 from apache_beam.utils import urns
-
+from apache_beam.utils.annotations import deprecated
 
 __all__ = ['Pipeline']
 
@@ -439,7 +438,7 @@ class Pipeline(object):
     if type_options is not None and type_options.pipeline_type_check:
       transform.type_check_outputs(pvalueish_result)
 
-    for result in ptransform.GetPValues().visit(pvalueish_result):
+    for result in ptransform.get_nested_pvalues(pvalueish_result):
       assert isinstance(result, (pvalue.PValue, pvalue.DoOutputsTuple))
 
       # Make sure we set the producer only for a leaf node in the transform DAG.

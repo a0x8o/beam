@@ -19,6 +19,7 @@
 
 from __future__ import absolute_import
 
+import collections
 import operator
 import re
 import unittest
@@ -27,24 +28,25 @@ import hamcrest as hc
 from nose.plugins.attrib import attr
 
 import apache_beam as beam
+import apache_beam.pvalue as pvalue
+import apache_beam.transforms.combiners as combine
+import apache_beam.typehints as typehints
+from apache_beam.io.iobase import Read
 from apache_beam.metrics import Metrics
 from apache_beam.metrics.metric import MetricsFilter
-from apache_beam.io.iobase import Read
 from apache_beam.options.pipeline_options import TypeOptions
-import apache_beam.pvalue as pvalue
 from apache_beam.testing.test_pipeline import TestPipeline
-from apache_beam.testing.util import assert_that, equal_to
+from apache_beam.testing.util import assert_that
+from apache_beam.testing.util import equal_to
 from apache_beam.transforms import window
 from apache_beam.transforms.core import _GroupByKeyOnly
-import apache_beam.transforms.combiners as combine
-from apache_beam.transforms.display import DisplayData, DisplayDataItem
+from apache_beam.transforms.display import DisplayData
+from apache_beam.transforms.display import DisplayDataItem
 from apache_beam.transforms.ptransform import PTransform
-import apache_beam.typehints as typehints
 from apache_beam.typehints import with_input_types
 from apache_beam.typehints import with_output_types
 from apache_beam.typehints.typehints_test import TypeHintTestCase
 from apache_beam.utils.windowed_value import WindowedValue
-
 
 # Disable frequent lint warning due to pipe operator for chaining transforms.
 # pylint: disable=expression-not-assigned
@@ -668,6 +670,30 @@ class PTransformTest(unittest.TestCase):
     self.assertEqual([1, 2, 3, 4, 5, 6, 7, 8], sorted(res['a']))
     self.assertEqual(['x', 'x', 'y', 'y', 'z'], sorted(res['b']))
     self.assertEqual([], sorted(res['c']))
+
+  def test_named_tuple(self):
+    MinMax = collections.namedtuple('MinMax', ['min', 'max'])
+
+    class MinMaxTransform(PTransform):
+      def expand(self, pcoll):
+        return MinMax(
+            min=pcoll | beam.CombineGlobally(min).without_defaults(),
+            max=pcoll | beam.CombineGlobally(max).without_defaults())
+    res = [1, 2, 4, 8] | MinMaxTransform()
+    self.assertIsInstance(res, MinMax)
+    self.assertEqual(res, MinMax(min=[1], max=[8]))
+
+    flat = res | beam.Flatten()
+    self.assertEqual(sorted(flat), [1, 8])
+
+  def test_tuple_twice(self):
+    class Duplicate(PTransform):
+      def expand(self, pcoll):
+        return pcoll, pcoll
+
+    res1, res2 = [1, 2, 4, 8] | Duplicate()
+    self.assertEqual(sorted(res1), [1, 2, 4, 8])
+    self.assertEqual(sorted(res2), [1, 2, 4, 8])
 
 
 @beam.ptransform_fn
