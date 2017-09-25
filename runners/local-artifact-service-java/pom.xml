@@ -16,66 +16,36 @@
     limitations under the License.
 -->
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+
   <modelVersion>4.0.0</modelVersion>
 
-  <packaging>jar</packaging>
   <parent>
     <groupId>org.apache.beam</groupId>
-    <artifactId>beam-sdks-common-parent</artifactId>
+    <artifactId>beam-runners-parent</artifactId>
     <version>2.2.0-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
 
-  <artifactId>beam-sdks-common-fn-api</artifactId>
-  <name>Apache Beam :: SDKs :: Common :: Fn API</name>
-  <description>This artifact generates the stub bindings.</description>
+  <artifactId>beam-local-artifact-service-java</artifactId>
+  <name>Apache Beam :: Runners :: Java Local Artifact Service</name>
+  <description>The Beam Artifact Service exposes APIs to stage and retrieve
+    artifacts in a manner independent of the underlying storage system, for use
+    by the Beam portability framework. The local implementation uses the local
+    File System as the underlying storage system.</description>
+
+  <packaging>jar</packaging>
 
   <build>
-    <resources>
-      <resource>
-        <directory>src/test/resources</directory>
-        <filtering>true</filtering>
-      </resource>
-      <resource>
-        <directory>${project.build.directory}/original_sources_to_package</directory>
-      </resource>
-    </resources>
-
     <plugins>
-      <!-- Skip the checkstyle plugin on generated code -->
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-checkstyle-plugin</artifactId>
-        <configuration>
-          <skip>true</skip>
-        </configuration>
+        <artifactId>maven-surefire-plugin</artifactId>
       </plugin>
 
-      <!-- Skip the findbugs plugin on generated code -->
+      <!-- Coverage analysis for unit tests. -->
       <plugin>
-        <groupId>org.codehaus.mojo</groupId>
-        <artifactId>findbugs-maven-plugin</artifactId>
-        <configuration>
-          <skip>true</skip>
-        </configuration>
-      </plugin>
-
-      <plugin>
-        <groupId>org.xolstice.maven.plugins</groupId>
-        <artifactId>protobuf-maven-plugin</artifactId>
-        <configuration>
-          <protocArtifact>com.google.protobuf:protoc:${protobuf.version}:exe:${os.detected.classifier}</protocArtifact>
-          <pluginId>grpc-java</pluginId>
-          <pluginArtifact>io.grpc:protoc-gen-grpc-java:${grpc.version}:exe:${os.detected.classifier}</pluginArtifact>
-        </configuration>
-        <executions>
-          <execution>
-            <goals>
-              <goal>compile</goal>
-              <goal>compile-custom</goal>
-            </goals>
-          </execution>
-        </executions>
+        <groupId>org.jacoco</groupId>
+        <artifactId>jacoco-maven-plugin</artifactId>
       </plugin>
     </plugins>
   </build>
@@ -86,9 +56,11 @@
       <artifactId>beam-sdks-common-runner-api</artifactId>
     </dependency>
 
+    <!-- build dependencies -->
+
     <dependency>
-      <groupId>com.google.protobuf</groupId>
-      <artifactId>protobuf-java</artifactId>
+      <groupId>com.google.code.findbugs</groupId>
+      <artifactId>jsr305</artifactId>
     </dependency>
 
     <dependency>
@@ -103,12 +75,42 @@
 
     <dependency>
       <groupId>io.grpc</groupId>
-      <artifactId>grpc-protobuf</artifactId>
+      <artifactId>grpc-stub</artifactId>
     </dependency>
 
     <dependency>
-      <groupId>io.grpc</groupId>
-      <artifactId>grpc-stub</artifactId>
+      <groupId>com.google.protobuf</groupId>
+      <artifactId>protobuf-java</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-api</artifactId>
+    </dependency>
+
+    <!-- test dependencies -->
+    <dependency>
+      <groupId>org.hamcrest</groupId>
+      <artifactId>hamcrest-all</artifactId>
+      <scope>test</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>org.mockito</groupId>
+      <artifactId>mockito-all</artifactId>
+      <scope>test</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>junit</groupId>
+      <artifactId>junit</artifactId>
+      <scope>test</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-jdk14</artifactId>
+      <scope>test</scope>
     </dependency>
   </dependencies>
 </project>
