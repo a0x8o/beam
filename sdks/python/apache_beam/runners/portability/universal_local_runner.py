@@ -31,9 +31,9 @@ from concurrent import futures
 import grpc
 from google.protobuf import text_format
 
-from apache_beam.portability.api import beam_fn_api_pb2
 from apache_beam.portability.api import beam_job_api_pb2
 from apache_beam.portability.api import beam_job_api_pb2_grpc
+from apache_beam.portability.api import endpoints_pb2
 from apache_beam.runners import runner
 from apache_beam.runners.portability import fn_api_runner
 
@@ -148,7 +148,7 @@ class UniversalLocalRunner(runner.PipelineRunner):
 
 class PipelineResult(runner.PipelineResult):
   def __init__(self, job_service, job_id):
-    super(PipelineResult, self).__init__(beam_job_api_pb2.JobState.UNKNOWN)
+    super(PipelineResult, self).__init__(beam_job_api_pb2.JobState.UNSPECIFIED)
     self._job_service = job_service
     self._job_id = job_id
     self._messages = []
@@ -167,11 +167,11 @@ class PipelineResult(runner.PipelineResult):
   def _runner_api_state_to_pipeline_state(runner_api_state):
     return getattr(
         runner.PipelineState,
-        beam_job_api_pb2.JobState.JobStateType.Name(runner_api_state))
+        beam_job_api_pb2.JobState.Enum.Name(runner_api_state))
 
   @staticmethod
   def _pipeline_state_to_runner_api_state(pipeline_state):
-    return beam_job_api_pb2.JobState.JobStateType.Value(pipeline_state)
+    return beam_job_api_pb2.JobState.Enum.Value(pipeline_state)
 
   def wait_until_finish(self):
     def read_messages():
@@ -252,7 +252,7 @@ class BeamJob(threading.Thread):
       self.state = beam_job_api_pb2.JobState.CANCELLED
 
 
-class JobServicer(beam_job_api_pb2.JobServiceServicer):
+class JobServicer(beam_job_api_pb2_grpc.JobServiceServicer):
   """Servicer for the Beam Job API.
 
   Manages one or more pipelines, possibly concurrently.
@@ -337,7 +337,7 @@ class SubprocessSdkWorker(object):
 
   def run(self):
     control_descriptor = text_format.MessageToString(
-        beam_fn_api_pb2.ApiServiceDescriptor(url=self._control_address))
+        endpoints_pb2.ApiServiceDescriptor(url=self._control_address))
     p = subprocess.Popen(
         self._worker_command_line,
         shell=True,

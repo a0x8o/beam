@@ -91,7 +91,7 @@ message RunJobResponse {
 }
 
 
-// Cancel is a synchronus request that returns a jobState back
+// Cancel is a synchronus request that returns a job state back
 // Throws error GRPC_STATUS_UNAVAILABLE if server is down
 // Throws error NOT_FOUND if the jobId is not found
 message CancelJobRequest {
@@ -101,11 +101,11 @@ message CancelJobRequest {
 
 // Valid responses include any terminal state or CANCELLING
 message CancelJobResponse {
-  JobState.JobStateType state = 1; // (required)
+  JobState.Enum state = 1; // (required)
 }
 
 
-// GetState is a synchronus request that returns a jobState back
+// GetState is a synchronus request that returns a job state back
 // Throws error GRPC_STATUS_UNAVAILABLE if server is down
 // Throws error NOT_FOUND if the jobId is not found
 message GetJobStateRequest {
@@ -114,7 +114,7 @@ message GetJobStateRequest {
 }
 
 message GetJobStateResponse {
-  JobState.JobStateType state = 1; // (required)
+  JobState.Enum state = 1; // (required)
 }
 
 
@@ -134,11 +134,12 @@ message JobMessage {
   string message_text = 4;
 
   enum MessageImportance {
-    JOB_MESSAGE_DEBUG = 0;
-    JOB_MESSAGE_DETAILED = 1;
-    JOB_MESSAGE_BASIC = 2;
-    JOB_MESSAGE_WARNING = 3;
-    JOB_MESSAGE_ERROR = 4;
+    MESSAGE_IMPORTANCE_UNSPECIFIED = 0;
+    JOB_MESSAGE_DEBUG = 1;
+    JOB_MESSAGE_DETAILED = 2;
+    JOB_MESSAGE_BASIC = 3;
+    JOB_MESSAGE_WARNING = 4;
+    JOB_MESSAGE_ERROR = 5;
   }
 }
 
@@ -149,10 +150,10 @@ message JobMessagesResponse {
   }
 }
 
+// Enumeration of all JobStates
 message JobState {
-  // Enumeration of all JobStates
-  enum JobStateType {
-    UNKNOWN = 0;
+  enum Enum {
+    UNSPECIFIED = 0;
     STOPPED = 1;
     RUNNING = 2;
     DONE = 3;

@@ -48,6 +48,7 @@ import java.util.logging.Logger;
 import java.util.logging.SimpleFormatter;
 import org.apache.beam.fn.v1.BeamFnApi;
 import org.apache.beam.fn.v1.BeamFnLoggingGrpc;
+import org.apache.beam.portability.v1.Endpoints;
 import org.apache.beam.runners.dataflow.options.DataflowWorkerLoggingOptions;
 import org.apache.beam.sdk.extensions.gcp.options.GcsOptions;
 import org.apache.beam.sdk.options.PipelineOptions;
@@ -57,13 +58,13 @@ import org.apache.beam.sdk.options.PipelineOptions;
  */
 public class BeamFnLoggingClient implements AutoCloseable {
   private static final String ROOT_LOGGER_NAME = "";
-  private static final ImmutableMap<Level, BeamFnApi.LogEntry.Severity> LOG_LEVEL_MAP =
-      ImmutableMap.<Level, BeamFnApi.LogEntry.Severity>builder()
-      .put(Level.SEVERE, BeamFnApi.LogEntry.Severity.ERROR)
-      .put(Level.WARNING, BeamFnApi.LogEntry.Severity.WARN)
-      .put(Level.INFO, BeamFnApi.LogEntry.Severity.INFO)
-      .put(Level.FINE, BeamFnApi.LogEntry.Severity.DEBUG)
-      .put(Level.FINEST, BeamFnApi.LogEntry.Severity.TRACE)
+  private static final ImmutableMap<Level, BeamFnApi.LogEntry.Severity.Enum> LOG_LEVEL_MAP =
+      ImmutableMap.<Level, BeamFnApi.LogEntry.Severity.Enum>builder()
+      .put(Level.SEVERE, BeamFnApi.LogEntry.Severity.Enum.ERROR)
+      .put(Level.WARNING, BeamFnApi.LogEntry.Severity.Enum.WARN)
+      .put(Level.INFO, BeamFnApi.LogEntry.Severity.Enum.INFO)
+      .put(Level.FINE, BeamFnApi.LogEntry.Severity.Enum.DEBUG)
+      .put(Level.FINEST, BeamFnApi.LogEntry.Severity.Enum.TRACE)
       .build();
 
   private static final ImmutableMap<DataflowWorkerLoggingOptions.Level, Level> LEVEL_CONFIGURATION =
@@ -94,7 +95,7 @@ public class BeamFnLoggingClient implements AutoCloseable {
    * garbage collected. java.util.logging only has weak references to the loggers
    * so if they are garbage collected, our hierarchical configuration will be lost. */
   private final Collection<Logger> configuredLoggers;
-  private final BeamFnApi.ApiServiceDescriptor apiServiceDescriptor;
+  private final Endpoints.ApiServiceDescriptor apiServiceDescriptor;
   private final ManagedChannel channel;
   private final StreamObserver<BeamFnApi.LogEntry.List> outboundObserver;
   private final LogControlObserver inboundObserver;
@@ -103,8 +104,8 @@ public class BeamFnLoggingClient implements AutoCloseable {
 
   public BeamFnLoggingClient(
       PipelineOptions options,
-      BeamFnApi.ApiServiceDescriptor apiServiceDescriptor,
-      Function<BeamFnApi.ApiServiceDescriptor, ManagedChannel> channelFactory,
+      Endpoints.ApiServiceDescriptor apiServiceDescriptor,
+      Function<Endpoints.ApiServiceDescriptor, ManagedChannel> channelFactory,
       BiFunction<Function<StreamObserver<BeamFnApi.LogControl>,
                           StreamObserver<BeamFnApi.LogEntry.List>>,
                  StreamObserver<BeamFnApi.LogControl>,
@@ -190,7 +191,7 @@ public class BeamFnLoggingClient implements AutoCloseable {
 
     @Override
     public void publish(LogRecord record) {
-      BeamFnApi.LogEntry.Severity severity = LOG_LEVEL_MAP.get(record.getLevel());
+      BeamFnApi.LogEntry.Severity.Enum severity = LOG_LEVEL_MAP.get(record.getLevel());
       if (severity == null) {
         return;
       }

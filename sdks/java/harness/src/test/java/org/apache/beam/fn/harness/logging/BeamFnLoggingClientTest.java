@@ -44,6 +44,7 @@ import java.util.logging.LogRecord;
 import org.apache.beam.fn.harness.test.TestStreams;
 import org.apache.beam.fn.v1.BeamFnApi;
 import org.apache.beam.fn.v1.BeamFnLoggingGrpc;
+import org.apache.beam.portability.v1.Endpoints;
 import org.apache.beam.sdk.options.PipelineOptionsFactory;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -74,7 +75,7 @@ public class BeamFnLoggingClientTest {
 
   private static final BeamFnApi.LogEntry TEST_ENTRY =
       BeamFnApi.LogEntry.newBuilder()
-          .setSeverity(BeamFnApi.LogEntry.Severity.DEBUG)
+          .setSeverity(BeamFnApi.LogEntry.Severity.Enum.DEBUG)
           .setMessage("Message")
           .setThread("12345")
           .setTimestamp(Timestamp.newBuilder().setSeconds(1234567).setNanos(890000000).build())
@@ -82,7 +83,7 @@ public class BeamFnLoggingClientTest {
           .build();
   private static final BeamFnApi.LogEntry TEST_ENTRY_WITH_EXCEPTION =
       BeamFnApi.LogEntry.newBuilder()
-          .setSeverity(BeamFnApi.LogEntry.Severity.WARN)
+          .setSeverity(BeamFnApi.LogEntry.Severity.Enum.WARN)
           .setMessage("MessageWithException")
           .setTrace(getStackTraceAsString(TEST_RECORD_WITH_EXCEPTION.getThrown()))
           .setThread("12345")
@@ -108,8 +109,8 @@ public class BeamFnLoggingClientTest {
           }
         }).build();
 
-    BeamFnApi.ApiServiceDescriptor apiServiceDescriptor =
-        BeamFnApi.ApiServiceDescriptor.newBuilder()
+    Endpoints.ApiServiceDescriptor apiServiceDescriptor =
+        Endpoints.ApiServiceDescriptor.newBuilder()
             .setUrl(this.getClass().getName() + "-" + UUID.randomUUID().toString())
             .build();
     Server server = InProcessServerBuilder.forName(apiServiceDescriptor.getUrl())
@@ -133,7 +134,7 @@ public class BeamFnLoggingClientTest {
               "--workerLogLevelOverrides={\"ConfiguredLogger\": \"DEBUG\"}"
           }).create(),
           apiServiceDescriptor,
-          (BeamFnApi.ApiServiceDescriptor descriptor) -> channel,
+          (Endpoints.ApiServiceDescriptor descriptor) -> channel,
           this::createStreamForTest);
 
       // Ensure that log levels were correctly set.
