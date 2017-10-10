@@ -24,7 +24,11 @@ import com.amazonaws.AmazonClientException;
  */
 class TransientKinesisException extends Exception {
 
+<<<<<<< HEAD
   public TransientKinesisException(String s, AmazonClientException e) {
+=======
+  public TransientKinesisException(String s, AmazonServiceException e) {
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
     super(s, e);
   }
 }

@@ -834,9 +834,15 @@ class Read(ptransform.PTransform):
     return (urns.READ_TRANSFORM,
             beam_runner_api_pb2.ReadPayload(
                 source=self.source.to_runner_api(context),
+<<<<<<< HEAD
                 is_bounded=beam_runner_api_pb2.IsBounded.BOUNDED
                 if self.source.is_bounded()
                 else beam_runner_api_pb2.IsBounded.UNBOUNDED))
+=======
+                is_bounded=beam_runner_api_pb2.BOUNDED
+                if self.source.is_bounded()
+                else beam_runner_api_pb2.UNBOUNDED))
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
 
   @staticmethod
   def from_runner_api_parameter(parameter, context):

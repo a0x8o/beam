@@ -111,12 +111,21 @@ public class HBaseIOTest {
     if (admin != null) {
       admin.close();
       admin = null;
+<<<<<<< HEAD
     }
     if (htu != null) {
       htu.shutdownMiniHBaseCluster();
       htu.shutdownMiniZKCluster();
       htu = null;
     }
+=======
+    }
+    if (htu != null) {
+      htu.shutdownMiniHBaseCluster();
+      htu.shutdownMiniZKCluster();
+      htu = null;
+    }
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
   }
 
   @Test
@@ -355,12 +364,23 @@ public class HBaseIOTest {
   public void testWritingFailsTableDoesNotExist() throws Exception {
     final String table = "TEST-TABLE-DOES-NOT-EXIST";
 
+<<<<<<< HEAD
     // Exception will be thrown by write.expand() when write is applied.
     thrown.expect(IllegalArgumentException.class);
     thrown.expectMessage(String.format("Table %s does not exist", table));
     p.apply(Create.empty(HBaseMutationCoder.of()))
         .apply("write", HBaseIO.write().withConfiguration(conf).withTableId(table));
   }
+=======
+
+
+        // Exception will be thrown by write.expand() when write is applied.
+        thrown.expect(IllegalArgumentException.class);
+        thrown.expectMessage(String.format("Table %s does not exist", table));
+        p.apply(Create.empty(HBaseMutationCoder.of()))
+         .apply("write", HBaseIO.write().withConfiguration(conf).withTableId(table));
+    }
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
 
   /** Tests that when writing an element fails, the write fails. */
   @Test

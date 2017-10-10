@@ -33,7 +33,10 @@ import org.apache.beam.sdk.transforms.ParDo;
 import org.apache.beam.sdk.transforms.display.DisplayData;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.tika.exception.TikaException;
+<<<<<<< HEAD
 import org.junit.Ignore;
+=======
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
 import org.junit.Rule;
 import org.junit.Test;
 
@@ -73,7 +76,10 @@ public class TikaIOTest {
   @Rule
   public TestPipeline p = TestPipeline.create();
 
+<<<<<<< HEAD
   @Ignore
+=======
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
   @Test
   public void testReadPdfFile() throws IOException {
 

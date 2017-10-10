@@ -33,7 +33,11 @@ from apache_beam.runners.worker.sdk_worker import SdkHarness
 def main(unused_argv):
   """Main entry point for SDK Fn Harness."""
   if 'LOGGING_API_SERVICE_DESCRIPTOR' in os.environ:
+<<<<<<< HEAD
     logging_service_descriptor = endpoints_pb2.ApiServiceDescriptor()
+=======
+    logging_service_descriptor = beam_fn_api_pb2.ApiServiceDescriptor()
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
     text_format.Merge(os.environ['LOGGING_API_SERVICE_DESCRIPTOR'],
                       logging_service_descriptor)
 

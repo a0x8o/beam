@@ -121,12 +121,21 @@ public class WindowingStrategyTranslation implements Serializable {
     }
   }
 
+<<<<<<< HEAD
   public static RunnerApi.OnTimeBehavior.Enum toProto(OnTimeBehavior onTimeBehavior) {
     switch (onTimeBehavior) {
       case FIRE_ALWAYS:
         return RunnerApi.OnTimeBehavior.Enum.FIRE_ALWAYS;
       case FIRE_IF_NON_EMPTY:
         return RunnerApi.OnTimeBehavior.Enum.FIRE_IF_NONEMPTY;
+=======
+  public static RunnerApi.OnTimeBehavior toProto(OnTimeBehavior onTimeBehavior) {
+    switch (onTimeBehavior) {
+      case FIRE_ALWAYS:
+        return RunnerApi.OnTimeBehavior.FIRE_ALWAYS;
+      case FIRE_IF_NON_EMPTY:
+        return RunnerApi.OnTimeBehavior.FIRE_IF_NONEMPTY;
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
       default:
         throw new IllegalArgumentException(
             String.format(
@@ -137,7 +146,11 @@ public class WindowingStrategyTranslation implements Serializable {
     }
   }
 
+<<<<<<< HEAD
   public static OnTimeBehavior fromProto(RunnerApi.OnTimeBehavior.Enum proto) {
+=======
+  public static OnTimeBehavior fromProto(RunnerApi.OnTimeBehavior proto) {
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
     switch (proto) {
       case FIRE_ALWAYS:
         return OnTimeBehavior.FIRE_ALWAYS;
@@ -157,7 +170,11 @@ public class WindowingStrategyTranslation implements Serializable {
     }
   }
 
+<<<<<<< HEAD
   public static RunnerApi.OutputTime.Enum toProto(TimestampCombiner timestampCombiner) {
+=======
+  public static RunnerApi.OutputTime toProto(TimestampCombiner timestampCombiner) {
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
     switch(timestampCombiner) {
       case EARLIEST:
         return OutputTime.Enum.EARLIEST_IN_PANE;
@@ -221,6 +238,10 @@ public class WindowingStrategyTranslation implements Serializable {
           .setSpec(
               FunctionSpec.newBuilder()
                   .setUrn(OLD_SERIALIZED_JAVA_WINDOWFN_URN)
+<<<<<<< HEAD
+=======
+                  .setAnyParam(Any.pack(BytesValue.newBuilder().setValue(serializedFn).build()))
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
                   .setPayload(serializedFn)
                   .build())
           .build();
@@ -238,6 +259,10 @@ public class WindowingStrategyTranslation implements Serializable {
           .setSpec(
               FunctionSpec.newBuilder()
                   .setUrn(FIXED_WINDOWS_FN)
+<<<<<<< HEAD
+=======
+                  .setAnyParam(Any.pack(fixedWindowsPayload))
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
                   .setPayload(fixedWindowsPayload.toByteString()))
           .build();
     } else if (windowFn instanceof SlidingWindows) {
@@ -250,6 +275,10 @@ public class WindowingStrategyTranslation implements Serializable {
           .setSpec(
               FunctionSpec.newBuilder()
                   .setUrn(SLIDING_WINDOWS_FN)
+<<<<<<< HEAD
+=======
+                  .setAnyParam(Any.pack(slidingWindowsPayload))
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
                   .setPayload(slidingWindowsPayload.toByteString()))
           .build();
     } else if (windowFn instanceof Sessions) {
@@ -261,6 +290,10 @@ public class WindowingStrategyTranslation implements Serializable {
           .setSpec(
               FunctionSpec.newBuilder()
                   .setUrn(SESSION_WINDOWS_FN)
+<<<<<<< HEAD
+=======
+                  .setAnyParam(Any.pack(sessionsPayload))
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
                   .setPayload(sessionsPayload.toByteString()))
           .build();
     } else {
@@ -268,6 +301,10 @@ public class WindowingStrategyTranslation implements Serializable {
           .setSpec(
               FunctionSpec.newBuilder()
                   .setUrn(SERIALIZED_JAVA_WINDOWFN_URN)
+<<<<<<< HEAD
+=======
+                  .setAnyParam(Any.pack(BytesValue.newBuilder().setValue(serializedFn).build()))
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
                   .setPayload(serializedFn))
           .build();
     }

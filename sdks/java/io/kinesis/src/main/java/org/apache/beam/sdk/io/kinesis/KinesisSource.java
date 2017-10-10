@@ -37,6 +37,7 @@ class KinesisSource extends UnboundedSource<KinesisRecord, KinesisReaderCheckpoi
 
   private static final Logger LOG = LoggerFactory.getLogger(KinesisSource.class);
 
+<<<<<<< HEAD
   private final AWSClientsProvider awsClientsProvider;
   private final String streamName;
   private final Duration upToDateThreshold;
@@ -55,6 +56,20 @@ class KinesisSource extends UnboundedSource<KinesisRecord, KinesisReaderCheckpoi
     this.initialCheckpointGenerator = initialCheckpoint;
     this.streamName = streamName;
     this.upToDateThreshold = upToDateThreshold;
+=======
+  private final KinesisClientProvider kinesis;
+  private CheckpointGenerator initialCheckpointGenerator;
+
+  public KinesisSource(KinesisClientProvider kinesis, String streamName,
+      StartingPoint startingPoint) {
+    this(kinesis, new DynamicCheckpointGenerator(streamName, startingPoint));
+  }
+
+  private KinesisSource(KinesisClientProvider kinesisClientProvider,
+      CheckpointGenerator initialCheckpoint) {
+    this.kinesis = kinesisClientProvider;
+    this.initialCheckpointGenerator = initialCheckpoint;
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
     validate();
   }
 
@@ -67,16 +82,25 @@ class KinesisSource extends UnboundedSource<KinesisRecord, KinesisReaderCheckpoi
   public List<KinesisSource> split(int desiredNumSplits,
       PipelineOptions options) throws Exception {
     KinesisReaderCheckpoint checkpoint =
+<<<<<<< HEAD
         initialCheckpointGenerator.generate(SimplifiedKinesisClient.from(awsClientsProvider));
+=======
+        initialCheckpointGenerator.generate(SimplifiedKinesisClient.from(kinesis));
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
 
     List<KinesisSource> sources = newArrayList();
 
     for (KinesisReaderCheckpoint partition : checkpoint.splitInto(desiredNumSplits)) {
       sources.add(new KinesisSource(
+<<<<<<< HEAD
           awsClientsProvider,
           new StaticCheckpointGenerator(partition),
           streamName,
           upToDateThreshold));
+=======
+          kinesis,
+          new StaticCheckpointGenerator(partition)));
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
     }
     return sources;
   }
@@ -99,10 +123,16 @@ class KinesisSource extends UnboundedSource<KinesisRecord, KinesisReaderCheckpoi
     LOG.info("Creating new reader using {}", checkpointGenerator);
 
     return new KinesisReader(
+<<<<<<< HEAD
         SimplifiedKinesisClient.from(awsClientsProvider),
         checkpointGenerator,
         this,
         upToDateThreshold);
+=======
+        SimplifiedKinesisClient.from(kinesis),
+        checkpointGenerator,
+        this);
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
   }
 
   @Override
@@ -112,7 +142,11 @@ class KinesisSource extends UnboundedSource<KinesisRecord, KinesisReaderCheckpoi
 
   @Override
   public void validate() {
+<<<<<<< HEAD
     checkNotNull(awsClientsProvider);
+=======
+    checkNotNull(kinesis);
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
     checkNotNull(initialCheckpointGenerator);
   }
 
@@ -120,8 +154,11 @@ class KinesisSource extends UnboundedSource<KinesisRecord, KinesisReaderCheckpoi
   public Coder<KinesisRecord> getOutputCoder() {
     return KinesisRecordCoder.of();
   }
+<<<<<<< HEAD
 
   String getStreamName() {
     return streamName;
   }
+=======
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
 }

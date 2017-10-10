@@ -25,6 +25,10 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+<<<<<<< HEAD
+=======
+import java.util.concurrent.ThreadLocalRandom;
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
 import javax.annotation.Nullable;
 import javax.sql.DataSource;
 import org.apache.beam.sdk.annotations.Experimental;
@@ -37,6 +41,10 @@ import org.apache.beam.sdk.transforms.PTransform;
 import org.apache.beam.sdk.transforms.ParDo;
 import org.apache.beam.sdk.transforms.Reshuffle;
 import org.apache.beam.sdk.transforms.SerializableFunctions;
+<<<<<<< HEAD
+=======
+import org.apache.beam.sdk.transforms.Values;
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
 import org.apache.beam.sdk.transforms.View;
 import org.apache.beam.sdk.transforms.display.DisplayData;
 import org.apache.beam.sdk.values.PBegin;
@@ -351,6 +359,7 @@ public class JdbcIO {
                           }
                         }
                       }));
+<<<<<<< HEAD
     }
 
     @Override
@@ -426,6 +435,83 @@ public class JdbcIO {
     }
 
     @Override
+=======
+    }
+
+    @Override
+    public void populateDisplayData(DisplayData.Builder builder) {
+      super.populateDisplayData(builder);
+      builder.add(DisplayData.item("query", getQuery()));
+      builder.add(DisplayData.item("rowMapper", getRowMapper().getClass().getName()));
+      builder.add(DisplayData.item("coder", getCoder().getClass().getName()));
+      getDataSourceConfiguration().populateDisplayData(builder);
+    }
+  }
+
+  /** Implementation of {@link #readAll}. */
+
+  /** Implementation of {@link #read}. */
+  @AutoValue
+  public abstract static class ReadAll<ParameterT, OutputT>
+          extends PTransform<PCollection<ParameterT>, PCollection<OutputT>> {
+    @Nullable abstract DataSourceConfiguration getDataSourceConfiguration();
+    @Nullable abstract ValueProvider<String> getQuery();
+    @Nullable abstract PreparedStatementSetter<ParameterT> getParameterSetter();
+    @Nullable abstract RowMapper<OutputT> getRowMapper();
+    @Nullable abstract Coder<OutputT> getCoder();
+
+    abstract Builder<ParameterT, OutputT> toBuilder();
+
+    @AutoValue.Builder
+    abstract static class Builder<ParameterT, OutputT> {
+      abstract Builder<ParameterT, OutputT> setDataSourceConfiguration(
+              DataSourceConfiguration config);
+      abstract Builder<ParameterT, OutputT> setQuery(ValueProvider<String> query);
+      abstract Builder<ParameterT, OutputT> setParameterSetter(
+              PreparedStatementSetter<ParameterT> parameterSetter);
+      abstract Builder<ParameterT, OutputT> setRowMapper(RowMapper<OutputT> rowMapper);
+      abstract Builder<ParameterT, OutputT> setCoder(Coder<OutputT> coder);
+      abstract ReadAll<ParameterT, OutputT> build();
+    }
+
+    public ReadAll<ParameterT, OutputT> withDataSourceConfiguration(
+            DataSourceConfiguration configuration) {
+      checkArgument(configuration != null, "JdbcIO.readAll().withDataSourceConfiguration"
+              + "(configuration) called with null configuration");
+      return toBuilder().setDataSourceConfiguration(configuration).build();
+    }
+
+    public ReadAll<ParameterT, OutputT> withQuery(String query) {
+      checkArgument(query != null, "JdbcIO.readAll().withQuery(query) called with null query");
+      return withQuery(ValueProvider.StaticValueProvider.of(query));
+    }
+
+    public ReadAll<ParameterT, OutputT> withQuery(ValueProvider<String> query) {
+      checkArgument(query != null, "JdbcIO.readAll().withQuery(query) called with null query");
+      return toBuilder().setQuery(query).build();
+    }
+
+    public ReadAll<ParameterT, OutputT> withParameterSetter(
+            PreparedStatementSetter<ParameterT> parameterSetter) {
+      checkArgument(parameterSetter != null,
+              "JdbcIO.readAll().withParameterSetter(parameterSetter) called "
+                      + "with null statementPreparator");
+      return toBuilder().setParameterSetter(parameterSetter).build();
+    }
+
+    public ReadAll<ParameterT, OutputT> withRowMapper(RowMapper<OutputT> rowMapper) {
+      checkArgument(rowMapper != null,
+              "JdbcIO.readAll().withRowMapper(rowMapper) called with null rowMapper");
+      return toBuilder().setRowMapper(rowMapper).build();
+    }
+
+    public ReadAll<ParameterT, OutputT> withCoder(Coder<OutputT> coder) {
+      checkArgument(coder != null, "JdbcIO.readAll().withCoder(coder) called with null coder");
+      return toBuilder().setCoder(coder).build();
+    }
+
+    @Override
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
     public PCollection<OutputT> expand(PCollection<ParameterT> input) {
       return input
           .apply(
@@ -647,7 +733,30 @@ public class JdbcIO {
                         }
                       })
                   .withSideInputs(empty));
+<<<<<<< HEAD
       return materialized.apply(Reshuffle.<T>viaRandomKey());
+=======
+      return materialized
+          .apply(
+              "Pair with random key",
+              ParDo.of(
+                  new DoFn<T, KV<Integer, T>>() {
+                    private int shard;
+
+                    @Setup
+                    public void setup() {
+                      shard = ThreadLocalRandom.current().nextInt();
+                    }
+
+                    @ProcessElement
+                    public void processElement(ProcessContext context) {
+                      context.output(KV.of(++shard, context.element()));
+                    }
+                  }))
+          .apply(Reshuffle.<Integer, T>of())
+          .apply(Values.<T>create());
+
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
     }
   }
 }

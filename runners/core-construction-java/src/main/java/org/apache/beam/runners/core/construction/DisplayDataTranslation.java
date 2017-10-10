@@ -32,7 +32,11 @@ public class DisplayDataTranslation {
             RunnerApi.DisplayData.Item.newBuilder()
                 .setId(RunnerApi.DisplayData.Identifier.newBuilder().setKey("stubImplementation"))
                 .setLabel("Stub implementation")
+<<<<<<< HEAD
                 .setType(RunnerApi.DisplayData.Type.Enum.BOOLEAN)
+=======
+                .setType(RunnerApi.DisplayData.Type.BOOLEAN)
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
                 .setValue(Any.pack(BoolValue.newBuilder().setValue(true).build())))
         .build();
   }

@@ -290,12 +290,18 @@ message TimerSpec {
   TimeDomain.Enum time_domain = 1;
 }
 
+<<<<<<< HEAD
 message IsBounded {
   enum Enum {
     UNSPECIFIED = 0;
     UNBOUNDED = 1;
     BOUNDED = 2;
   }
+=======
+enum IsBounded {
+  UNBOUNDED = 0;
+  BOUNDED = 1;
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
 }
 
 // The payload for the primitive Read transform.
@@ -377,9 +383,15 @@ message WriteFilesPayload {
 
   // (Required) The format function.
   SdkFunctionSpec format_function = 2;
+<<<<<<< HEAD
 
   bool windowed_writes = 3;
 
+=======
+
+  bool windowed_writes = 3;
+
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
   bool runner_determined_sharding = 4;
 
   map<string, SideInput> side_inputs = 5;
@@ -448,7 +460,11 @@ message WindowingStrategy {
   int64 allowed_lateness = 8;
 
   // (Required) Indicate whether empty on-time panes should be omitted.
+<<<<<<< HEAD
   OnTimeBehavior.Enum OnTimeBehavior = 9;
+=======
+  OnTimeBehavior OnTimeBehavior = 9;
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
 
   // (Required) Whether or not the window fn assigns inputs to exactly one window
   //
@@ -511,9 +527,26 @@ message ClosingBehavior {
 
 // Controls whether or not an aggregating transform should output data
 // when an on-time pane is empty.
+<<<<<<< HEAD
 message OnTimeBehavior {
   enum Enum {
     UNSPECIFIED = 0;
+=======
+enum OnTimeBehavior {
+  // Always fire the on-time pane. Even if there is no new data since
+  // the previous firing, an element will be produced.
+  FIRE_ALWAYS = 0;
+
+  // Only fire the on-time pane if there is new data since the previous firing.
+  FIRE_IF_NONEMPTY = 1;
+}
+
+// When a number of windowed, timestamped inputs are aggregated, the timestamp
+// for the resulting output.
+enum OutputTime {
+  // The output has the timestamp of the end of the window.
+  END_OF_WINDOW = 0;
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
 
     // Always fire the on-time pane. Even if there is no new data since
     // the previous firing, an element will be produced.
@@ -781,6 +814,9 @@ message FunctionSpec {
   // it) the parameter payload should be treated as opaque and
   // passed as-is.
   string urn = 1;
+
+  // (Deprecated)
+  google.protobuf.Any any_param = 2;
 
   // (Optional) The data specifying any parameters to the URN. If
   // the URN does not require any arguments, this may be omitted.

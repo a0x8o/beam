@@ -78,7 +78,11 @@ from apache_beam.utils import processes
 # Update this version to the next version whenever there is a change that will
 # require changes to legacy Dataflow worker execution environment.
 # This should be in the beam-[version]-[date] format, date is optional.
+<<<<<<< HEAD
 BEAM_CONTAINER_VERSION = 'beam-2.2.0-20170928'
+=======
+BEAM_CONTAINER_VERSION = 'beam-2.2.0-20170807'
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
 # Update this version to the next version whenever there is a change that
 # requires changes to SDK harness container or SDK harness launcher.
 # This should be in the beam-[version]-[date] format, date is optional.

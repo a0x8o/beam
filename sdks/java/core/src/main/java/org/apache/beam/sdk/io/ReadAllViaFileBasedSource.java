@@ -18,6 +18,10 @@
 package org.apache.beam.sdk.io;
 
 import java.io.IOException;
+<<<<<<< HEAD
+=======
+import java.util.concurrent.ThreadLocalRandom;
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
 import org.apache.beam.sdk.annotations.Experimental;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.io.FileIO.ReadableFile;
@@ -29,6 +33,10 @@ import org.apache.beam.sdk.transforms.PTransform;
 import org.apache.beam.sdk.transforms.ParDo;
 import org.apache.beam.sdk.transforms.Reshuffle;
 import org.apache.beam.sdk.transforms.SerializableFunction;
+<<<<<<< HEAD
+=======
+import org.apache.beam.sdk.transforms.Values;
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
 import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollection;
 
@@ -60,11 +68,43 @@ public class ReadAllViaFileBasedSource<T>
   public PCollection<T> expand(PCollection<ReadableFile> input) {
     return input
         .apply("Split into ranges", ParDo.of(new SplitIntoRangesFn(desiredBundleSizeBytes)))
+<<<<<<< HEAD
         .apply("Reshuffle", Reshuffle.<KV<ReadableFile, OffsetRange>>viaRandomKey())
+=======
+        .apply("Reshuffle", new ReshuffleWithUniqueKey<KV<ReadableFile, OffsetRange>>())
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
         .apply("Read ranges", ParDo.of(new ReadFileRangesFn<T>(createSource)))
         .setCoder(coder);
   }
 
+<<<<<<< HEAD
+=======
+  private static class ReshuffleWithUniqueKey<T>
+      extends PTransform<PCollection<T>, PCollection<T>> {
+    @Override
+    public PCollection<T> expand(PCollection<T> input) {
+      return input
+          .apply("Unique key", ParDo.of(new AssignUniqueKeyFn<T>()))
+          .apply("Reshuffle", Reshuffle.<Integer, T>of())
+          .apply("Values", Values.<T>create());
+    }
+  }
+
+  private static class AssignUniqueKeyFn<T> extends DoFn<T, KV<Integer, T>> {
+    private int index;
+
+    @Setup
+    public void setup() {
+      this.index = ThreadLocalRandom.current().nextInt();
+    }
+
+    @ProcessElement
+    public void process(ProcessContext c) {
+      c.output(KV.of(++index, c.element()));
+    }
+  }
+
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
   private static class SplitIntoRangesFn extends DoFn<ReadableFile, KV<ReadableFile, OffsetRange>> {
     private final long desiredBundleSizeBytes;
 

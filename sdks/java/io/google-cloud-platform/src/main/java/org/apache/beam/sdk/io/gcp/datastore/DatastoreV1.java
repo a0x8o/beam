@@ -629,10 +629,25 @@ public class DatastoreV1 {
                 .apply(ParDo.of(new GqlQueryTranslateFn(v1Options)));
       }
 
+<<<<<<< HEAD
       return inputQuery
           .apply("Split", ParDo.of(new SplitQueryFn(v1Options, getNumQuerySplits())))
           .apply("Reshuffle", Reshuffle.<Query>viaRandomKey())
           .apply("Read", ParDo.of(new ReadFn(v1Options)));
+=======
+      PCollection<KV<Integer, Query>> splitQueries = inputQuery
+          .apply(ParDo.of(new SplitQueryFn(v1Options, getNumQuerySplits())));
+
+      PCollection<Query> shardedQueries = splitQueries
+          .apply(GroupByKey.<Integer, Query>create())
+          .apply(Values.<Iterable<Query>>create())
+          .apply(Flatten.<Query>iterables());
+
+      PCollection<Entity> entities = shardedQueries
+          .apply(ParDo.of(new ReadFn(v1Options)));
+
+      return entities;
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
     }
 
     @Override

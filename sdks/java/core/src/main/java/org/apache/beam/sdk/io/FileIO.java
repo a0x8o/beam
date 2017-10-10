@@ -37,7 +37,10 @@ import org.apache.beam.sdk.transforms.Create;
 import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.PTransform;
 import org.apache.beam.sdk.transforms.ParDo;
+<<<<<<< HEAD
 import org.apache.beam.sdk.transforms.Reshuffle;
+=======
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
 import org.apache.beam.sdk.transforms.Values;
 import org.apache.beam.sdk.transforms.Watch;
 import org.apache.beam.sdk.transforms.Watch.Growth.TerminationCondition;
@@ -152,11 +155,14 @@ public class FileIO {
     public String readFullyAsUTF8String() throws IOException {
       return new String(readFullyAsBytes(), StandardCharsets.UTF_8);
     }
+<<<<<<< HEAD
 
     @Override
     public String toString() {
       return "ReadableFile{metadata=" + metadata + ", compression=" + compression + '}';
     }
+=======
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
   }
 
   /**
@@ -311,6 +317,7 @@ public class FileIO {
 
     @Override
     public PCollection<MatchResult.Metadata> expand(PCollection<String> input) {
+<<<<<<< HEAD
       PCollection<MatchResult.Metadata> res;
       if (getConfiguration().getWatchInterval() == null) {
         res = input.apply(
@@ -318,6 +325,14 @@ public class FileIO {
             ParDo.of(new MatchFn(getConfiguration().getEmptyMatchTreatment())));
       } else {
         res = input
+=======
+      if (getConfiguration().getWatchInterval() == null) {
+        return input.apply(
+            "Match filepatterns",
+            ParDo.of(new MatchFn(getConfiguration().getEmptyMatchTreatment())));
+      } else {
+        return input
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
             .apply(
                 "Continuously match filepatterns",
                 Watch.growthOf(new MatchPollFn())
@@ -325,7 +340,10 @@ public class FileIO {
                     .withTerminationPerInput(getConfiguration().getWatchTerminationCondition()))
             .apply(Values.<MatchResult.Metadata>create());
       }
+<<<<<<< HEAD
       return res.apply(Reshuffle.<MatchResult.Metadata>viaRandomKey());
+=======
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
     }
 
     private static class MatchFn extends DoFn<String, MatchResult.Metadata> {

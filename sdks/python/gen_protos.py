@@ -129,4 +129,8 @@ def _install_grpcio_tools_and_generate_proto_files():
 
 
 if __name__ == '__main__':
+<<<<<<< HEAD
   generate_proto_files(force=True)
+=======
+  generate_proto_files()
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c

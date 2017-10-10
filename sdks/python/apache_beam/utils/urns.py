@@ -128,6 +128,10 @@ class RunnerApiFn(object):
     return beam_runner_api_pb2.SdkFunctionSpec(
         spec=beam_runner_api_pb2.FunctionSpec(
             urn=urn,
+<<<<<<< HEAD
+=======
+            any_param=proto_utils.pack_Any(typed_param),
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
             payload=typed_param.SerializeToString()
             if typed_param is not None else None))
 

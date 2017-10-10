@@ -1000,12 +1000,16 @@ public class DatastoreV1Test {
     List<Query> queries = new LinkedList<>();
     int offsetOfOriginal = query.getOffset();
     for (int i = 0; i < numSplits; i++) {
+<<<<<<< HEAD
       Query.Builder q = Query.newBuilder();
       q.addKindBuilder().setName(KIND);
       // Making sub-queries unique (and not equal to the original query) by setting different
       // offsets.
       q.setOffset(++offsetOfOriginal);
       queries.add(q.build());
+=======
+      queries.add(query.toBuilder().build());
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
     }
     return queries;
   }

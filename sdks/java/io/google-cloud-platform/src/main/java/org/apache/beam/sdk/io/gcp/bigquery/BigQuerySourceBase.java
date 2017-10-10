@@ -36,6 +36,10 @@ import com.google.common.collect.Lists;
 import java.io.IOException;
 import java.io.Serializable;
 import java.util.List;
+<<<<<<< HEAD
+=======
+import java.util.NoSuchElementException;
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
 import javax.annotation.Nullable;
 import org.apache.avro.generic.GenericRecord;
 import org.apache.beam.sdk.coders.Coder;
@@ -116,6 +120,35 @@ abstract class BigQuerySourceBase<T> extends BoundedSource<T> {
     return new ExtractResult(schema, tempFiles);
   }
 
+  protected static class ExtractResult {
+    public final TableSchema schema;
+    public final List<ResourceId> extractedFiles;
+
+    public ExtractResult(TableSchema schema, List<ResourceId> extractedFiles) {
+      this.schema = schema;
+      this.extractedFiles = extractedFiles;
+    }
+  }
+
+  protected ExtractResult extractFiles(PipelineOptions options) throws Exception {
+    BigQueryOptions bqOptions = options.as(BigQueryOptions.class);
+    TableReference tableToExtract = getTableToExtract(bqOptions);
+    TableSchema schema =
+        bqServices.getDatasetService(bqOptions).getTable(tableToExtract).getSchema();
+    JobService jobService = bqServices.getJobService(bqOptions);
+    String extractJobId = getExtractJobId(createJobIdToken(options.getJobName(), stepUuid));
+    final String extractDestinationDir =
+        resolveTempLocation(bqOptions.getTempLocation(), "BigQueryExtractTemp", stepUuid);
+    List<ResourceId> tempFiles =
+        executeExtract(
+            extractJobId,
+            tableToExtract,
+            jobService,
+            bqOptions.getProject(),
+            extractDestinationDir);
+    return new ExtractResult(schema, tempFiles);
+  }
+
   @Override
   public List<BoundedSource<T>> split(
       long desiredBundleSizeBytes, PipelineOptions options) throws Exception {
@@ -147,8 +180,13 @@ abstract class BigQuerySourceBase<T> extends BoundedSource<T> {
   }
 
   @Override
+<<<<<<< HEAD
   public Coder<T> getOutputCoder() {
     return coder;
+=======
+  public Coder<TableRow> getOutputCoder() {
+    return TableRowJsonCoder.of();
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
   }
 
   private List<ResourceId> executeExtract(
@@ -181,9 +219,57 @@ abstract class BigQuerySourceBase<T> extends BoundedSource<T> {
     return BigQueryIO.getExtractFilePaths(extractDestinationDir, extractJob);
   }
 
+<<<<<<< HEAD
   private static class TableSchemaFunction
       implements Serializable, Function<String, TableSchema> {
     @Nullable
+=======
+  List<BoundedSource<TableRow>> createSources(List<ResourceId> files, TableSchema schema)
+      throws IOException, InterruptedException {
+    final String jsonSchema = BigQueryIO.JSON_FACTORY.toString(schema);
+
+    SerializableFunction<GenericRecord, TableRow> function =
+        new SerializableFunction<GenericRecord, TableRow>() {
+          private Supplier<TableSchema> schema = Suppliers.memoize(
+              Suppliers.compose(new TableSchemaFunction(), Suppliers.ofInstance(jsonSchema)));
+
+          @Override
+          public TableRow apply(GenericRecord input) {
+            return BigQueryAvroUtils.convertGenericRecordToTableRow(input, schema.get());
+          }};
+
+    List<BoundedSource<TableRow>> avroSources = Lists.newArrayList();
+    for (ResourceId file : files) {
+      avroSources.add(
+          AvroSource.from(file.toString()).withParseFn(function, getOutputCoder()));
+    }
+    return ImmutableList.copyOf(avroSources);
+  }
+
+  private static class TableSchemaFunction implements Serializable, Function<String, TableSchema> {
+    @Nullable
+    @Override
+    public TableSchema apply(@Nullable String input) {
+      return BigQueryHelpers.fromJsonString(input, TableSchema.class);
+    }
+  }
+
+  protected static class BigQueryReader extends BoundedReader<TableRow> {
+    private final BigQuerySourceBase source;
+    private final BigQueryServices.BigQueryJsonReader reader;
+
+    BigQueryReader(
+        BigQuerySourceBase source, BigQueryServices.BigQueryJsonReader reader) {
+      this.source = source;
+      this.reader = reader;
+    }
+
+    @Override
+    public BoundedSource<TableRow> getCurrentSource() {
+      return source;
+    }
+
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
     @Override
     public TableSchema apply(@Nullable String input) {
       return BigQueryHelpers.fromJsonString(input, TableSchema.class);

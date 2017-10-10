@@ -38,7 +38,10 @@ option java_package = "org.apache.beam.fn.v1";
 option java_outer_classname = "BeamFnApi";
 
 import "beam_runner_api.proto";
+<<<<<<< HEAD
 import "endpoints.proto";
+=======
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
 import "google/protobuf/timestamp.proto";
 
 /*
@@ -175,7 +178,11 @@ message ProcessBundleDescriptor {
   // A descriptor describing the end point to use for State API
   // calls. Required if the Runner intends to send remote references over the
   // data plane or if any of the transforms rely on user state or side inputs.
+<<<<<<< HEAD
   org.apache.beam.portability.v1.ApiServiceDescriptor state_api_service_descriptor = 7;
+=======
+  ApiServiceDescriptor state_api_service_descriptor = 7;
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
 }
 
 // A request to process a given bundle.
@@ -279,11 +286,19 @@ message Metrics {
   message User {
     // TODO: Define it.
   }
+<<<<<<< HEAD
 
   map<string, PTransform> ptransforms = 1;
   map<string, User> user = 2;
 }
 
+=======
+
+  map<string, PTransform> ptransforms = 1;
+  map<string, User> user = 2;
+}
+
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
 message ProcessBundleProgressResponse {
   // (Required)
   Metrics metrics = 1;

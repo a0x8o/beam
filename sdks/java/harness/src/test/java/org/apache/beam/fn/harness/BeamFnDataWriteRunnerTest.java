@@ -49,7 +49,10 @@ import org.apache.beam.fn.harness.fn.CloseableThrowingConsumer;
 import org.apache.beam.fn.harness.fn.ThrowingConsumer;
 import org.apache.beam.fn.harness.fn.ThrowingRunnable;
 import org.apache.beam.fn.v1.BeamFnApi;
+<<<<<<< HEAD
 import org.apache.beam.portability.v1.Endpoints;
+=======
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
 import org.apache.beam.runners.core.construction.CoderTranslation;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.coders.StringUtf8Coder;
@@ -73,7 +76,11 @@ import org.mockito.MockitoAnnotations;
 public class BeamFnDataWriteRunnerTest {
 
   private static final BeamFnApi.RemoteGrpcPort PORT_SPEC = BeamFnApi.RemoteGrpcPort.newBuilder()
+<<<<<<< HEAD
       .setApiServiceDescriptor(Endpoints.ApiServiceDescriptor.getDefaultInstance()).build();
+=======
+      .setApiServiceDescriptor(BeamFnApi.ApiServiceDescriptor.getDefaultInstance()).build();
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
   private static final RunnerApi.FunctionSpec FUNCTION_SPEC = RunnerApi.FunctionSpec.newBuilder()
       .setPayload(PORT_SPEC.toByteString()).build();
   private static final String CODER_ID = "string-coder-id";

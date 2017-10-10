@@ -17,9 +17,12 @@
  */
 package org.apache.beam.sdk.io.kinesis;
 
+<<<<<<< HEAD
 import static com.google.common.base.Preconditions.checkNotNull;
 
 import com.amazonaws.AmazonClientException;
+=======
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
 import com.amazonaws.AmazonServiceException;
 import com.amazonaws.services.cloudwatch.AmazonCloudWatch;
 import com.amazonaws.services.cloudwatch.model.Datapoint;
@@ -39,7 +42,10 @@ import com.amazonaws.services.kinesis.model.ShardIteratorType;
 import com.amazonaws.services.kinesis.model.StreamDescription;
 import com.google.common.collect.Lists;
 
+<<<<<<< HEAD
 import java.util.Collections;
+=======
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
 import java.util.Date;
 import java.util.List;
 import java.util.concurrent.Callable;
@@ -53,6 +59,7 @@ import org.joda.time.Minutes;
  */
 class SimplifiedKinesisClient {
 
+<<<<<<< HEAD
   private static final String KINESIS_NAMESPACE = "AWS/Kinesis";
   private static final String INCOMING_RECORDS_METRIC = "IncomingBytes";
   private static final int PERIOD_GRANULARITY_IN_SECONDS = 60;
@@ -69,6 +76,16 @@ class SimplifiedKinesisClient {
   public static SimplifiedKinesisClient from(AWSClientsProvider provider) {
     return new SimplifiedKinesisClient(provider.getKinesisClient(),
         provider.getCloudWatchClient());
+=======
+  private final AmazonKinesis kinesis;
+
+  public SimplifiedKinesisClient(AmazonKinesis kinesis) {
+    this.kinesis = kinesis;
+  }
+
+  public static SimplifiedKinesisClient from(KinesisClientProvider provider) {
+    return new SimplifiedKinesisClient(provider.get());
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
   }
 
   public String getShardIterator(final String streamName, final String shardId,
@@ -107,6 +124,7 @@ class SimplifiedKinesisClient {
           shards.addAll(description.getShards());
           lastShardId = shards.get(shards.size() - 1).getShardId();
         } while (description.getHasMoreShards());
+<<<<<<< HEAD
 
         return shards;
       }
@@ -214,6 +232,59 @@ class SimplifiedKinesisClient {
    *                                   failed, network issue, etc.
    * @throws ExpiredIteratorException  - if iterator needs to be refreshed
    * @throws RuntimeException          - in all other cases
+=======
+
+        return shards;
+      }
+    });
+  }
+
+  /**
+   * Gets records from Kinesis and deaggregates them if needed.
+   *
+   * @return list of deaggregated records
+   * @throws TransientKinesisException - in case of recoverable situation
+   */
+  public GetKinesisRecordsResult getRecords(String shardIterator, String streamName,
+      String shardId) throws TransientKinesisException {
+    return getRecords(shardIterator, streamName, shardId, null);
+  }
+
+  /**
+   * Gets records from Kinesis and deaggregates them if needed.
+   *
+   * @return list of deaggregated records
+   * @throws TransientKinesisException - in case of recoverable situation
+   */
+  public GetKinesisRecordsResult getRecords(final String shardIterator, final String streamName,
+      final String shardId, final Integer limit)
+      throws
+      TransientKinesisException {
+    return wrapExceptions(new Callable<GetKinesisRecordsResult>() {
+
+      @Override
+      public GetKinesisRecordsResult call() throws Exception {
+        GetRecordsResult response = kinesis.getRecords(new GetRecordsRequest()
+            .withShardIterator(shardIterator)
+            .withLimit(limit));
+        return new GetKinesisRecordsResult(
+            UserRecord.deaggregate(response.getRecords()),
+            response.getNextShardIterator(),
+            response.getMillisBehindLatest(),
+            streamName, shardId);
+      }
+    });
+  }
+
+  /**
+   * Wraps Amazon specific exceptions into more friendly format.
+   *
+   * @throws TransientKinesisException              - in case of recoverable situation, i.e.
+   *                                  the request rate is too high, Kinesis remote service
+   *                                  failed, network issue, etc.
+   * @throws ExpiredIteratorException - if iterator needs to be refreshed
+   * @throws RuntimeException         - in all other cases
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
    */
   private <T> T wrapExceptions(Callable<T> callable) throws TransientKinesisException {
     try {
@@ -229,11 +300,14 @@ class SimplifiedKinesisClient {
             "Kinesis backend failed. Wait some time and retry.", e);
       }
       throw new RuntimeException("Kinesis client side failure", e);
+<<<<<<< HEAD
     } catch (AmazonClientException e) {
       if (e.isRetryable()) {
         throw new TransientKinesisException("Retryable client failure", e);
       }
       throw new RuntimeException("Not retryable client failure", e);
+=======
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
     } catch (Exception e) {
       throw new RuntimeException("Unknown kinesis failure, when trying to reach kinesis", e);
     }

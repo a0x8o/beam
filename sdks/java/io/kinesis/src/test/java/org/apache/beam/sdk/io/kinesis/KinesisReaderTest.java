@@ -19,8 +19,11 @@ package org.apache.beam.sdk.io.kinesis;
 
 import static java.util.Arrays.asList;
 import static org.assertj.core.api.Assertions.assertThat;
+<<<<<<< HEAD
 import static org.mockito.Matchers.any;
 import static org.mockito.Matchers.eq;
+=======
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -28,7 +31,10 @@ import java.io.IOException;
 import java.util.NoSuchElementException;
 
 import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
+<<<<<<< HEAD
 import org.joda.time.Duration;
+=======
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
 import org.joda.time.Instant;
 import org.junit.Before;
 import org.junit.Test;
@@ -53,8 +59,11 @@ public class KinesisReaderTest {
   private ShardRecordsIterator firstIterator, secondIterator;
   @Mock
   private KinesisRecord a, b, c, d;
+<<<<<<< HEAD
   @Mock
   private KinesisSource kinesisSource;
+=======
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
 
   private KinesisReader reader;
 
@@ -72,7 +81,11 @@ public class KinesisReaderTest {
     when(c.getApproximateArrivalTimestamp()).thenReturn(Instant.now());
     when(d.getApproximateArrivalTimestamp()).thenReturn(Instant.now());
 
+<<<<<<< HEAD
     reader = new KinesisReader(kinesis, generator, kinesisSource, Duration.ZERO, Duration.ZERO);
+=======
+    reader = new KinesisReader(kinesis, generator, null);
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
   }
 
   @Test
@@ -142,10 +155,32 @@ public class KinesisReaderTest {
 
     for (boolean more = reader.start(); more; more = reader.advance()) {
       assertThat(reader.getWatermark()).isEqualTo(BoundedWindow.TIMESTAMP_MIN_VALUE);
+<<<<<<< HEAD
+=======
     }
   }
 
   @Test
+  public void watermarkAdvancesWhenEnoughRecordsReadRecently()
+      throws IOException, TransientKinesisException {
+    long timestampMs = 1000L;
+
+    prepareRecordsWithArrivalTimestamps(timestampMs, 1, KinesisReader.MIN_WATERMARK_MESSAGES);
+    when(secondIterator.next()).thenReturn(CustomOptional.<KinesisRecord>absent());
+
+    int recordsNeededForWatermarkAdvancing = KinesisReader.MIN_WATERMARK_MESSAGES;
+    for (boolean more = reader.start(); more; more = reader.advance()) {
+      if (--recordsNeededForWatermarkAdvancing > 0) {
+        assertThat(reader.getWatermark()).isEqualTo(BoundedWindow.TIMESTAMP_MIN_VALUE);
+      } else {
+        assertThat(reader.getWatermark()).isEqualTo(new Instant(timestampMs));
+      }
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
+    }
+  }
+
+  @Test
+<<<<<<< HEAD
   public void watermarkAdvancesWhenEnoughRecordsReadRecently()
       throws IOException, TransientKinesisException {
     long timestampMs = 1000L;
@@ -171,6 +206,15 @@ public class KinesisReaderTest {
     prepareRecordsWithArrivalTimestamps(timestampMs, -1, KinesisReader.MIN_WATERMARK_MESSAGES * 2);
     when(secondIterator.next()).thenReturn(CustomOptional.<KinesisRecord>absent());
 
+=======
+  public void watermarkMonotonicallyIncreases()
+      throws IOException, TransientKinesisException {
+    long timestampMs = 1000L;
+
+    prepareRecordsWithArrivalTimestamps(timestampMs, -1, KinesisReader.MIN_WATERMARK_MESSAGES * 2);
+    when(secondIterator.next()).thenReturn(CustomOptional.<KinesisRecord>absent());
+
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
     Instant lastWatermark = BoundedWindow.TIMESTAMP_MIN_VALUE;
     for (boolean more = reader.start(); more; more = reader.advance()) {
       Instant currentWatermark = reader.getWatermark();
@@ -200,6 +244,7 @@ public class KinesisReaderTest {
     return record;
   }
 
+<<<<<<< HEAD
   @Test
   public void getTotalBacklogBytesShouldReturnLastSeenValueWhenKinesisExceptionsOccur()
       throws TransientKinesisException {
@@ -227,4 +272,6 @@ public class KinesisReaderTest {
     assertThat(backlogCachingReader.getTotalBacklogBytes()).isEqualTo(10);
     assertThat(backlogCachingReader.getTotalBacklogBytes()).isEqualTo(10);
   }
+=======
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
 }

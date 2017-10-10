@@ -54,6 +54,7 @@ import org.mockito.runners.MockitoJUnitRunner;
  */
 @RunWith(MockitoJUnitRunner.class)
 public class SimplifiedKinesisClientTest {
+<<<<<<< HEAD
 
   private static final String STREAM = "stream";
   private static final String SHARD_1 = "shard-01";
@@ -126,6 +127,78 @@ public class SimplifiedKinesisClientTest {
         TransientKinesisException.class);
   }
 
+=======
+
+  private static final String STREAM = "stream";
+  private static final String SHARD_1 = "shard-01";
+  private static final String SHARD_2 = "shard-02";
+  private static final String SHARD_3 = "shard-03";
+  private static final String SHARD_ITERATOR = "iterator";
+  private static final String SEQUENCE_NUMBER = "abc123";
+
+  @Mock
+  private AmazonKinesis kinesis;
+  @InjectMocks
+  private SimplifiedKinesisClient underTest;
+
+  @Test
+  public void shouldReturnIteratorStartingWithSequenceNumber() throws Exception {
+    given(kinesis.getShardIterator(new GetShardIteratorRequest()
+        .withStreamName(STREAM)
+        .withShardId(SHARD_1)
+        .withShardIteratorType(ShardIteratorType.AT_SEQUENCE_NUMBER)
+        .withStartingSequenceNumber(SEQUENCE_NUMBER)
+    )).willReturn(new GetShardIteratorResult()
+        .withShardIterator(SHARD_ITERATOR));
+
+    String stream = underTest.getShardIterator(STREAM, SHARD_1,
+        ShardIteratorType.AT_SEQUENCE_NUMBER, SEQUENCE_NUMBER, null);
+
+    assertThat(stream).isEqualTo(SHARD_ITERATOR);
+  }
+
+  @Test
+  public void shouldReturnIteratorStartingWithTimestamp() throws Exception {
+    Instant timestamp = Instant.now();
+    given(kinesis.getShardIterator(new GetShardIteratorRequest()
+        .withStreamName(STREAM)
+        .withShardId(SHARD_1)
+        .withShardIteratorType(ShardIteratorType.AT_SEQUENCE_NUMBER)
+        .withTimestamp(timestamp.toDate())
+    )).willReturn(new GetShardIteratorResult()
+        .withShardIterator(SHARD_ITERATOR));
+
+    String stream = underTest.getShardIterator(STREAM, SHARD_1,
+        ShardIteratorType.AT_SEQUENCE_NUMBER, null, timestamp);
+
+    assertThat(stream).isEqualTo(SHARD_ITERATOR);
+  }
+
+  @Test
+  public void shouldHandleExpiredIterationExceptionForGetShardIterator() {
+    shouldHandleGetShardIteratorError(new ExpiredIteratorException(""),
+        ExpiredIteratorException.class);
+  }
+
+  @Test
+  public void shouldHandleLimitExceededExceptionForGetShardIterator() {
+    shouldHandleGetShardIteratorError(new LimitExceededException(""),
+        TransientKinesisException.class);
+  }
+
+  @Test
+  public void shouldHandleProvisionedThroughputExceededExceptionForGetShardIterator() {
+    shouldHandleGetShardIteratorError(new ProvisionedThroughputExceededException(""),
+        TransientKinesisException.class);
+  }
+
+  @Test
+  public void shouldHandleServiceErrorForGetShardIterator() {
+    shouldHandleGetShardIteratorError(newAmazonServiceException(ErrorType.Service),
+        TransientKinesisException.class);
+  }
+
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
   @Test
   public void shouldHandleClientErrorForGetShardIterator() {
     shouldHandleGetShardIteratorError(newAmazonServiceException(ErrorType.Client),
@@ -227,6 +300,7 @@ public class SimplifiedKinesisClientTest {
     }
   }
 
+<<<<<<< HEAD
   @Test
   public void shouldCountBytesWhenSingleDataPointReturned() throws Exception {
     Instant countSince = new Instant("2017-04-06T10:00:00.000Z");
@@ -326,6 +400,8 @@ public class SimplifiedKinesisClientTest {
     }
   }
 
+=======
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
   private AmazonServiceException newAmazonServiceException(ErrorType errorType) {
     AmazonServiceException exception = new AmazonServiceException("");
     exception.setErrorType(errorType);

@@ -44,11 +44,18 @@ import org.apache.beam.fn.harness.fn.ThrowingRunnable;
 import org.apache.beam.fn.harness.state.BeamFnStateClient;
 import org.apache.beam.fn.harness.state.BeamFnStateGrpcClientCache;
 import org.apache.beam.fn.v1.BeamFnApi;
+<<<<<<< HEAD
+=======
+import org.apache.beam.fn.v1.BeamFnApi.ApiServiceDescriptor;
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
 import org.apache.beam.fn.v1.BeamFnApi.ProcessBundleRequest;
 import org.apache.beam.fn.v1.BeamFnApi.StateRequest;
 import org.apache.beam.fn.v1.BeamFnApi.StateRequest.Builder;
 import org.apache.beam.fn.v1.BeamFnApi.StateResponse;
+<<<<<<< HEAD
 import org.apache.beam.portability.v1.Endpoints.ApiServiceDescriptor;
+=======
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
 import org.apache.beam.sdk.common.runner.v1.RunnerApi;
 import org.apache.beam.sdk.options.PipelineOptions;
 import org.apache.beam.sdk.util.WindowedValue;

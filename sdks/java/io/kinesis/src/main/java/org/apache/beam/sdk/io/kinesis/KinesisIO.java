@@ -115,10 +115,14 @@ public final class KinesisIO {
 
   /** Returns a new {@link Read} transform for reading from Kinesis. */
   public static Read read() {
+<<<<<<< HEAD
     return new AutoValue_KinesisIO_Read.Builder()
         .setMaxNumRecords(-1)
         .setUpToDateThreshold(Duration.ZERO)
         .build();
+=======
+    return new AutoValue_KinesisIO_Read.Builder().setMaxNumRecords(-1).build();
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
   }
 
   /** Implementation of {@link #read}. */
@@ -132,15 +136,22 @@ public final class KinesisIO {
     abstract StartingPoint getInitialPosition();
 
     @Nullable
+<<<<<<< HEAD
     abstract AWSClientsProvider getAWSClientsProvider();
+=======
+    abstract KinesisClientProvider getClientProvider();
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
 
     abstract int getMaxNumRecords();
 
     @Nullable
     abstract Duration getMaxReadTime();
 
+<<<<<<< HEAD
     abstract Duration getUpToDateThreshold();
 
+=======
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
     abstract Builder toBuilder();
 
     @AutoValue.Builder
@@ -150,12 +161,17 @@ public final class KinesisIO {
 
       abstract Builder setInitialPosition(StartingPoint startingPoint);
 
+<<<<<<< HEAD
       abstract Builder setAWSClientsProvider(AWSClientsProvider clientProvider);
+=======
+      abstract Builder setClientProvider(KinesisClientProvider clientProvider);
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
 
       abstract Builder setMaxNumRecords(int maxNumRecords);
 
       abstract Builder setMaxReadTime(Duration maxReadTime);
 
+<<<<<<< HEAD
       abstract Builder setUpToDateThreshold(Duration upToDateThreshold);
 
       abstract Read build();
@@ -251,6 +267,84 @@ public final class KinesisIO {
     }
 
     private static final class BasicKinesisProvider implements AWSClientsProvider {
+=======
+      abstract Read build();
+    }
+
+    /**
+     * Specify reading from streamName at some initial position.
+     */
+    public Read from(String streamName, InitialPositionInStream initialPosition) {
+      return toBuilder()
+          .setStreamName(streamName)
+          .setInitialPosition(new StartingPoint(initialPosition))
+          .build();
+    }
+
+    /**
+     * Specify reading from streamName beginning at given {@link Instant}.
+     * This {@link Instant} must be in the past, i.e. before {@link Instant#now()}.
+     */
+    public Read from(String streamName, Instant initialTimestamp) {
+      return toBuilder()
+          .setStreamName(streamName)
+          .setInitialPosition(new StartingPoint(initialTimestamp))
+          .build();
+    }
+
+    /**
+     * Allows to specify custom {@link KinesisClientProvider}.
+     * {@link KinesisClientProvider} provides {@link AmazonKinesis} instances which are later
+     * used for communication with Kinesis.
+     * You should use this method if {@link Read#withClientProvider(String, String, Regions)}
+     * does not suit your needs.
+     */
+    public Read withClientProvider(KinesisClientProvider kinesisClientProvider) {
+      return toBuilder().setClientProvider(kinesisClientProvider).build();
+    }
+
+    /**
+     * Specify credential details and region to be used to read from Kinesis.
+     * If you need more sophisticated credential protocol, then you should look at
+     * {@link Read#withClientProvider(KinesisClientProvider)}.
+     */
+    public Read withClientProvider(String awsAccessKey, String awsSecretKey, Regions region) {
+      return withClientProvider(new BasicKinesisProvider(awsAccessKey, awsSecretKey, region));
+    }
+
+    /** Specifies to read at most a given number of records. */
+    public Read withMaxNumRecords(int maxNumRecords) {
+      checkArgument(
+          maxNumRecords > 0, "maxNumRecords must be positive, but was: %s", maxNumRecords);
+      return toBuilder().setMaxNumRecords(maxNumRecords).build();
+    }
+
+    /** Specifies to read at most a given number of records. */
+    public Read withMaxReadTime(Duration maxReadTime) {
+      checkArgument(maxReadTime != null, "maxReadTime can not be null");
+      return toBuilder().setMaxReadTime(maxReadTime).build();
+    }
+
+    @Override
+    public PCollection<KinesisRecord> expand(PBegin input) {
+      org.apache.beam.sdk.io.Read.Unbounded<KinesisRecord> read =
+          org.apache.beam.sdk.io.Read.from(
+              new KinesisSource(getClientProvider(), getStreamName(), getInitialPosition()));
+      if (getMaxNumRecords() > 0) {
+        BoundedReadFromUnboundedSource<KinesisRecord> bounded =
+            read.withMaxNumRecords(getMaxNumRecords());
+        return getMaxReadTime() == null
+            ? input.apply(bounded)
+            : input.apply(bounded.withMaxReadTime(getMaxReadTime()));
+      } else {
+        return getMaxReadTime() == null
+            ? input.apply(read)
+            : input.apply(read.withMaxReadTime(getMaxReadTime()));
+      }
+    }
+
+    private static final class BasicKinesisProvider implements KinesisClientProvider {
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
 
       private final String accessKey;
       private final String secretKey;
@@ -274,11 +368,16 @@ public final class KinesisIO {
       }
 
       @Override
+<<<<<<< HEAD
       public AmazonKinesis getKinesisClient() {
+=======
+      public AmazonKinesis get() {
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
         AmazonKinesisClient client = new AmazonKinesisClient(getCredentialsProvider());
         client.withRegion(region);
         return client;
       }
+<<<<<<< HEAD
 
       @Override
       public AmazonCloudWatch getCloudWatchClient() {
@@ -286,6 +385,8 @@ public final class KinesisIO {
         client.withRegion(region);
         return client;
       }
+=======
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
     }
   }
 }

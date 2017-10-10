@@ -62,12 +62,17 @@ class KinesisReader extends UnboundedSource.UnboundedReader<KinesisRecord> {
   private static final int MIN_WATERMARK_SPREAD = 2;
 
   private final SimplifiedKinesisClient kinesis;
+<<<<<<< HEAD
   private final KinesisSource source;
+=======
+  private final UnboundedSource<KinesisRecord, ?> source;
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
   private final CheckpointGenerator initialCheckpointGenerator;
   private RoundRobin<ShardRecordsIterator> shardIterators;
   private CustomOptional<KinesisRecord> currentRecord = CustomOptional.absent();
   private MovingFunction minReadTimestampMsSinceEpoch;
   private Instant lastWatermark = BoundedWindow.TIMESTAMP_MIN_VALUE;
+<<<<<<< HEAD
   private long lastBacklogBytes;
   private Instant backlogBytesLastCheckTime = new Instant(0L);
   private Duration upToDateThreshold;
@@ -89,14 +94,26 @@ class KinesisReader extends UnboundedSource.UnboundedReader<KinesisRecord> {
     this.kinesis = checkNotNull(kinesis, "kinesis");
     this.initialCheckpointGenerator = checkNotNull(initialCheckpointGenerator,
         "initialCheckpointGenerator");
+=======
+
+  public KinesisReader(SimplifiedKinesisClient kinesis,
+      CheckpointGenerator initialCheckpointGenerator,
+      UnboundedSource<KinesisRecord, ?> source) {
+    this.kinesis = checkNotNull(kinesis, "kinesis");
+    this.initialCheckpointGenerator =
+        checkNotNull(initialCheckpointGenerator, "initialCheckpointGenerator");
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
     this.source = source;
     this.minReadTimestampMsSinceEpoch = new MovingFunction(SAMPLE_PERIOD.getMillis(),
         SAMPLE_UPDATE.getMillis(),
         MIN_WATERMARK_SPREAD,
         MIN_WATERMARK_MESSAGES,
         Min.ofLongs());
+<<<<<<< HEAD
     this.upToDateThreshold = upToDateThreshold;
     this.backlogBytesCheckThreshold = backlogBytesCheckThreshold;
+=======
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
   }
 
   /**
@@ -143,6 +160,7 @@ class KinesisReader extends UnboundedSource.UnboundedReader<KinesisRecord> {
       }
     } catch (TransientKinesisException e) {
       LOG.warn("Transient exception occurred", e);
+<<<<<<< HEAD
     }
     return false;
   }
@@ -221,4 +239,60 @@ class KinesisReader extends UnboundedSource.UnboundedReader<KinesisRecord> {
         watermark, lastBacklogBytes);
     return lastBacklogBytes;
   }
+=======
+    }
+    return false;
+  }
+
+  @Override
+  public byte[] getCurrentRecordId() throws NoSuchElementException {
+    return currentRecord.get().getUniqueId();
+  }
+
+  @Override
+  public KinesisRecord getCurrent() throws NoSuchElementException {
+    return currentRecord.get();
+  }
+
+  /**
+   * Returns the approximate time that the current record was inserted into the stream.
+   * It is not guaranteed to be accurate - this could lead to mark some records as "late"
+   * even if they were not. Beware of this when setting
+   * {@link org.apache.beam.sdk.values.WindowingStrategy#withAllowedLateness}
+   */
+  @Override
+  public Instant getCurrentTimestamp() throws NoSuchElementException {
+    return currentRecord.get().getApproximateArrivalTimestamp();
+  }
+
+  @Override
+  public void close() throws IOException {
+  }
+
+  @Override
+  public Instant getWatermark() {
+    Instant now = Instant.now();
+    long readMin = minReadTimestampMsSinceEpoch.get(now.getMillis());
+    if (readMin == Long.MAX_VALUE) {
+      lastWatermark = now;
+    } else if (minReadTimestampMsSinceEpoch.isSignificant()) {
+      Instant minReadTime = new Instant(readMin);
+      if (minReadTime.isAfter(lastWatermark)) {
+        lastWatermark = minReadTime;
+      }
+    }
+    return lastWatermark;
+  }
+
+  @Override
+  public UnboundedSource.CheckpointMark getCheckpointMark() {
+    return KinesisReaderCheckpoint.asCurrentStateOf(shardIterators);
+  }
+
+  @Override
+  public UnboundedSource<KinesisRecord, ?> getCurrentSource() {
+    return source;
+  }
+
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
 }

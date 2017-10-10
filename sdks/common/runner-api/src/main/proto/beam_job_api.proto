@@ -91,7 +91,11 @@ message RunJobResponse {
 }
 
 
+<<<<<<< HEAD
 // Cancel is a synchronus request that returns a job state back
+=======
+// Cancel is a synchronus request that returns a jobState back
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
 // Throws error GRPC_STATUS_UNAVAILABLE if server is down
 // Throws error NOT_FOUND if the jobId is not found
 message CancelJobRequest {
@@ -101,11 +105,19 @@ message CancelJobRequest {
 
 // Valid responses include any terminal state or CANCELLING
 message CancelJobResponse {
+<<<<<<< HEAD
   JobState.Enum state = 1; // (required)
 }
 
 
 // GetState is a synchronus request that returns a job state back
+=======
+  JobState.JobStateType state = 1; // (required)
+}
+
+
+// GetState is a synchronus request that returns a jobState back
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
 // Throws error GRPC_STATUS_UNAVAILABLE if server is down
 // Throws error NOT_FOUND if the jobId is not found
 message GetJobStateRequest {
@@ -114,7 +126,11 @@ message GetJobStateRequest {
 }
 
 message GetJobStateResponse {
+<<<<<<< HEAD
   JobState.Enum state = 1; // (required)
+=======
+  JobState.JobStateType state = 1; // (required)
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
 }
 
 
@@ -134,12 +150,20 @@ message JobMessage {
   string message_text = 4;
 
   enum MessageImportance {
+<<<<<<< HEAD
     MESSAGE_IMPORTANCE_UNSPECIFIED = 0;
     JOB_MESSAGE_DEBUG = 1;
     JOB_MESSAGE_DETAILED = 2;
     JOB_MESSAGE_BASIC = 3;
     JOB_MESSAGE_WARNING = 4;
     JOB_MESSAGE_ERROR = 5;
+=======
+    JOB_MESSAGE_DEBUG = 0;
+    JOB_MESSAGE_DETAILED = 1;
+    JOB_MESSAGE_BASIC = 2;
+    JOB_MESSAGE_WARNING = 3;
+    JOB_MESSAGE_ERROR = 4;
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
   }
 }
 
@@ -150,10 +174,17 @@ message JobMessagesResponse {
   }
 }
 
+<<<<<<< HEAD
 // Enumeration of all JobStates
 message JobState {
   enum Enum {
     UNSPECIFIED = 0;
+=======
+message JobState {
+  // Enumeration of all JobStates
+  enum JobStateType {
+    UNKNOWN = 0;
+>>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
     STOPPED = 1;
     RUNNING = 2;
     DONE = 3;
