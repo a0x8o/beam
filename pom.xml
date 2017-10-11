@@ -34,11 +34,7 @@
   <url>http://beam.apache.org/</url>
   <inceptionYear>2016</inceptionYear>
 
-<<<<<<< HEAD
   <version>2.3.0-SNAPSHOT</version>
-=======
-  <version>2.2.0-SNAPSHOT</version>
->>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
 
   <licenses>
     <license>
@@ -184,12 +180,9 @@
     <kubectl>kubectl</kubectl>
     <!-- the standard location for kubernete's config file -->
     <kubeconfig>${user.home}/.kube/config</kubeconfig>
-<<<<<<< HEAD
 
     <!-- For container builds, override to push containers to a registry -->
     <docker-repository-root>${user.name}</docker-repository-root>
-=======
->>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
   </properties>
 
   <packaging>pom</packaging>
@@ -624,6 +617,12 @@
         <artifactId>beam-runners-core-java</artifactId>
         <version>${project.version}</version>
         <type>test-jar</type>
+      </dependency>
+
+      <dependency>
+        <groupId>org.apache.beam</groupId>
+        <artifactId>beam-runners-reference-job-orchestrator</artifactId>
+        <version>${project.version}</version>
       </dependency>
 
       <dependency>
@@ -1894,7 +1893,6 @@
             </execution>
           </executions>
         </plugin>
-<<<<<<< HEAD
 
         <plugin>
           <groupId>com.igormaznitsa</groupId>
@@ -1912,8 +1910,6 @@
           <version>1.3.5</version>
           <!-- no executions by default. Use build-containers profile -->
         </plugin>
-=======
->>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
       </plugins>
     </pluginManagement>
 

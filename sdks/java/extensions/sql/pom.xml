@@ -15,24 +15,14 @@
     See the License for the specific language governing permissions and
     limitations under the License.
 -->
-<<<<<<< HEAD
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
-=======
-<project
-  xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd"
-  xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
->>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
 
   <modelVersion>4.0.0</modelVersion>
 
   <parent>
     <groupId>org.apache.beam</groupId>
     <artifactId>beam-sdks-java-extensions-parent</artifactId>
-<<<<<<< HEAD
     <version>2.3.0-SNAPSHOT</version>
-=======
-    <version>2.2.0-SNAPSHOT</version>
->>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
     <relativePath>../pom.xml</relativePath>
   </parent>
 
@@ -100,7 +90,6 @@
       </plugin>
 
       <plugin>
-<<<<<<< HEAD
           <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-shade-plugin</artifactId>
           <executions>
@@ -176,37 +165,6 @@
               </configuration>
             </execution>
           </executions>
-=======
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-shade-plugin</artifactId>
-        <executions>
-          <execution>
-            <id>bundle-and-repackage</id>
-            <phase>package</phase>
-            <goals>
-              <goal>shade</goal>
-            </goals>
-            <configuration>
-              <shadeTestJar>true</shadeTestJar>
-              <artifactSet>
-                <includes>
-                  <include>com.google.guava:guava</include>
-                </includes>
-              </artifactSet>
-              <filters>
-                <filter>
-                  <artifact>*:*</artifact>
-                  <excludes>
-                    <exclude>META-INF/*.SF</exclude>
-                    <exclude>META-INF/*.DSA</exclude>
-                    <exclude>META-INF/*.RSA</exclude>
-                  </excludes>
-                </filter>
-              </filters>
-            </configuration>
-          </execution>
-        </executions>
->>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
       </plugin>
 
       <!-- Coverage analysis for unit tests. -->

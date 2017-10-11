@@ -45,10 +45,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
 import javax.annotation.Nullable;
-<<<<<<< HEAD
 import org.apache.avro.generic.GenericRecord;
-=======
->>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
 import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.PipelineRunner;
 import org.apache.beam.sdk.annotations.Experimental;
@@ -86,13 +83,7 @@ import org.apache.beam.sdk.transforms.ParDo;
 import org.apache.beam.sdk.transforms.Reshuffle;
 import org.apache.beam.sdk.transforms.SerializableFunction;
 import org.apache.beam.sdk.transforms.SimpleFunction;
-<<<<<<< HEAD
 import org.apache.beam.sdk.transforms.View;
-=======
-import org.apache.beam.sdk.transforms.Values;
-import org.apache.beam.sdk.transforms.View;
-import org.apache.beam.sdk.transforms.WithKeys;
->>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
 import org.apache.beam.sdk.transforms.display.DisplayData;
 import org.apache.beam.sdk.util.Transport;
 import org.apache.beam.sdk.util.gcsfs.GcsPath;
@@ -104,11 +95,8 @@ import org.apache.beam.sdk.values.PCollectionTuple;
 import org.apache.beam.sdk.values.PCollectionView;
 import org.apache.beam.sdk.values.TupleTag;
 import org.apache.beam.sdk.values.TupleTagList;
-<<<<<<< HEAD
 import org.apache.beam.sdk.values.TypeDescriptor;
 import org.apache.beam.sdk.values.TypeDescriptors;
-=======
->>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
 import org.apache.beam.sdk.values.ValueInSingleWindow;
 import org.joda.time.Duration;
 import org.slf4j.Logger;
@@ -141,7 +129,6 @@ import org.slf4j.LoggerFactory;
  *
  * <h3>Reading</h3>
  *
-<<<<<<< HEAD
  * <p>Reading from BigQuery is supported by {@link #read(SerializableFunction)}, which parses
  * records in <a href="https://cloud.google.com/bigquery/data-formats#avro_format">AVRO format</a>
  * into a custom type using a specified parse function, and by {@link #readTableRows} which parses
@@ -150,10 +137,6 @@ import org.slf4j.LoggerFactory;
  * <p>Both functions support reading either from a table or from the result of a query, via
  * {@link TypedRead#from(String)} and {@link TypedRead#fromQuery} respectively. Exactly one
  * of these must be specified.
-=======
- * <p>To read from a BigQuery table, apply a {@link BigQueryIO.Read} transformation. This produces a
- * {@link PCollection} of {@link TableRow TableRows} as output:
->>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
  *
  * <b>Example: Reading rows of a table as {@link TableRow}.</b>
  * <pre>{@code
@@ -373,7 +356,6 @@ public class BigQueryIO {
         .build();
   }
 
-<<<<<<< HEAD
   @VisibleForTesting
   static class TableRowParser
       implements SerializableFunction<SchemaAndRecord, TableRow> {
@@ -384,34 +366,6 @@ public class BigQueryIO {
       return BigQueryAvroUtils.convertGenericRecordToTableRow(
           schemaAndRecord.getRecord(),
           schemaAndRecord.getTableSchema());
-=======
-  /** Implementation of {@link #read}. */
-  @AutoValue
-  public abstract static class Read extends PTransform<PBegin, PCollection<TableRow>> {
-    @Nullable abstract ValueProvider<String> getJsonTableRef();
-    @Nullable abstract ValueProvider<String> getQuery();
-    abstract boolean getValidate();
-    @Nullable abstract Boolean getFlattenResults();
-    @Nullable abstract Boolean getUseLegacySql();
-
-    abstract Boolean getWithTemplateCompatibility();
-
-    abstract BigQueryServices getBigQueryServices();
-    abstract Builder toBuilder();
-
-    @AutoValue.Builder
-    abstract static class Builder {
-      abstract Builder setJsonTableRef(ValueProvider<String> jsonTableRef);
-      abstract Builder setQuery(ValueProvider<String> query);
-      abstract Builder setValidate(boolean validate);
-      abstract Builder setFlattenResults(Boolean flattenResults);
-      abstract Builder setUseLegacySql(Boolean useLegacySql);
-
-      abstract Builder setWithTemplateCompatibility(Boolean useTemplateCompatibility);
-
-      abstract Builder setBigQueryServices(BigQueryServices bigQueryServices);
-      abstract Read build();
->>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
     }
   }
 
@@ -587,17 +541,6 @@ public class BigQueryIO {
 
     @Nullable abstract Coder<T> getCoder();
 
-    /**
-     * Use new template-compatible source implementation.
-     *
-     * <p>Use new template-compatible source implementation. This implementation is compatible with
-     * repeated template invocations. It does not support dynamic work rebalancing.
-     */
-    @Experimental(Experimental.Kind.SOURCE_SINK)
-    public Read withTemplateCompatibility() {
-      return toBuilder().setWithTemplateCompatibility(true).build();
-    }
-
     @VisibleForTesting
     Coder<T> inferCoder(CoderRegistry coderRegistry) {
       if (getCoder() != null) {
@@ -639,23 +582,9 @@ public class BigQueryIO {
       return source;
     }
 
-<<<<<<< HEAD
     private static final String QUERY_VALIDATION_FAILURE_ERROR =
         "Validation of query \"%1$s\" failed. If the query depends on an earlier stage of the"
             + " pipeline, This validation can be disabled using #withoutValidation.";
-=======
-    private BigQuerySourceBase createSource(String jobUuid) {
-      BigQuerySourceBase source;
-      if (getQuery() == null) {
-        source = BigQueryTableSource.create(jobUuid, getTableProvider(), getBigQueryServices());
-      } else {
-        source =
-            BigQueryQuerySource.create(
-                jobUuid, getQuery(), getFlattenResults(), getUseLegacySql(), getBigQueryServices());
-      }
-      return source;
-    }
->>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
 
     @Override
     public void validate(PipelineOptions options) {
@@ -713,11 +642,7 @@ public class BigQueryIO {
     }
 
     @Override
-<<<<<<< HEAD
     public PCollection<T> expand(PBegin input) {
-=======
-    public PCollection<TableRow> expand(PBegin input) {
->>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
       ValueProvider<TableReference> table = getTableProvider();
 
       if (table != null) {
@@ -742,7 +667,6 @@ public class BigQueryIO {
             getFlattenResults() != null, "flattenResults should not be null if query is set");
         checkArgument(getUseLegacySql() != null, "useLegacySql should not be null if query is set");
       }
-<<<<<<< HEAD
       checkArgument(getParseFn() != null, "A parseFn is required");
 
       Pipeline p = input.getPipeline();
@@ -750,13 +674,6 @@ public class BigQueryIO {
       final PCollectionView<String> jobIdTokenView;
       PCollection<String> jobIdTokenCollection;
       PCollection<T> rows;
-=======
-
-      Pipeline p = input.getPipeline();
-      final PCollectionView<String> jobIdTokenView;
-      PCollection<String> jobIdTokenCollection = null;
-      PCollection<TableRow> rows;
->>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
       if (!getWithTemplateCompatibility()) {
         // Create a singleton job ID token at construction time.
         final String staticJobUuid = BigQueryHelpers.randomUUIDString();
@@ -764,11 +681,7 @@ public class BigQueryIO {
             p.apply("TriggerIdCreation", Create.of(staticJobUuid))
                 .apply("ViewId", View.<String>asSingleton());
         // Apply the traditional Source model.
-<<<<<<< HEAD
         rows = p.apply(org.apache.beam.sdk.io.Read.from(createSource(staticJobUuid, coder)));
-=======
-        rows = p.apply(org.apache.beam.sdk.io.Read.from(createSource(staticJobUuid)));
->>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
       } else {
         // Create a singleton job ID token at execution time.
         jobIdTokenCollection =
@@ -794,11 +707,7 @@ public class BigQueryIO {
                           @ProcessElement
                           public void processElement(ProcessContext c) throws Exception {
                             String jobUuid = c.element();
-<<<<<<< HEAD
                             BigQuerySourceBase<T> source = createSource(jobUuid, coder);
-=======
-                            BigQuerySourceBase source = createSource(jobUuid);
->>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
                             BigQuerySourceBase.ExtractResult res =
                                 source.extractFiles(c.getPipelineOptions());
                             for (ResourceId file : res.extractedFiles) {
@@ -815,53 +724,27 @@ public class BigQueryIO {
         rows =
             tuple
                 .get(filesTag)
-<<<<<<< HEAD
                 .apply(Reshuffle.<String>viaRandomKey())
                 .apply(
                     "ReadFiles",
                     ParDo.of(
                             new DoFn<String, T>() {
-=======
-                .apply(
-                    WithKeys.of(
-                        new SerializableFunction<String, String>() {
-                          public String apply(String s) {
-                            return s;
-                          }
-                        }))
-                .apply(Reshuffle.<String, String>of())
-                .apply(Values.<String>create())
-                .apply(
-                    "ReadFiles",
-                    ParDo.of(
-                            new DoFn<String, TableRow>() {
->>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
                               @ProcessElement
                               public void processElement(ProcessContext c) throws Exception {
                                 TableSchema schema =
                                     BigQueryHelpers.fromJsonString(
                                         c.sideInput(schemaView), TableSchema.class);
                                 String jobUuid = c.sideInput(jobIdTokenView);
-<<<<<<< HEAD
                                 BigQuerySourceBase<T> source = createSource(jobUuid, coder);
                                 List<BoundedSource<T>> sources =
-=======
-                                BigQuerySourceBase source = createSource(jobUuid);
-                                List<BoundedSource<TableRow>> sources =
->>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
                                     source.createSources(
                                         ImmutableList.of(
                                             FileSystems.matchNewResource(
                                                 c.element(), false /* is directory */)),
                                         schema);
                                 checkArgument(sources.size() == 1, "Expected exactly one source.");
-<<<<<<< HEAD
                                 BoundedSource<T> avroSource = sources.get(0);
                                 BoundedSource.BoundedReader<T> reader =
-=======
-                                BoundedSource<TableRow> avroSource = sources.get(0);
-                                BoundedSource.BoundedReader<TableRow> reader =
->>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
                                     avroSource.createReader(c.getPipelineOptions());
                                 for (boolean more = reader.start(); more; more = reader.advance()) {
                                   c.output(reader.getCurrent());
@@ -869,11 +752,7 @@ public class BigQueryIO {
                               }
                             })
                         .withSideInputs(schemaView, jobIdTokenView))
-<<<<<<< HEAD
                         .setCoder(coder);
-=======
-                        .setCoder(TableRowJsonCoder.of());
->>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
       }
       PassThroughThenCleanup.CleanupOperation cleanupOperation =
           new PassThroughThenCleanup.CleanupOperation() {
@@ -902,11 +781,7 @@ public class BigQueryIO {
               }
             }
           };
-<<<<<<< HEAD
       return rows.apply(new PassThroughThenCleanup<T>(cleanupOperation, jobIdTokenView));
-=======
-      return rows.apply(new PassThroughThenCleanup<TableRow>(cleanupOperation, jobIdTokenView));
->>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
     }
 
     @Override

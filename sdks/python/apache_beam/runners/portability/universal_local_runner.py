@@ -31,15 +31,9 @@ from concurrent import futures
 import grpc
 from google.protobuf import text_format
 
-<<<<<<< HEAD
 from apache_beam.portability.api import beam_job_api_pb2
 from apache_beam.portability.api import beam_job_api_pb2_grpc
 from apache_beam.portability.api import endpoints_pb2
-=======
-from apache_beam.portability.api import beam_fn_api_pb2
-from apache_beam.portability.api import beam_job_api_pb2
-from apache_beam.portability.api import beam_job_api_pb2_grpc
->>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
 from apache_beam.runners import runner
 from apache_beam.runners.portability import fn_api_runner
 
@@ -154,11 +148,7 @@ class UniversalLocalRunner(runner.PipelineRunner):
 
 class PipelineResult(runner.PipelineResult):
   def __init__(self, job_service, job_id):
-<<<<<<< HEAD
     super(PipelineResult, self).__init__(beam_job_api_pb2.JobState.UNSPECIFIED)
-=======
-    super(PipelineResult, self).__init__(beam_job_api_pb2.JobState.UNKNOWN)
->>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
     self._job_service = job_service
     self._job_id = job_id
     self._messages = []
@@ -177,19 +167,11 @@ class PipelineResult(runner.PipelineResult):
   def _runner_api_state_to_pipeline_state(runner_api_state):
     return getattr(
         runner.PipelineState,
-<<<<<<< HEAD
         beam_job_api_pb2.JobState.Enum.Name(runner_api_state))
 
   @staticmethod
   def _pipeline_state_to_runner_api_state(pipeline_state):
     return beam_job_api_pb2.JobState.Enum.Value(pipeline_state)
-=======
-        beam_job_api_pb2.JobState.JobStateType.Name(runner_api_state))
-
-  @staticmethod
-  def _pipeline_state_to_runner_api_state(pipeline_state):
-    return beam_job_api_pb2.JobState.JobStateType.Value(pipeline_state)
->>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
 
   def wait_until_finish(self):
     def read_messages():
@@ -270,11 +252,7 @@ class BeamJob(threading.Thread):
       self.state = beam_job_api_pb2.JobState.CANCELLED
 
 
-<<<<<<< HEAD
 class JobServicer(beam_job_api_pb2_grpc.JobServiceServicer):
-=======
-class JobServicer(beam_job_api_pb2.JobServiceServicer):
->>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
   """Servicer for the Beam Job API.
 
   Manages one or more pipelines, possibly concurrently.
@@ -359,11 +337,7 @@ class SubprocessSdkWorker(object):
 
   def run(self):
     control_descriptor = text_format.MessageToString(
-<<<<<<< HEAD
         endpoints_pb2.ApiServiceDescriptor(url=self._control_address))
-=======
-        beam_fn_api_pb2.ApiServiceDescriptor(url=self._control_address))
->>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
     p = subprocess.Popen(
         self._worker_command_line,
         shell=True,

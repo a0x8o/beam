@@ -30,10 +30,7 @@ from concurrent import futures
 import grpc
 
 from apache_beam.portability.api import beam_fn_api_pb2
-<<<<<<< HEAD
 from apache_beam.portability.api import beam_fn_api_pb2_grpc
-=======
->>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
 from apache_beam.runners.worker import bundle_processor
 from apache_beam.runners.worker import data_plane
 

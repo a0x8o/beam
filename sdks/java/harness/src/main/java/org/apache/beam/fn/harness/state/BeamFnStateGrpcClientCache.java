@@ -28,19 +28,11 @@ import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import org.apache.beam.fn.harness.data.BeamFnDataGrpcClient;
-<<<<<<< HEAD
 import org.apache.beam.fn.v1.BeamFnApi.StateRequest;
 import org.apache.beam.fn.v1.BeamFnApi.StateResponse;
 import org.apache.beam.fn.v1.BeamFnStateGrpc;
 import org.apache.beam.portability.v1.Endpoints;
 import org.apache.beam.portability.v1.Endpoints.ApiServiceDescriptor;
-=======
-import org.apache.beam.fn.v1.BeamFnApi;
-import org.apache.beam.fn.v1.BeamFnApi.ApiServiceDescriptor;
-import org.apache.beam.fn.v1.BeamFnApi.StateRequest;
-import org.apache.beam.fn.v1.BeamFnApi.StateResponse;
-import org.apache.beam.fn.v1.BeamFnStateGrpc;
->>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
 import org.apache.beam.sdk.options.PipelineOptions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -65,11 +57,7 @@ public class BeamFnStateGrpcClientCache {
   public BeamFnStateGrpcClientCache(
       PipelineOptions options,
       Supplier<String> idGenerator,
-<<<<<<< HEAD
       Function<Endpoints.ApiServiceDescriptor, ManagedChannel> channelFactory,
-=======
-      Function<BeamFnApi.ApiServiceDescriptor, ManagedChannel> channelFactory,
->>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
       BiFunction<Function<StreamObserver<StateResponse>, StreamObserver<StateRequest>>,
           StreamObserver<StateResponse>,
           StreamObserver<StateRequest>> streamObserverFactory) {

@@ -31,11 +31,7 @@ option java_outer_classname = "ProvisionApi";
 import "google/protobuf/struct.proto";
 
 // A service to provide runtime provisioning information to the SDK harness
-<<<<<<< HEAD
 // worker instances -- such as pipeline options, resource constraints and
-=======
-// worker instances -- such as pipeline options, resource constaints and
->>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
 // other job metadata -- needed by an SDK harness instance to initialize.
 service ProvisionService {
     // Get provision information for the SDK harness worker instance.
@@ -47,15 +43,12 @@ message GetProvisionInfoRequest { }
 
 // A response containing the provision info of a SDK harness worker instance.
 message GetProvisionInfoResponse {
-<<<<<<< HEAD
     ProvisionInfo info = 1;
 }
 
 // Runtime provisioning information for a SDK harness worker instance,
 // such as pipeline options, resource constraints and other job metadata
 message ProvisionInfo {
-=======
->>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
     // (required) The job ID.
     string job_id = 1;
     // (required) The job name.

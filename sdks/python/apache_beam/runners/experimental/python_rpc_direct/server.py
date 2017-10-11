@@ -72,11 +72,7 @@ class JobService(beam_job_api_pb2_grpc.JobServiceServicer):
   @staticmethod
   def _map_state_to_jobState(state):
     if state == PipelineState.UNKNOWN:
-<<<<<<< HEAD
       return beam_job_api_pb2.JobState.UNSPECIFIED
-=======
-      return beam_job_api_pb2.JobState.UNKNOWN
->>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
     elif state == PipelineState.STOPPED:
       return beam_job_api_pb2.JobState.STOPPED
     elif state == PipelineState.RUNNING:

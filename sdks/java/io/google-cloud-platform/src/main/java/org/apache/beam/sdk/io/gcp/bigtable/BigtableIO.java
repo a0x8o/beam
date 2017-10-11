@@ -345,7 +345,6 @@ public class BigtableIO {
 
     @Override
     public void validate(PipelineOptions options) {
-<<<<<<< HEAD
       if (getValidate()) {
         try {
           checkArgument(
@@ -355,15 +354,6 @@ public class BigtableIO {
         } catch (IOException e) {
           LOG.warn("Error checking whether table {} exists; proceeding.", getTableId(), e);
         }
-=======
-      try {
-        checkArgument(
-            getBigtableService(options).tableExists(getTableId()),
-            "Table %s does not exist",
-            getTableId());
-      } catch (IOException e) {
-        LOG.warn("Error checking whether table {} exists; proceeding.", getTableId(), e);
->>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
       }
     }
 
@@ -542,7 +532,6 @@ public class BigtableIO {
 
     @Override
     public void validate(PipelineOptions options) {
-<<<<<<< HEAD
       if (getValidate()) {
         try {
           checkArgument(
@@ -552,15 +541,6 @@ public class BigtableIO {
         } catch (IOException e) {
           LOG.warn("Error checking whether table {} exists; proceeding.", getTableId(), e);
         }
-=======
-      try {
-        checkArgument(
-            getBigtableService(options).tableExists(getTableId()),
-            "Table %s does not exist",
-            getTableId());
-      } catch (IOException e) {
-        LOG.warn("Error checking whether table {} exists; proceeding.", getTableId(), e);
->>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
       }
     }
 

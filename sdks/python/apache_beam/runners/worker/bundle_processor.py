@@ -193,11 +193,7 @@ class BundleProcessor(object):
     # from StateSampler.
     counter_factory = counters.CounterFactory()
     state_sampler = statesampler.StateSampler(
-<<<<<<< HEAD
         'fnapi-step%s' % descriptor.id, counter_factory)
-=======
-        'fnapi-step%s-' % descriptor.id, counter_factory)
->>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
 
     transform_factory = BeamTransformFactory(
         descriptor, self.data_channel_factory, counter_factory, state_sampler,

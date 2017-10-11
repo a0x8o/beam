@@ -60,10 +60,6 @@ import java.util.Set;
 import java.util.zip.GZIPOutputStream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
-<<<<<<< HEAD
-=======
-
->>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
 import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.coders.StringUtf8Coder;
 import org.apache.beam.sdk.io.fs.EmptyMatchTreatment;
@@ -77,7 +73,6 @@ import org.apache.beam.sdk.testing.TestPipeline;
 import org.apache.beam.sdk.testing.UsesSplittableParDo;
 import org.apache.beam.sdk.testing.ValidatesRunner;
 import org.apache.beam.sdk.transforms.Create;
-<<<<<<< HEAD
 import org.apache.beam.sdk.transforms.ToString;
 import org.apache.beam.sdk.transforms.Watch;
 import org.apache.beam.sdk.transforms.display.DisplayData;
@@ -86,11 +81,6 @@ import org.apache.beam.sdk.transforms.windowing.AfterPane;
 import org.apache.beam.sdk.transforms.windowing.FixedWindows;
 import org.apache.beam.sdk.transforms.windowing.Repeatedly;
 import org.apache.beam.sdk.transforms.windowing.Window;
-=======
-import org.apache.beam.sdk.transforms.Watch;
-import org.apache.beam.sdk.transforms.display.DisplayData;
-import org.apache.beam.sdk.transforms.display.DisplayDataEvaluator;
->>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
 import org.apache.beam.sdk.util.CoderUtils;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.commons.compress.compressors.bzip2.BZip2CompressorOutputStream;
@@ -841,7 +831,6 @@ public class TextIOReadTest {
     public void testReadWatchForNewFiles() throws IOException, InterruptedException {
       final Path basePath = tempFolder.getRoot().toPath().resolve("readWatch");
       basePath.toFile().mkdir();
-<<<<<<< HEAD
 
       p.apply(GenerateSequence.from(0).to(10).withRate(1, Duration.millis(100)))
           .apply(
@@ -856,60 +845,16 @@ public class TextIOReadTest {
                   .withNumShards(1)
                   .withWindowedWrites());
 
-=======
->>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
       PCollection<String> lines =
           p.apply(
               TextIO.read()
                   .from(basePath.resolve("*").toString())
-<<<<<<< HEAD
-=======
-                  // Make sure that compression type propagates into readAll()
-                  .withCompression(ZIP)
->>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
                   .watchForNewFiles(
                       Duration.millis(100),
                       Watch.Growth.<String>afterTimeSinceNewOutput(Duration.standardSeconds(3))));
 
-<<<<<<< HEAD
       PAssert.that(lines).containsInAnyOrder("0", "1", "2", "3", "4", "5", "6", "7", "8", "9");
       p.run();
-=======
-      Thread writer =
-        new Thread() {
-          @Override
-          public void run() {
-            try {
-              Thread.sleep(1000);
-              writeToFile(
-                Arrays.asList("a.1", "a.2"),
-                tempFolder,
-                basePath.resolve("fileA").toString(),
-                ZIP);
-              Thread.sleep(300);
-              writeToFile(
-                Arrays.asList("b.1", "b.2"),
-                tempFolder,
-                basePath.resolve("fileB").toString(),
-                ZIP);
-              Thread.sleep(300);
-              writeToFile(
-                Arrays.asList("c.1", "c.2"),
-                tempFolder,
-                basePath.resolve("fileC").toString(),
-                ZIP);
-            } catch (IOException | InterruptedException e) {
-              throw new RuntimeException(e);
-            }
-          }
-        };
-      writer.start();
-
-      PAssert.that(lines).containsInAnyOrder("a.1", "a.2", "b.1", "b.2", "c.1", "c.2");
-      p.run();
-
-      writer.join();
->>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
     }
   }
 }

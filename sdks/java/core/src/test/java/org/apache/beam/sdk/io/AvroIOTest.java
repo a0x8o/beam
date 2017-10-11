@@ -59,7 +59,6 @@ import org.apache.avro.generic.GenericRecord;
 import org.apache.avro.reflect.Nullable;
 import org.apache.avro.reflect.ReflectData;
 import org.apache.avro.reflect.ReflectDatumReader;
-import org.apache.beam.sdk.PipelineResult;
 import org.apache.beam.sdk.coders.AvroCoder;
 import org.apache.beam.sdk.coders.DefaultCoder;
 import org.apache.beam.sdk.coders.StringUtf8Coder;
@@ -81,18 +80,12 @@ import org.apache.beam.sdk.transforms.View;
 import org.apache.beam.sdk.transforms.Watch;
 import org.apache.beam.sdk.transforms.display.DisplayData;
 import org.apache.beam.sdk.transforms.display.DisplayDataEvaluator;
-<<<<<<< HEAD
 import org.apache.beam.sdk.transforms.windowing.AfterPane;
-=======
->>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
 import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
 import org.apache.beam.sdk.transforms.windowing.FixedWindows;
 import org.apache.beam.sdk.transforms.windowing.IntervalWindow;
 import org.apache.beam.sdk.transforms.windowing.PaneInfo;
-<<<<<<< HEAD
 import org.apache.beam.sdk.transforms.windowing.Repeatedly;
-=======
->>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
 import org.apache.beam.sdk.transforms.windowing.Window;
 import org.apache.beam.sdk.util.SerializableUtils;
 import org.apache.beam.sdk.values.PCollection;
@@ -315,7 +308,6 @@ public class AvroIOTest {
     for (int i = 0; i < 7; ++i) {
       (i < 3 ? firstValues : secondValues).add(mapFn.apply((long) i));
     }
-<<<<<<< HEAD
     // Configure windowing of the input so that it fires every time a new element is generated,
     // so that files are written continuously.
     Window<Long> window = Window.<Long>into(FixedWindows.of(Duration.millis(100)))
@@ -326,39 +318,22 @@ public class AvroIOTest {
             "Sequence first",
             GenerateSequence.from(0).to(3).withRate(1, Duration.millis(300)))
         .apply("Window first", window)
-=======
-    writePipeline.apply(
-            "Sequence first",
-            GenerateSequence.from(0).to(3).withRate(1, Duration.millis(300)))
->>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
         .apply("Map first", MapElements.via(mapFn))
         .apply(
             "Write first",
             AvroIO.write(GenericClass.class)
                 .to(tmpFolder.getRoot().getAbsolutePath() + "/first")
-<<<<<<< HEAD
                 .withNumShards(2).withWindowedWrites());
     readPipeline.apply(
             "Sequence second",
             GenerateSequence.from(3).to(7).withRate(1, Duration.millis(300)))
         .apply("Window second", window)
-=======
-                .withNumShards(2));
-    writePipeline.apply(
-            "Sequence second",
-            GenerateSequence.from(3).to(7).withRate(1, Duration.millis(300)))
->>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
         .apply("Map second", MapElements.via(mapFn))
         .apply(
             "Write second",
             AvroIO.write(GenericClass.class)
                 .to(tmpFolder.getRoot().getAbsolutePath() + "/second")
-<<<<<<< HEAD
                 .withNumShards(3).withWindowedWrites());
-=======
-                .withNumShards(3));
-    PipelineResult writeRes = writePipeline.run();
->>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
 
     // Test read(), readAll(), parse(), and parseAllGenericRecords() with watchForNewFiles().
     PAssert.that(
@@ -407,10 +382,6 @@ public class AvroIOTest {
         .containsInAnyOrder(Iterables.concat(firstValues, secondValues));
 
     readPipeline.run();
-<<<<<<< HEAD
-=======
-    writeRes.waitUntilFinish();
->>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
   }
 
   @Test

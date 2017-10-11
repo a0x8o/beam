@@ -119,7 +119,6 @@ class AmazonKinesisMock implements AmazonKinesis {
     }
   }
 
-<<<<<<< HEAD
   static class Provider implements AWSClientsProvider {
 
     private final List<List<TestData>> shardedData;
@@ -191,73 +190,6 @@ class AmazonKinesisMock implements AmazonKinesis {
       throw new RuntimeException("Not implemented");
     }
 
-=======
-  static class Provider implements KinesisClientProvider {
-
-    private final List<List<TestData>> shardedData;
-    private final int numberOfRecordsPerGet;
-
-    public Provider(List<List<TestData>> shardedData, int numberOfRecordsPerGet) {
-      this.shardedData = shardedData;
-      this.numberOfRecordsPerGet = numberOfRecordsPerGet;
-    }
-
-    @Override
-    public AmazonKinesis get() {
-      return new AmazonKinesisMock(transform(shardedData,
-          new Function<List<TestData>, List<Record>>() {
-
-            @Override
-            public List<Record> apply(@Nullable List<TestData> testDatas) {
-              return transform(testDatas, new Function<TestData, Record>() {
-
-                @Override
-                public Record apply(@Nullable TestData testData) {
-                  return testData.convertToRecord();
-                }
-              });
-            }
-          }), numberOfRecordsPerGet);
-    }
-  }
-
-  private final List<List<Record>> shardedData;
-  private final int numberOfRecordsPerGet;
-
-  public AmazonKinesisMock(List<List<Record>> shardedData, int numberOfRecordsPerGet) {
-    this.shardedData = shardedData;
-    this.numberOfRecordsPerGet = numberOfRecordsPerGet;
-  }
-
-  @Override
-  public GetRecordsResult getRecords(GetRecordsRequest getRecordsRequest) {
-    String[] shardIteratorParts = getRecordsRequest.getShardIterator().split(":");
-    int shardId = parseInt(shardIteratorParts[0]);
-    int startingRecord = parseInt(shardIteratorParts[1]);
-    List<Record> shardData = shardedData.get(shardId);
-
-    int toIndex = min(startingRecord + numberOfRecordsPerGet, shardData.size());
-    int fromIndex = min(startingRecord, toIndex);
-    return new GetRecordsResult()
-        .withRecords(shardData.subList(fromIndex, toIndex))
-        .withNextShardIterator(String.format("%s:%s", shardId, toIndex))
-        .withMillisBehindLatest(0L);
-  }
-
-  @Override
-  public GetShardIteratorResult getShardIterator(
-      GetShardIteratorRequest getShardIteratorRequest) {
-    ShardIteratorType shardIteratorType = ShardIteratorType.fromValue(
-        getShardIteratorRequest.getShardIteratorType());
-
-    String shardIterator;
-    if (shardIteratorType == ShardIteratorType.TRIM_HORIZON) {
-      shardIterator = String.format("%s:%s", getShardIteratorRequest.getShardId(), 0);
-    } else {
-      throw new RuntimeException("Not implemented");
-    }
-
->>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
     return new GetShardIteratorResult().withShardIterator(shardIterator);
   }
 

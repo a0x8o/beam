@@ -53,7 +53,6 @@ from apache_beam.typehints.decorators import WithTypeHints
 from apache_beam.typehints.decorators import get_type_hints
 from apache_beam.typehints.trivial_inference import element_type
 from apache_beam.typehints.typehints import is_consistent_with
-from apache_beam.utils import proto_utils
 from apache_beam.utils import urns
 
 __all__ = [
@@ -140,7 +139,6 @@ class DoFnProcessContext(DoFnContext):
       self.windows = windowed_value.windows
 
 
-<<<<<<< HEAD
 class ProcessContinuation(object):
   """An object that may be produced as the last element of a process method
     invocation.
@@ -261,8 +259,6 @@ class RestrictionProvider(object):
     return coders.registry.get_coder(object)
 
 
-=======
->>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
 class DoFn(WithTypeHints, HasDisplayData, urns.RunnerApiFn):
   """A function object used by a transform with custom processing.
 
@@ -855,12 +851,6 @@ class ParDo(PTransformWithSideInputs):
             do_fn=beam_runner_api_pb2.SdkFunctionSpec(
                 spec=beam_runner_api_pb2.FunctionSpec(
                     urn=urns.PICKLED_DO_FN_INFO,
-<<<<<<< HEAD
-=======
-                    any_param=proto_utils.pack_Any(
-                        wrappers_pb2.BytesValue(
-                            value=picked_pardo_fn_data)),
->>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
                     payload=picked_pardo_fn_data))))
 
   @PTransform.register_urn(

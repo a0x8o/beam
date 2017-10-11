@@ -31,10 +31,7 @@ import grpc
 
 from apache_beam.coders import coder_impl
 from apache_beam.portability.api import beam_fn_api_pb2
-<<<<<<< HEAD
 from apache_beam.portability.api import beam_fn_api_pb2_grpc
-=======
->>>>>>> 5046e97cfe1745620685907907377c6a35cd104c
 
 # This module is experimental. No backwards-compatibility guarantees.
 
