@@ -16,16 +16,7 @@
  * limitations under the License.
  */
 
-package org.apache.beam.runners.core.construction;
-
-import java.util.Map;
-import org.apache.beam.runners.core.construction.PTransformTranslation.TransformPayloadTranslator;
-import org.apache.beam.sdk.transforms.PTransform;
-
-/** A registrar of TransformPayloadTranslator. */
-public interface TransformPayloadTranslatorRegistrar {
-  Map<? extends Class<? extends PTransform>, ? extends TransformPayloadTranslator>
-      getTransformPayloadTranslators();
-
-  Map<String, ? extends TransformPayloadTranslator> getTransformRehydrators();
-}
+/**
+ * Transforms for reading and writing from Redis.
+ */
+package org.apache.beam.sdk.io.redis;
