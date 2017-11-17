@@ -1593,6 +1593,8 @@
           <artifactId>maven-javadoc-plugin</artifactId>
           <version>${maven-javadoc-plugin.version}</version>
           <configuration>
+            <!-- exclude this auto-generated packages from javadoc -->
+            <excludePackageNames>org.apache.beam.sdk.extensions.sql.impl.parser.impl</excludePackageNames>
             <additionalparam>${beam.javadoc_opts}</additionalparam>
             <windowtitle>Apache Beam SDK for Java, version ${project.version} API</windowtitle>
             <doctitle>Apache Beam SDK for Java, version ${project.version}</doctitle>
@@ -1695,6 +1697,9 @@
               <!-- Proto/grpc generated wrappers -->
               <exclude>**/apache_beam/portability/api/*_pb2*.py</exclude>
               <exclude>**/go/pkg/beam/model/**/*.pb.go</exclude>
+
+              <!-- VCF test files -->
+              <exclude>**/apache_beam/testing/data/vcf/*</exclude>
             </excludes>
           </configuration>
         </plugin>
