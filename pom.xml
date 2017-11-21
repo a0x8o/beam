@@ -702,6 +702,12 @@
 
       <dependency>
         <groupId>org.apache.beam</groupId>
+        <artifactId>beam-runners-local-java-core</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+
+      <dependency>
+        <groupId>org.apache.beam</groupId>
         <artifactId>beam-runners-direct-java</artifactId>
         <version>${project.version}</version>
       </dependency>
@@ -1657,7 +1663,7 @@
               <exclude>sdks/python/apache_beam/portability/api/*pb2*.*</exclude>
 
               <!-- .gitignore: Ignore IntelliJ files. -->
-              <exclude>**/idea/**/*</exclude>
+              <exclude>**/.idea/**/*</exclude>
               <exclude>**/*.iml</exclude>
               <exclude>**/*.ipr</exclude>
               <exclude>**/*.iws</exclude>
