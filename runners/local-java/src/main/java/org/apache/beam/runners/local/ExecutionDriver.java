@@ -16,20 +16,30 @@
  * limitations under the License.
  */
 
-package org.apache.beam.runners.fnexecution;
+package org.apache.beam.runners.local;
 
-import io.grpc.BindableService;
+/**
+ * Drives the execution of a {@code Pipeline} by scheduling work.
+ */
+public interface ExecutionDriver {
+  DriverState drive();
 
-/** An interface sharing common behavior with services used during execution of user Fns. */
-public interface FnService extends AutoCloseable, BindableService {
   /**
-   * {@inheritDoc}.
-   *
-   * <p>There should be no more calls to any service method by the time a call to {@link #close()}
-   * begins. Specifically, this means that a {@link io.grpc.Server} that this service is bound to
-   * should have completed a call to the {@link io.grpc.Server#shutdown()} method, and all future
-   * incoming calls will be rejected.
+   * The state of the driver. If the state is terminal, the driver can no longer make progress.
    */
-  @Override
-  void close() throws Exception;
+  enum DriverState {
+    CONTINUE(false),
+    FAILED(true),
+    SHUTDOWN(true);
+
+    private final boolean terminal;
+
+    DriverState(boolean terminal) {
+      this.terminal = terminal;
+    }
+
+    public boolean isTermainal() {
+      return terminal;
+    }
+  }
 }

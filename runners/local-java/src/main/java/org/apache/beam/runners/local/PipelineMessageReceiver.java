@@ -16,20 +16,29 @@
  * limitations under the License.
  */
 
-package org.apache.beam.runners.fnexecution;
+package org.apache.beam.runners.local;
 
-import io.grpc.BindableService;
-
-/** An interface sharing common behavior with services used during execution of user Fns. */
-public interface FnService extends AutoCloseable, BindableService {
+/**
+ * Handles failures in the form of exceptions.
+ */
+public interface PipelineMessageReceiver {
   /**
-   * {@inheritDoc}.
-   *
-   * <p>There should be no more calls to any service method by the time a call to {@link #close()}
-   * begins. Specifically, this means that a {@link io.grpc.Server} that this service is bound to
-   * should have completed a call to the {@link io.grpc.Server#shutdown()} method, and all future
-   * incoming calls will be rejected.
+   * Report that a failure has occurred.
    */
-  @Override
-  void close() throws Exception;
+  void failed(Exception e);
+
+  /**
+   * Report that a failure has occurred.
+   */
+  void failed(Error e);
+
+  /**
+   * Report that the pipeline has been cancelled.
+   */
+  void cancelled();
+
+  /**
+   * Report that the pipeline has successfully completed.
+   */
+  void completed();
 }

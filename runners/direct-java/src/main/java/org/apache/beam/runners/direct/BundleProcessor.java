@@ -16,20 +16,18 @@
  * limitations under the License.
  */
 
-package org.apache.beam.runners.fnexecution;
+package org.apache.beam.runners.direct;
 
-import io.grpc.BindableService;
+import org.apache.beam.runners.local.Bundle;
 
-/** An interface sharing common behavior with services used during execution of user Fns. */
-public interface FnService extends AutoCloseable, BindableService {
+/**
+ * An executor that is capable of processing some bundle of input over some executable stage or
+ * step.
+ */
+interface BundleProcessor<BundleT extends Bundle<?>, ExecutableT> {
   /**
-   * {@inheritDoc}.
-   *
-   * <p>There should be no more calls to any service method by the time a call to {@link #close()}
-   * begins. Specifically, this means that a {@link io.grpc.Server} that this service is bound to
-   * should have completed a call to the {@link io.grpc.Server#shutdown()} method, and all future
-   * incoming calls will be rejected.
+   * Execute the provided bundle using the provided Executable, calling back to the {@link
+   * CompletionCallback} when execution completes.
    */
-  @Override
-  void close() throws Exception;
+  void process(BundleT bundle, ExecutableT consumer, CompletionCallback onComplete);
 }
