@@ -14,32 +14,31 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
+"""Tests for apache_beam.runners.worker.sdk_worker_main."""
 
-import argparse
+from __future__ import absolute_import
+from __future__ import division
+from __future__ import print_function
+
 import logging
-import sys
-import time
+import unittest
 
-from apache_beam.runners.portability import universal_local_runner
-
-
-def run(argv):
-  if argv[0] == __file__:
-    argv = argv[1:]
-  parser = argparse.ArgumentParser()
-  parser.add_argument('-p', '--port',
-                      type=int,
-                      help='port on which to serve the job api')
-  parser.add_argument('--worker_command_line',
-                      help='command line for starting up a worker process')
-  options = parser.parse_args(argv)
-  job_servicer = universal_local_runner.JobServicer(options.worker_command_line)
-  port = job_servicer.start_grpc(options.port)
-  while True:
-    logging.info("Listening for jobs at %d", port)
-    time.sleep(300)
+from apache_beam.runners.worker import sdk_worker_main
 
 
-if __name__ == '__main__':
+class SdkWorkerMainTest(unittest.TestCase):
+
+  def test_status_server(self):
+
+    # Wrapping the method to see if it appears in threadump
+    def wrapped_method_for_test():
+      lines = sdk_worker_main.StatusServer.get_thread_dump()
+      threaddump = '\n'.join(lines)
+      self.assertRegexpMatches(threaddump, ".*wrapped_method_for_test.*")
+
+    wrapped_method_for_test()
+
+
+if __name__ == "__main__":
   logging.getLogger().setLevel(logging.INFO)
-  run(sys.argv)
+  unittest.main()
