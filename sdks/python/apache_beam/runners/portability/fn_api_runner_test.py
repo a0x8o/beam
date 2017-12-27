@@ -14,7 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-
+import functools
 import logging
 import time
 import unittest
@@ -22,6 +22,7 @@ import unittest
 import apache_beam as beam
 from apache_beam.runners.portability import fn_api_runner
 from apache_beam.runners.portability import maptask_executor_runner_test
+from apache_beam.runners.worker import sdk_worker
 from apache_beam.testing.util import assert_that
 from apache_beam.testing.util import equal_to
 from apache_beam.transforms import window
@@ -76,6 +77,26 @@ class FnApiRunnerTest(
               (8, range(7, 10)),
               (9, range(7, 10))]),
           label='windowed')
+
+  def test_flattened_side_input(self):
+    with self.create_pipeline() as p:
+      main = p | 'main' >> beam.Create([None])
+      side1 = p | 'side1' >> beam.Create([('a', 1)])
+      side2 = p | 'side2' >> beam.Create([('b', 2)])
+      side = (side1, side2) | beam.Flatten()
+      _ = main | 'Do' >> beam.Map(lambda a, b: (a, b), beam.pvalue.AsDict(side))
+      assert_that(
+          main | beam.Map(lambda a, b: (a, b), beam.pvalue.AsDict(side)),
+          equal_to([(None, {'a': 1, 'b': 2})]))
+
+  def test_gbk_side_input(self):
+    with self.create_pipeline() as p:
+      main = p | 'main' >> beam.Create([None])
+      side = p | 'side' >> beam.Create([('a', 1)]) | beam.GroupByKey()
+      _ = main | 'Do' >> beam.Map(lambda a, b: (a, b), beam.pvalue.AsDict(side))
+      assert_that(
+          main | beam.Map(lambda a, b: (a, b), beam.pvalue.AsDict(side)),
+          equal_to([(None, {'a': [1]})]))
 
   def test_assert_that(self):
     # TODO: figure out a way for fn_api_runner to parse and raise the
@@ -153,6 +174,16 @@ class FnApiRunnerTestWithGrpc(FnApiRunnerTest):
   def create_pipeline(self):
     return beam.Pipeline(
         runner=fn_api_runner.FnApiRunner(use_grpc=True))
+
+
+class FnApiRunnerTestWithGrpcMultiThreaded(FnApiRunnerTest):
+
+  def create_pipeline(self):
+    return beam.Pipeline(
+        runner=fn_api_runner.FnApiRunner(
+            use_grpc=True,
+            sdk_harness_factory=functools.partial(
+                sdk_worker.SdkHarness, worker_count=2)))
 
 
 if __name__ == '__main__':
