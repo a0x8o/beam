@@ -16,24 +16,11 @@
  * limitations under the License.
  */
 
-package org.apache.beam.sdk.util;
-
-import java.io.IOException;
-import java.io.Serializable;
-import java.util.List;
+/**
+ * org.apache.beam.sdk.nexmark.model.sql.adapter.
+ */
 
 /**
- * Bare-bones class for using sharded files.
- *
- * <p>For internal use only; used only in SDK tests. Must be {@link Serializable} so it can be
- * shipped as a {@link org.apache.beam.sdk.testing.SerializableMatcher}.
+ * Model adapter which contains a mapping between specific Java model to a BeamRecord.
  */
-public interface ShardedFile extends Serializable {
-
-  /**
-   * Reads the lines from all shards of this file using the provided {@link Sleeper} and {@link
-   * BackOff}.
-   */
-  List<String> readFilesWithRetries(Sleeper sleeper, BackOff backOff)
-      throws IOException, InterruptedException;
-}
+package org.apache.beam.sdk.nexmark.model.sql.adapter;
