@@ -19,7 +19,6 @@ import java.io.DataOutput;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
-
 import org.apache.hadoop.conf.Configurable;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.io.Text;
@@ -69,7 +68,7 @@ public class ConfigurableEmployeeInputFormat extends InputFormat<Text, Employee>
     if (!isConfSet) {
       throw new IOException("Configuration is not set.");
     }
-    List<InputSplit> splits = new ArrayList<InputSplit>();
+    List<InputSplit> splits = new ArrayList<>();
     splits.add(new ConfigurableEmployeeInputSplit());
     return splits;
   }

@@ -19,7 +19,6 @@ import java.io.DataOutput;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
-
 import org.apache.beam.sdk.values.KV;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.io.Writable;
@@ -50,7 +49,7 @@ public class EmployeeInputFormat extends InputFormat<Text, Employee> {
 
   @Override
   public List<InputSplit> getSplits(JobContext arg0) throws IOException, InterruptedException {
-    List<InputSplit> inputSplitList = new ArrayList<InputSplit>();
+    List<InputSplit> inputSplitList = new ArrayList<>();
     for (int i = 1; i <= TestEmployeeDataSet.NUMBER_OF_SPLITS; i++) {
       InputSplit inputSplitObj =
           new NewObjectsEmployeeInputSplit(
