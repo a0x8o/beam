@@ -41,6 +41,7 @@ import java.util.Set;
 import javax.annotation.Nullable;
 import org.apache.beam.model.pipeline.v1.RunnerApi;
 import org.apache.beam.model.pipeline.v1.RunnerApi.Components;
+import org.apache.beam.model.pipeline.v1.RunnerApi.Environment;
 import org.apache.beam.model.pipeline.v1.RunnerApi.FunctionSpec;
 import org.apache.beam.model.pipeline.v1.RunnerApi.ParDoPayload;
 import org.apache.beam.model.pipeline.v1.RunnerApi.Parameter.Type;
@@ -146,6 +147,11 @@ public class ParDoTranslation {
           @Override
           public SdkFunctionSpec translateDoFn(SdkComponents newComponents) {
             return ParDoTranslation.translateDoFn(parDo.getFn(), parDo.getMainOutputTag());
+          }
+
+          @Override
+          public Environment getEnvironment() {
+            return Environments.JAVA_SDK_HARNESS_ENVIRONMENT;
           }
 
           @Override
@@ -327,7 +333,7 @@ public class ParDoTranslation {
                 .setCombiningSpec(
                     RunnerApi.CombiningStateSpec.newBuilder()
                         .setAccumulatorCoderId(registerCoderOrThrow(components, accumCoder))
-                        .setCombineFn(CombineTranslation.toProto(combineFn)))
+                        .setCombineFn(CombineTranslation.toProto(combineFn, components)))
                 .build();
           }
 
@@ -507,8 +513,7 @@ public class ParDoTranslation {
   private static <T> ParDoPayload getParDoPayload(AppliedPTransform<?, ?, ?> transform)
       throws IOException {
     RunnerApi.PTransform parDoPTransform =
-        PTransformTranslation.toProto(
-            transform, Collections.<AppliedPTransform<?, ?, ?>>emptyList(), SdkComponents.create());
+        PTransformTranslation.toProto(transform, Collections.emptyList(), SdkComponents.create());
     return ParDoPayload.parseFrom(parDoPTransform.getSpec().getPayload());
   }
 
@@ -591,6 +596,11 @@ public class ParDoTranslation {
     }
 
     @Override
+    public Environment getEnvironment() {
+      return rehydratedComponents.getEnvironment(payload.getDoFn().getEnvironmentId());
+    }
+
+    @Override
     public List<RunnerApi.Parameter> translateParameters() {
       return MoreObjects.firstNonNull(
           payload.getParametersList(), Collections.<RunnerApi.Parameter>emptyList());
@@ -625,6 +635,8 @@ public class ParDoTranslation {
   /** These methods drive to-proto translation from Java and from rehydrated ParDos. */
   public interface ParDoLike {
     SdkFunctionSpec translateDoFn(SdkComponents newComponents);
+
+    Environment getEnvironment();
 
     List<RunnerApi.Parameter> translateParameters();
 
