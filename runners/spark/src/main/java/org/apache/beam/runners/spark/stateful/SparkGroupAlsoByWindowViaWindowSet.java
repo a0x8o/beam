@@ -74,6 +74,7 @@ import org.slf4j.LoggerFactory;
 import scala.Option;
 import scala.Tuple2;
 import scala.Tuple3;
+import scala.collection.GenTraversable;
 import scala.collection.Iterator;
 import scala.collection.Seq;
 import scala.runtime.AbstractFunction1;
@@ -272,9 +273,12 @@ public class SparkGroupAlsoByWindowViaWindowSet implements Serializable {
           if (!encodedKeyedElements.isEmpty()) {
             // new input for key.
             try {
+              // cast to GenTraversable to avoid a ambiguous call to head() which can come from
+              // multiple super interfacesof Seq<byte[]>
+              byte[] headBytes = ((GenTraversable<byte[]>) encodedKeyedElements).head();
               final KV<Long, Iterable<WindowedValue<InputT>>> keyedElements =
                   CoderHelpers.fromByteArray(
-                      encodedKeyedElements.head(), KvCoder.of(VarLongCoder.of(), itrWvCoder));
+                      headBytes, KvCoder.of(VarLongCoder.of(), itrWvCoder));
 
               final Long rddTimestamp = keyedElements.getKey();
 

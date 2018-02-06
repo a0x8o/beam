@@ -140,6 +140,7 @@ ext.library = [
     proto_google_cloud_spanner_admin_database_v1: "com.google.api.grpc:proto-google-cloud-spanner-admin-database-v1:$grpc_google_common_protos",
     proto_google_common_protos: "com.google.api.grpc:proto-google-common-protos:$grpc_google_common_protos",
     slf4j_api: "org.slf4j:slf4j-api:1.7.25",
+    slf4j_simple: "org.slf4j:slf4j-simple:1.7.25",
     slf4j_jdk14: "org.slf4j:slf4j-jdk14:1.7.25",
     slf4j_log4j12: "org.slf4j:slf4j-log4j12:1.7.25",
     snappy_java: "org.xerial.snappy:snappy-java:1.1.4",
@@ -173,7 +174,7 @@ buildscript {
     maven { url "http://repo.spring.io/plugins-release" }
   }
   dependencies {
-    classpath "net.ltgt.gradle:gradle-apt-plugin:0.12"                                                  // Enable a Java annotation processor
+    classpath "net.ltgt.gradle:gradle-apt-plugin:0.13"                                                  // Enable a Java annotation processor
     classpath "com.google.protobuf:protobuf-gradle-plugin:0.8.1"                                        // Enable proto code generation
     classpath "io.spring.gradle:propdeps-plugin:0.0.9.RELEASE"                                          // Enable provided and optional configurations
     classpath "gradle.plugin.org.nosphere.apache:creadur-rat-gradle:0.3.1"                              // Enable Apache license enforcement

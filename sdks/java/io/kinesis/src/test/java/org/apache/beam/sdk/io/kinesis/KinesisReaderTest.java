@@ -32,6 +32,7 @@ import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
 import org.joda.time.Duration;
 import org.joda.time.Instant;
 import org.junit.Before;
+import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.Mock;
@@ -130,26 +131,39 @@ public class KinesisReaderTest {
   @Test
   public void watermarkDoesNotChangeWhenToFewSampleRecords()
       throws IOException, TransientKinesisException {
-    final long timestampMs = 1000L;
+    Instant now = Instant.now();
+    Instant recordsStartTimestamp = now.minus(Duration.standardHours(1));
+    final long timestampMs = recordsStartTimestamp.getMillis();
+    Duration safetyPeriod = Duration.standardMinutes(1);
+    Instant kinesisWatermarkMinValue = now.minus(KinesisReader.MAX_KINESIS_STREAM_RETENTION_PERIOD);
 
     prepareRecordsWithArrivalTimestamps(timestampMs, 1, KinesisReader.MIN_WATERMARK_MESSAGES / 2);
 
     for (boolean more = reader.start(); more; more = reader.advance()) {
-      assertThat(reader.getWatermark()).isEqualTo(BoundedWindow.TIMESTAMP_MIN_VALUE);
+      assertThat(reader.getWatermark()).isBetween(
+          kinesisWatermarkMinValue.minus(safetyPeriod),
+          kinesisWatermarkMinValue.plus(safetyPeriod));
     }
   }
 
   @Test
+  @Ignore("https://issues.apache.org/jira/browse/BEAM-3317")
   public void watermarkAdvancesWhenEnoughRecordsReadRecently()
       throws IOException, TransientKinesisException {
-    long timestampMs = 1000L;
+    Instant now = Instant.now();
+    Instant recordsStartTimestamp = now.minus(Duration.standardHours(1));
+    long timestampMs = recordsStartTimestamp.getMillis();
+    Duration safetyPeriod = Duration.standardMinutes(1);
+    Instant kinesisWatermarkMinValue = now.minus(KinesisReader.MAX_KINESIS_STREAM_RETENTION_PERIOD);
 
     prepareRecordsWithArrivalTimestamps(timestampMs, 1, KinesisReader.MIN_WATERMARK_MESSAGES);
 
     int recordsNeededForWatermarkAdvancing = KinesisReader.MIN_WATERMARK_MESSAGES;
     for (boolean more = reader.start(); more; more = reader.advance()) {
       if (--recordsNeededForWatermarkAdvancing > 0) {
-        assertThat(reader.getWatermark()).isEqualTo(BoundedWindow.TIMESTAMP_MIN_VALUE);
+        assertThat(reader.getWatermark()).isBetween(
+            kinesisWatermarkMinValue.minus(safetyPeriod),
+            kinesisWatermarkMinValue.plus(safetyPeriod));
       } else {
         assertThat(reader.getWatermark()).isEqualTo(new Instant(timestampMs));
       }

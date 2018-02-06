@@ -310,20 +310,17 @@ class PipelineTest(unittest.TestCase):
       'apache_beam.runners.direct.direct_runner._get_transform_overrides')
   def test_ptransform_overrides(self, file_system_override_mock):
 
-    def my_par_do_matcher(applied_ptransform):
-      return isinstance(applied_ptransform.transform, DoubleParDo)
-
     class MyParDoOverride(PTransformOverride):
 
-      def get_matcher(self):
-        return my_par_do_matcher
+      def matches(self, applied_ptransform):
+        return isinstance(applied_ptransform.transform, DoubleParDo)
 
       def get_replacement_transform(self, ptransform):
         if isinstance(ptransform, DoubleParDo):
           return TripleParDo()
         raise ValueError('Unsupported type of transform: %r', ptransform)
 
-    def get_overrides():
+    def get_overrides(unused_pipeline_options):
       return [MyParDoOverride()]
 
     file_system_override_mock.side_effect = get_overrides
@@ -510,6 +507,20 @@ class RunnerApiTest(unittest.TestCase):
       p | 'Iter%s' % k >> MyPTransform()  # pylint: disable=expression-not-assigned
     p.to_runner_api()
     self.assertEqual(MyPTransform.pickle_count[0], 20)
+
+  def test_parent_pointer(self):
+    class MyPTransform(beam.PTransform):
+
+      def expand(self, p):
+        self.p = p
+        return p | beam.Create([None])
+
+    p = beam.Pipeline()
+    p | MyPTransform()  # pylint: disable=expression-not-assigned
+    p = Pipeline.from_runner_api(Pipeline.to_runner_api(p), None, None)
+    self.assertIsNotNone(p.transforms_stack[0].parts[0].parent)
+    self.assertEquals(p.transforms_stack[0].parts[0].parent,
+                      p.transforms_stack[0])
 
 
 class DirectRunnerRetryTests(unittest.TestCase):

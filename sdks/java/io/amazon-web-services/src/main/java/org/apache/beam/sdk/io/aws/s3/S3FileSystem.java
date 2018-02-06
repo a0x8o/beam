@@ -22,6 +22,7 @@ import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
 
 import com.amazonaws.AmazonClientException;
+import com.amazonaws.client.builder.AwsClientBuilder.EndpointConfiguration;
 import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.AmazonS3ClientBuilder;
 import com.amazonaws.services.s3.model.AmazonS3Exception;
@@ -46,8 +47,6 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Multimap;
-import com.google.common.util.concurrent.Futures;
-import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.ListeningExecutorService;
 import com.google.common.util.concurrent.MoreExecutors;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
@@ -63,6 +62,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -72,6 +72,7 @@ import org.apache.beam.sdk.io.FileSystem;
 import org.apache.beam.sdk.io.aws.options.S3Options;
 import org.apache.beam.sdk.io.fs.CreateOptions;
 import org.apache.beam.sdk.io.fs.MatchResult;
+import org.apache.beam.sdk.util.MoreFutures;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -106,11 +107,15 @@ class S3FileSystem extends FileSystem<S3ResourceId> {
               + "was not specified. If you don't plan to use S3, then ignore this message.");
     }
 
-    amazonS3 =
-        AmazonS3ClientBuilder.standard()
-            .withCredentials(options.getAwsCredentialsProvider())
-            .withRegion(options.getAwsRegion())
-            .build();
+    AmazonS3ClientBuilder builder = AmazonS3ClientBuilder.standard()
+        .withCredentials(options.getAwsCredentialsProvider());
+    if (Strings.isNullOrEmpty(options.getAwsServiceEndpoint())) {
+      builder = builder.withRegion(options.getAwsRegion());
+    } else {
+      builder = builder.withEndpointConfiguration(new EndpointConfiguration(
+          options.getAwsServiceEndpoint(), options.getAwsRegion()));
+    }
+    amazonS3 = builder.build();
 
     this.storageClass = checkNotNull(options.getS3StorageClass(), "storageClass");
 
@@ -632,11 +637,11 @@ class S3FileSystem extends FileSystem<S3ResourceId> {
   private <T> List<T> callTasks(Collection<Callable<T>> tasks) throws IOException {
 
     try {
-      List<ListenableFuture<T>> futures = new ArrayList<>(tasks.size());
+      List<CompletionStage<T>> futures = new ArrayList<>(tasks.size());
       for (Callable<T> task : tasks) {
-        futures.add(executorService.submit(task));
+        futures.add(MoreFutures.supplyAsync(() -> task.call(), executorService));
       }
-      return Futures.allAsList(futures).get();
+      return MoreFutures.get(MoreFutures.allAsList(futures));
 
     } catch (ExecutionException e) {
       if (e.getCause() != null) {

@@ -61,13 +61,14 @@ from apache_beam.options.pipeline_options import SetupOptions
 from apache_beam.options.pipeline_options import StandardOptions
 from apache_beam.options.pipeline_options import TypeOptions
 from apache_beam.options.pipeline_options_validator import PipelineOptionsValidator
+from apache_beam.portability import common_urns
 from apache_beam.pvalue import PCollection
+from apache_beam.pvalue import PDone
 from apache_beam.runners import PipelineRunner
 from apache_beam.runners import create_runner
 from apache_beam.transforms import ptransform
 from apache_beam.typehints import TypeCheckError
 from apache_beam.typehints import typehints
-from apache_beam.utils import urns
 from apache_beam.utils.annotations import deprecated
 
 __all__ = ['Pipeline', 'PTransformOverride']
@@ -175,14 +176,11 @@ class Pipeline(object):
     for part in applied_transform.parts:
       if part.full_label in self.applied_labels:
         self.applied_labels.remove(part.full_label)
-      if part.parts:
-        for part2 in part.parts:
-          self._remove_labels_recursively(part2)
+        self._remove_labels_recursively(part)
 
   def _replace(self, override):
 
     assert isinstance(override, PTransformOverride)
-    matcher = override.get_matcher()
 
     output_map = {}
     output_replacements = {}
@@ -194,47 +192,81 @@ class Pipeline(object):
       def __init__(self, pipeline):
         self.pipeline = pipeline
 
-      def _replace_if_needed(self, transform_node):
-        if matcher(transform_node):
+      def _replace_if_needed(self, original_transform_node):
+        if override.matches(original_transform_node):
+          assert isinstance(original_transform_node, AppliedPTransform)
           replacement_transform = override.get_replacement_transform(
-              transform_node.transform)
-          inputs = transform_node.inputs
+              original_transform_node.transform)
+          if replacement_transform is original_transform_node.transform:
+            return
+
+          replacement_transform_node = AppliedPTransform(
+              original_transform_node.parent, replacement_transform,
+              original_transform_node.full_label,
+              original_transform_node.inputs)
+
+          # Transform execution could depend on order in which nodes are
+          # considered. Hence we insert the replacement transform node to same
+          # index as the original transform node. Note that this operation
+          # removes the original transform node.
+          if original_transform_node.parent:
+            assert isinstance(original_transform_node.parent, AppliedPTransform)
+            parent_parts = original_transform_node.parent.parts
+            parent_parts[parent_parts.index(original_transform_node)] = (
+                replacement_transform_node)
+          else:
+            # Original transform has to be a root.
+            roots = self.pipeline.transforms_stack[0].parts
+            assert original_transform_node in roots
+            roots[roots.index(original_transform_node)] = (
+                replacement_transform_node)
+
+          inputs = replacement_transform_node.inputs
           # TODO:  Support replacing PTransforms with multiple inputs.
           if len(inputs) > 1:
             raise NotImplementedError(
                 'PTransform overriding is only supported for PTransforms that '
                 'have a single input. Tried to replace input of '
                 'AppliedPTransform %r that has %d inputs',
-                transform_node, len(inputs))
-          transform_node.transform = replacement_transform
-          self.pipeline.transforms_stack.append(transform_node)
+                original_transform_node, len(inputs))
+          elif len(inputs) == 1:
+            input_node = inputs[0]
+          elif len(inputs) == 0:
+            input_node = pvalue.PBegin(self)
+
+          # We have to add the new AppliedTransform to the stack before expand()
+          # and pop it out later to make sure that parts get added correctly.
+          self.pipeline.transforms_stack.append(replacement_transform_node)
 
           # Keeping the same label for the replaced node but recursively
-          # removing labels of child transforms since they will be replaced
-          # during the expand below.
-          self.pipeline._remove_labels_recursively(transform_node)
+          # removing labels of child transforms of original transform since they
+          # will be replaced during the expand below. This is needed in case
+          # the replacement contains children that have labels that conflicts
+          # with labels of the children of the original.
+          self.pipeline._remove_labels_recursively(original_transform_node)
 
-          new_output = replacement_transform.expand(inputs[0])
-          if new_output.producer is None:
-            # When current transform is a primitive, we set the producer here.
-            new_output.producer = transform_node
+          new_output = replacement_transform.expand(input_node)
+          replacement_transform_node.add_output(new_output)
+          if not new_output.producer:
+            new_output.producer = replacement_transform_node
 
           # We only support replacing transforms with a single output with
           # another transform that produces a single output.
           # TODO: Support replacing PTransforms with multiple outputs.
-          if (len(transform_node.outputs) > 1 or
-              not isinstance(transform_node.outputs[None], PCollection) or
-              not isinstance(new_output, PCollection)):
+          if (len(original_transform_node.outputs) > 1 or
+              not isinstance(original_transform_node.outputs[None],
+                             (PCollection, PDone)) or
+              not isinstance(new_output, (PCollection, PDone))):
             raise NotImplementedError(
                 'PTransform overriding is only supported for PTransforms that '
                 'have a single output. Tried to replace output of '
                 'AppliedPTransform %r with %r.'
-                , transform_node, new_output)
+                , original_transform_node, new_output)
 
           # Recording updated outputs. This cannot be done in the same visitor
           # since if we dynamically update output type here, we'll run into
           # errors when visiting child nodes.
-          output_map[transform_node.outputs[None]] = new_output
+          output_map[original_transform_node.outputs[None]] = new_output
 
           self.pipeline.transforms_stack.pop()
 
@@ -290,11 +322,10 @@ class Pipeline(object):
       transform.inputs = input_replacements[transform]
 
   def _check_replacement(self, override):
-    matcher = override.get_matcher()
 
     class ReplacementValidator(PipelineVisitor):
       def visit_transform(self, transform_node):
-        if matcher(transform_node):
+        if override.matches(transform_node):
           raise RuntimeError('Transform node %r was not replaced as expected.',
                              transform_node)
 
@@ -331,6 +362,10 @@ class Pipeline(object):
     if test_runner_api and self._verify_runner_api_compatible():
       return Pipeline.from_runner_api(
           self.to_runner_api(), self.runner, self._options).run(False)
+
+    if self._options.view_as(TypeOptions).runtime_type_check:
+      from apache_beam.typehints import typecheck
+      self.visit(typecheck.TypeCheckVisitor())
 
     if self._options.view_as(SetupOptions).save_main_session:
       # If this option is chosen, verify we can pickle the main session early.
@@ -791,13 +826,16 @@ class AppliedPTransform(object):
       for si, pcoll in zip(result.transform.side_inputs, side_inputs):
         si.pvalue = pcoll
       result.side_inputs = tuple(result.transform.side_inputs)
-    result.parts = [
-        context.transforms.get_by_id(id) for id in proto.subtransforms]
+    result.parts = []
+    for transform_id in proto.subtransforms:
+      part = context.transforms.get_by_id(transform_id)
+      part.parent = result
+      result.parts.append(part)
     result.outputs = {
         None if tag == 'None' else tag: context.pcollections.get_by_id(id)
         for tag, id in proto.outputs.items()}
     # This annotation is expected by some runners.
-    if proto.spec.urn == urns.PARDO_TRANSFORM:
+    if proto.spec.urn == common_urns.PARDO_TRANSFORM:
       result.transform.output_tags = set(proto.outputs.keys()).difference(
           {'None'})
     if not result.parts:
@@ -821,12 +859,14 @@ class PTransformOverride(object):
   __metaclass__ = abc.ABCMeta
 
   @abc.abstractmethod
-  def get_matcher(self):
-    """Gives a matcher that will be used to to perform this override.
+  def matches(self, applied_ptransform):
+    """Determines whether the given AppliedPTransform matches.
+
+    Args:
+      applied_ptransform: AppliedPTransform to be matched.
 
     Returns:
-      a callable that takes an AppliedPTransform as a parameter and returns a
-      boolean as a result.
+      a bool indicating whether the given AppliedPTransform is a match.
     """
     raise NotImplementedError
 
@@ -836,6 +876,7 @@ class PTransformOverride(object):
 
     Args:
       ptransform: PTransform to be replaced.
+
     Returns:
       A PTransform that will be the replacement for the PTransform given as an
       argument.
