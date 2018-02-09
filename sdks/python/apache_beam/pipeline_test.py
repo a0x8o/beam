@@ -17,6 +17,7 @@
 
 """Unit tests for the Pipeline class."""
 
+import copy
 import logging
 import platform
 import unittest
@@ -25,6 +26,7 @@ from collections import defaultdict
 import mock
 
 import apache_beam as beam
+from apache_beam import typehints
 from apache_beam.io import Read
 from apache_beam.metrics import Metrics
 from apache_beam.pipeline import Pipeline
@@ -92,6 +94,13 @@ class TripleParDo(beam.PTransform):
     # Keeping labels the same intentionally to make sure that there is no label
     # conflict due to replacement.
     return input | 'Inner' >> beam.Map(lambda a: a * 3)
+
+
+class ToStringParDo(beam.PTransform):
+  def expand(self, input):
+    # We use copy.copy() here to make sure the typehint mechanism doesn't
+    # automatically infer that the output type is str.
+    return input | 'Inner' >> beam.Map(lambda a: copy.copy(str(a)))
 
 
 class PipelineTest(unittest.TestCase):
@@ -330,6 +339,37 @@ class PipelineTest(unittest.TestCase):
       pcoll = p | beam.Create([1, 2, 3]) | 'Multiply' >> DoubleParDo()
       assert_that(pcoll, equal_to([3, 6, 9]))
 
+  def test_ptransform_override_type_hints(self):
+
+    class NoTypeHintOverride(PTransformOverride):
+
+      def matches(self, applied_ptransform):
+        return isinstance(applied_ptransform.transform, DoubleParDo)
+
+      def get_replacement_transform(self, ptransform):
+        return ToStringParDo()
+
+    class WithTypeHintOverride(PTransformOverride):
+
+      def matches(self, applied_ptransform):
+        return isinstance(applied_ptransform.transform, DoubleParDo)
+
+      def get_replacement_transform(self, ptransform):
+        return (ToStringParDo()
+                .with_input_types(int)
+                .with_output_types(str))
+
+    for override, expected_type in [(NoTypeHintOverride(), typehints.Any),
+                                    (WithTypeHintOverride(), str)]:
+      p = TestPipeline()
+      pcoll = (p
+               | beam.Create([1, 2, 3])
+               | 'Operate' >> DoubleParDo()
+               | 'NoOp' >> beam.Map(lambda x: x))
+
+      p.replace_all([override])
+      self.assertEquals(pcoll.producer.inputs[0].element_type, expected_type)
+
 
 class DoFnTest(unittest.TestCase):
 
@@ -404,6 +444,12 @@ class DoFnTest(unittest.TestCase):
     pcoll = pipeline | 'Create' >> Create([1, 2]) | 'Do' >> ParDo(TestDoFn())
     assert_that(pcoll, equal_to([MIN_TIMESTAMP, MIN_TIMESTAMP]))
     pipeline.run()
+
+  def test_timestamp_param_map(self):
+    with TestPipeline() as p:
+      assert_that(
+          p | Create([1, 2]) | beam.Map(lambda _, t=DoFn.TimestampParam: t),
+          equal_to([MIN_TIMESTAMP, MIN_TIMESTAMP]))
 
 
 class Bacon(PipelineOptions):

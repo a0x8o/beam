@@ -19,23 +19,27 @@ package org.apache.beam.sdk.extensions.sql;
 
 import static org.hamcrest.Matchers.isA;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 import java.math.BigDecimal;
 import java.util.Arrays;
+import java.util.Iterator;
 import java.util.List;
 import org.apache.beam.sdk.testing.PAssert;
 import org.apache.beam.sdk.transforms.Create;
+import org.apache.beam.sdk.transforms.SerializableFunction;
 import org.apache.beam.sdk.transforms.windowing.AfterPane;
 import org.apache.beam.sdk.transforms.windowing.DefaultTrigger;
 import org.apache.beam.sdk.transforms.windowing.FixedWindows;
 import org.apache.beam.sdk.transforms.windowing.GlobalWindows;
 import org.apache.beam.sdk.transforms.windowing.Repeatedly;
 import org.apache.beam.sdk.transforms.windowing.Window;
-import org.apache.beam.sdk.values.BeamRecord;
-import org.apache.beam.sdk.values.BeamRecordType;
 import org.apache.beam.sdk.values.PBegin;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.PCollectionTuple;
+import org.apache.beam.sdk.values.Row;
+import org.apache.beam.sdk.values.RowType;
 import org.apache.beam.sdk.values.TupleTag;
 import org.joda.time.DateTime;
 import org.joda.time.Duration;
@@ -47,19 +51,19 @@ import org.junit.Test;
  * with BOUNDED PCollection.
  */
 public class BeamSqlDslAggregationTest extends BeamSqlDslBase {
-  public PCollection<BeamRecord> boundedInput3;
+  public PCollection<Row> boundedInput3;
 
   @Before
   public void setUp() {
-    BeamRecordType rowTypeInTableB =
-        BeamRecordSqlType.builder()
+    RowType rowTypeInTableB =
+        RowSqlType.builder()
             .withIntegerField("f_int")
             .withDoubleField("f_double")
             .withIntegerField("f_int2")
             .withDecimalField("f_decimal")
             .build();
 
-    List<BeamRecord> recordsInTableB =
+    List<Row> rowsInTableB =
         TestUtils.RowsBuilder.of(rowTypeInTableB)
             .addRows(
                 1, 1.0, 0, new BigDecimal(1),
@@ -71,8 +75,9 @@ public class BeamSqlDslAggregationTest extends BeamSqlDslBase {
                 17, 17.0, 0, new BigDecimal(17)
             ).getRows();
 
-    boundedInput3 = PBegin.in(pipeline).apply("boundedInput3",
-        Create.of(recordsInTableB).withCoder(rowTypeInTableB.getRecordCoder()));
+    boundedInput3 = PBegin.in(pipeline).apply(
+        "boundedInput3",
+        Create.of(rowsInTableB).withCoder(rowTypeInTableB.getRowCoder()));
   }
 
   /**
@@ -91,20 +96,20 @@ public class BeamSqlDslAggregationTest extends BeamSqlDslBase {
     runAggregationWithoutWindow(unboundedInput1);
   }
 
-  private void runAggregationWithoutWindow(PCollection<BeamRecord> input) throws Exception {
+  private void runAggregationWithoutWindow(PCollection<Row> input) throws Exception {
     String sql = "SELECT f_int2, COUNT(*) AS `getFieldCount` FROM PCOLLECTION GROUP BY f_int2";
 
-    PCollection<BeamRecord> result =
+    PCollection<Row> result =
         input.apply("testAggregationWithoutWindow", BeamSql.query(sql));
 
-    BeamRecordType resultType = BeamRecordSqlType.builder()
+    RowType resultType = RowSqlType.builder()
         .withIntegerField("f_int2")
         .withBigIntField("size")
         .build();
 
-    BeamRecord record = new BeamRecord(resultType, 0, 4L);
+    Row row = Row.withRowType(resultType).addValues(0, 4L).build();
 
-    PAssert.that(result).containsInAnyOrder(record);
+    PAssert.that(result).containsInAnyOrder(row);
 
     pipeline.run().waitUntilFinish();
   }
@@ -113,7 +118,7 @@ public class BeamSqlDslAggregationTest extends BeamSqlDslBase {
    * GROUP-BY with multiple aggregation functions with bounded PCollection.
    */
   @Test
-  public void testAggregationFunctionsWithBounded() throws Exception{
+  public void testAggregationFunctionsWithBounded() throws Exception {
     runAggregationFunctions(boundedInput1);
   }
 
@@ -121,11 +126,11 @@ public class BeamSqlDslAggregationTest extends BeamSqlDslBase {
    * GROUP-BY with multiple aggregation functions with unbounded PCollection.
    */
   @Test
-  public void testAggregationFunctionsWithUnbounded() throws Exception{
+  public void testAggregationFunctionsWithUnbounded() throws Exception {
     runAggregationFunctions(unboundedInput1);
   }
 
-  private void runAggregationFunctions(PCollection<BeamRecord> input) throws Exception {
+  private void runAggregationFunctions(PCollection<Row> input) throws Exception {
     String sql = "select f_int2, count(*) as getFieldCount, "
         + "sum(f_long) as sum1, avg(f_long) as avg1, max(f_long) as max1, min(f_long) as min1, "
         + "sum(f_short) as sum2, avg(f_short) as avg2, max(f_short) as max2, min(f_short) as min2, "
@@ -138,12 +143,12 @@ public class BeamSqlDslAggregationTest extends BeamSqlDslBase {
         + "var_pop(f_int) as varpop2, var_samp(f_int) as varsamp2 "
         + "FROM TABLE_A group by f_int2";
 
-    PCollection<BeamRecord> result =
+    PCollection<Row> result =
         PCollectionTuple.of(new TupleTag<>("TABLE_A"), input)
             .apply("testAggregationFunctions", BeamSql.queryMulti(sql));
 
-    BeamRecordType resultType =
-        BeamRecordSqlType
+    RowType resultType =
+        RowSqlType
             .builder()
             .withIntegerField("f_int2")
             .withBigIntField("size")
@@ -175,17 +180,59 @@ public class BeamSqlDslAggregationTest extends BeamSqlDslBase {
             .withIntegerField("varsamp2")
             .build();
 
-    BeamRecord record = new BeamRecord(resultType
-        , 0, 4L
-        , 10000L, 2500L, 4000L, 1000L
-        , (short) 10, (short) 2, (short) 4, (short) 1
-        , (byte) 10, (byte) 2, (byte) 4, (byte) 1
-        , 10.0F, 2.5F, 4.0F, 1.0F
-        , 10.0, 2.5, 4.0, 1.0
-        , FORMAT.parse("2017-01-01 02:04:03"), FORMAT.parse("2017-01-01 01:01:03")
-        , 1.25, 1.666666667, 1, 1);
+    Row row =
+        Row
+            .withRowType(resultType)
+            .addValues(
+                0, 4L,
+                10000L, 2500L, 4000L, 1000L,
+                (short) 10, (short) 2, (short) 4, (short) 1,
+                (byte) 10, (byte) 2, (byte) 4, (byte) 1,
+                10.0F, 2.5F, 4.0F, 1.0F,
+                10.0, 2.5, 4.0, 1.0,
+                FORMAT.parse("2017-01-01 02:04:03"),
+                FORMAT.parse("2017-01-01 01:01:03"),
+                1.25, 1.666666667, 1, 1)
+            .build();
 
-    PAssert.that(result).containsInAnyOrder(record);
+    PAssert.that(result).containsInAnyOrder(row);
+
+    pipeline.run().waitUntilFinish();
+  }
+
+  private static class CheckerBigDecimalDivide
+      implements SerializableFunction<Iterable<Row>, Void> {
+
+    @Override
+    public Void apply(Iterable<Row> input) {
+      Iterator<Row> iter = input.iterator();
+      assertTrue(iter.hasNext());
+      Row row = iter.next();
+      assertEquals(row.getDouble("avg1"), 8.142857143, 1e-7);
+      assertTrue(row.getInteger("avg2") == 8);
+      assertEquals(row.getDouble("varpop1"), 26.40816326, 1e-7);
+      assertTrue(row.getInteger("varpop2") == 26);
+      assertEquals(row.getDouble("varsamp1"), 30.80952381, 1e-7);
+      assertTrue(row.getInteger("varsamp2") == 30);
+      assertFalse(iter.hasNext());
+      return null;
+    }
+  }
+
+  /**
+   * GROUP-BY with aggregation functions with BigDeciaml Calculation (Avg, Var_Pop, etc).
+   */
+  @Test
+  public void testAggregationFunctionsWithBoundedOnBigDecimalDivide() throws Exception {
+    String sql = "SELECT AVG(f_double) as avg1, AVG(f_int) as avg2, "
+        + "VAR_POP(f_double) as varpop1, VAR_POP(f_int) as varpop2, "
+        + "VAR_SAMP(f_double) as varsamp1, VAR_SAMP(f_int) as varsamp2 "
+        + "FROM PCOLLECTION GROUP BY f_int2";
+
+    PCollection<Row> result =
+        boundedInput3.apply("testAggregationWithDecimalValue", BeamSql.query(sql));
+
+    PAssert.that(result).satisfies(new CheckerBigDecimalDivide());
 
     pipeline.run().waitUntilFinish();
   }
@@ -206,25 +253,30 @@ public class BeamSqlDslAggregationTest extends BeamSqlDslBase {
     runDistinct(unboundedInput1);
   }
 
-  private void runDistinct(PCollection<BeamRecord> input) throws Exception {
+  private void runDistinct(PCollection<Row> input) throws Exception {
     String sql = "SELECT distinct f_int, f_long FROM PCOLLECTION ";
 
-    PCollection<BeamRecord> result =
+    PCollection<Row> result =
         input.apply("testDistinct", BeamSql.query(sql));
 
-    BeamRecordType resultType =
-        BeamRecordSqlType
+    RowType resultType =
+        RowSqlType
             .builder()
             .withIntegerField("f_int")
             .withBigIntField("f_long")
             .build();
 
-    BeamRecord record1 = new BeamRecord(resultType, 1, 1000L);
-    BeamRecord record2 = new BeamRecord(resultType, 2, 2000L);
-    BeamRecord record3 = new BeamRecord(resultType, 3, 3000L);
-    BeamRecord record4 = new BeamRecord(resultType, 4, 4000L);
+    List<Row> expectedRows =
+        TestUtils.RowsBuilder
+            .of(resultType)
+            .addRows(
+                1, 1000L,
+                2, 2000L,
+                3, 3000L,
+                4, 4000L)
+            .getRows();
 
-    PAssert.that(result).containsInAnyOrder(record1, record2, record3, record4);
+    PAssert.that(result).containsInAnyOrder(expectedRows);
 
     pipeline.run().waitUntilFinish();
   }
@@ -245,27 +297,32 @@ public class BeamSqlDslAggregationTest extends BeamSqlDslBase {
     runTumbleWindow(unboundedInput1);
   }
 
-  private void runTumbleWindow(PCollection<BeamRecord> input) throws Exception {
+  private void runTumbleWindow(PCollection<Row> input) throws Exception {
     String sql = "SELECT f_int2, COUNT(*) AS `getFieldCount`,"
         + " TUMBLE_START(f_timestamp, INTERVAL '1' HOUR) AS `window_start`"
         + " FROM TABLE_A"
         + " GROUP BY f_int2, TUMBLE(f_timestamp, INTERVAL '1' HOUR)";
-    PCollection<BeamRecord> result =
+    PCollection<Row> result =
         PCollectionTuple.of(new TupleTag<>("TABLE_A"), input)
             .apply("testTumbleWindow", BeamSql.queryMulti(sql));
 
-    BeamRecordType resultType =
-        BeamRecordSqlType
+    RowType resultType =
+        RowSqlType
             .builder()
             .withIntegerField("f_int2")
             .withBigIntField("size")
             .withTimestampField("window_start")
             .build();
 
-    BeamRecord record1 = new BeamRecord(resultType, 0, 3L, FORMAT.parse("2017-01-01 01:00:00"));
-    BeamRecord record2 = new BeamRecord(resultType, 0, 1L, FORMAT.parse("2017-01-01 02:00:00"));
+    List<Row> expectedRows =
+        TestUtils.RowsBuilder
+            .of(resultType)
+            .addRows(
+                0, 3L, FORMAT.parse("2017-01-01 01:00:00"),
+                0, 1L, FORMAT.parse("2017-01-01 02:00:00"))
+            .getRows();
 
-    PAssert.that(result).containsInAnyOrder(record1, record2);
+    PAssert.that(result).containsInAnyOrder(expectedRows);
 
     pipeline.run().waitUntilFinish();
   }
@@ -286,28 +343,33 @@ public class BeamSqlDslAggregationTest extends BeamSqlDslBase {
     runHopWindow(unboundedInput1);
   }
 
-  private void runHopWindow(PCollection<BeamRecord> input) throws Exception {
+  private void runHopWindow(PCollection<Row> input) throws Exception {
     String sql = "SELECT f_int2, COUNT(*) AS `getFieldCount`,"
         + " HOP_START(f_timestamp, INTERVAL '30' MINUTE, INTERVAL '1' HOUR) AS `window_start`"
         + " FROM PCOLLECTION"
         + " GROUP BY f_int2, HOP(f_timestamp, INTERVAL '30' MINUTE, INTERVAL '1' HOUR)";
-    PCollection<BeamRecord> result =
+    PCollection<Row> result =
         input.apply("testHopWindow", BeamSql.query(sql));
 
-    BeamRecordType resultType =
-        BeamRecordSqlType
+    RowType resultType =
+        RowSqlType
             .builder()
             .withIntegerField("f_int2")
             .withBigIntField("size")
             .withTimestampField("window_start")
             .build();
 
-    BeamRecord record1 = new BeamRecord(resultType, 0, 3L, FORMAT.parse("2017-01-01 00:30:00"));
-    BeamRecord record2 = new BeamRecord(resultType, 0, 3L, FORMAT.parse("2017-01-01 01:00:00"));
-    BeamRecord record3 = new BeamRecord(resultType, 0, 1L, FORMAT.parse("2017-01-01 01:30:00"));
-    BeamRecord record4 = new BeamRecord(resultType, 0, 1L, FORMAT.parse("2017-01-01 02:00:00"));
+    List<Row> expectedRows =
+        TestUtils.RowsBuilder
+            .of(resultType)
+            .addRows(
+                0, 3L, FORMAT.parse("2017-01-01 00:30:00"),
+                0, 3L, FORMAT.parse("2017-01-01 01:00:00"),
+                0, 1L, FORMAT.parse("2017-01-01 01:30:00"),
+                0, 1L, FORMAT.parse("2017-01-01 02:00:00"))
+            .getRows();
 
-    PAssert.that(result).containsInAnyOrder(record1, record2, record3, record4);
+    PAssert.that(result).containsInAnyOrder(expectedRows);
 
     pipeline.run().waitUntilFinish();
   }
@@ -328,27 +390,32 @@ public class BeamSqlDslAggregationTest extends BeamSqlDslBase {
     runSessionWindow(unboundedInput1);
   }
 
-  private void runSessionWindow(PCollection<BeamRecord> input) throws Exception {
+  private void runSessionWindow(PCollection<Row> input) throws Exception {
     String sql = "SELECT f_int2, COUNT(*) AS `getFieldCount`,"
         + " SESSION_START(f_timestamp, INTERVAL '5' MINUTE) AS `window_start`"
         + " FROM TABLE_A"
         + " GROUP BY f_int2, SESSION(f_timestamp, INTERVAL '5' MINUTE)";
-    PCollection<BeamRecord> result =
+    PCollection<Row> result =
         PCollectionTuple.of(new TupleTag<>("TABLE_A"), input)
             .apply("testSessionWindow", BeamSql.queryMulti(sql));
 
-    BeamRecordType resultType =
-        BeamRecordSqlType
+    RowType resultType =
+        RowSqlType
             .builder()
             .withIntegerField("f_int2")
             .withBigIntField("size")
             .withTimestampField("window_start")
             .build();
 
-    BeamRecord record1 = new BeamRecord(resultType, 0, 3L, FORMAT.parse("2017-01-01 01:01:03"));
-    BeamRecord record2 = new BeamRecord(resultType, 0, 1L, FORMAT.parse("2017-01-01 02:04:03"));
+    List<Row> expectedRows =
+        TestUtils.RowsBuilder
+            .of(resultType)
+            .addRows(
+                0, 3L, FORMAT.parse("2017-01-01 01:01:03"),
+                0, 1L, FORMAT.parse("2017-01-01 02:04:03"))
+            .getRows();
 
-    PAssert.that(result).containsInAnyOrder(record1, record2);
+    PAssert.that(result).containsInAnyOrder(expectedRows);
 
     pipeline.run().waitUntilFinish();
   }
@@ -362,7 +429,7 @@ public class BeamSqlDslAggregationTest extends BeamSqlDslBase {
 
     String sql = "SELECT f_int2, COUNT(*) AS `getFieldCount` FROM TABLE_A "
         + "GROUP BY f_int2, TUMBLE(f_long, INTERVAL '1' HOUR)";
-    PCollection<BeamRecord> result =
+    PCollection<Row> result =
         PCollectionTuple.of(new TupleTag<>("TABLE_A"), boundedInput1)
             .apply("testWindowOnNonTimestampField", BeamSql.queryMulti(sql));
 
@@ -378,7 +445,7 @@ public class BeamSqlDslAggregationTest extends BeamSqlDslBase {
     String sql = "SELECT f_int2, COUNT(DISTINCT *) AS `size` "
         + "FROM PCOLLECTION GROUP BY f_int2";
 
-    PCollection<BeamRecord> result =
+    PCollection<Row> result =
         boundedInput1.apply("testUnsupportedDistinct", BeamSql.query(sql));
 
     pipeline.run().waitUntilFinish();
@@ -391,9 +458,9 @@ public class BeamSqlDslAggregationTest extends BeamSqlDslBase {
 
     pipeline.enableAbandonedNodeEnforcement(false);
 
-    PCollection<BeamRecord> input = unboundedInput1
+    PCollection<Row> input = unboundedInput1
         .apply("unboundedInput1.globalWindow",
-               Window.<BeamRecord> into(new GlobalWindows()).triggering(DefaultTrigger.of()));
+               Window.<Row> into(new GlobalWindows()).triggering(DefaultTrigger.of()));
 
     String sql = "SELECT f_int2, COUNT(*) AS `size` FROM PCOLLECTION GROUP BY f_int2";
 
@@ -406,8 +473,8 @@ public class BeamSqlDslAggregationTest extends BeamSqlDslBase {
 
     DateTime startTime = new DateTime(2017, 1, 1, 0, 0, 0, 0);
 
-    BeamRecordType type =
-        BeamRecordSqlType
+    RowType type =
+        RowSqlType
             .builder()
             .withIntegerField("f_intGroupingKey")
             .withIntegerField("f_intValue")
@@ -423,10 +490,10 @@ public class BeamSqlDslAggregationTest extends BeamSqlDslBase {
         0, 6, startTime.plusSeconds(6).toDate()
     };
 
-    PCollection<BeamRecord> input =
+    PCollection<Row> input =
         createTestPCollection(type, rows, "f_timestamp")
             .apply(Window
-                       .<BeamRecord>into(new GlobalWindows())
+                       .<Row>into(new GlobalWindows())
                        .triggering(Repeatedly.forever(AfterPane.elementCountAtLeast(2)))
                        .discardingFiredPanes()
                        .withOnTimeBehavior(Window.OnTimeBehavior.FIRE_IF_NON_EMPTY));
@@ -434,7 +501,7 @@ public class BeamSqlDslAggregationTest extends BeamSqlDslBase {
     String sql =
         "SELECT SUM(f_intValue) AS `sum` FROM PCOLLECTION GROUP BY f_intGroupingKey";
 
-    PCollection<BeamRecord> result = input.apply("sql", BeamSql.query(sql));
+    PCollection<Row> result = input.apply("sql", BeamSql.query(sql));
 
     assertEquals(new GlobalWindows(), result.getWindowingStrategy().getWindowFn());
     PAssert
@@ -449,8 +516,8 @@ public class BeamSqlDslAggregationTest extends BeamSqlDslBase {
   public void testSupportsNonGlobalWindowWithCustomTrigger() {
     DateTime startTime = new DateTime(2017, 1, 1, 0, 0, 0, 0);
 
-    BeamRecordType type =
-        BeamRecordSqlType
+    RowType type =
+        RowSqlType
             .builder()
             .withIntegerField("f_intGroupingKey")
             .withIntegerField("f_intValue")
@@ -466,10 +533,10 @@ public class BeamSqlDslAggregationTest extends BeamSqlDslBase {
         0, 6, startTime.plusSeconds(6).toDate()
     };
 
-    PCollection<BeamRecord> input =
+    PCollection<Row> input =
         createTestPCollection(type, rows, "f_timestamp")
             .apply(Window
-                       .<BeamRecord>into(
+                       .<Row>into(
                            FixedWindows.of(Duration.standardSeconds(3)))
                        .triggering(Repeatedly.forever(AfterPane.elementCountAtLeast(2)))
                        .discardingFiredPanes()
@@ -479,7 +546,7 @@ public class BeamSqlDslAggregationTest extends BeamSqlDslBase {
     String sql =
         "SELECT SUM(f_intValue) AS `sum` FROM PCOLLECTION GROUP BY f_intGroupingKey";
 
-    PCollection<BeamRecord> result = input.apply("sql", BeamSql.query(sql));
+    PCollection<Row> result = input.apply("sql", BeamSql.query(sql));
 
     assertEquals(
         FixedWindows.of(Duration.standardSeconds(3)),
@@ -493,16 +560,16 @@ public class BeamSqlDslAggregationTest extends BeamSqlDslBase {
     pipeline.run();
   }
 
-  private List<BeamRecord> rowsWithSingleIntField(String fieldName, List<Integer> values) {
+  private List<Row> rowsWithSingleIntField(String fieldName, List<Integer> values) {
     return
         TestUtils
-            .rowsBuilderOf(BeamRecordSqlType.builder().withIntegerField(fieldName).build())
+            .rowsBuilderOf(RowSqlType.builder().withIntegerField(fieldName).build())
             .addRows(values)
             .getRows();
   }
 
-  private PCollection<BeamRecord> createTestPCollection(
-      BeamRecordType type,
+  private PCollection<Row> createTestPCollection(
+      RowType type,
       Object[] rows,
       String timestampField) {
     return
