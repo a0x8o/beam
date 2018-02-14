@@ -175,6 +175,8 @@
     <maven-shade-plugin.version>3.1.0</maven-shade-plugin.version>
     <reproducible-build-maven-plugin.version>0.4</reproducible-build-maven-plugin.version>
     <maven-assembly-plugin.version>3.1.0</maven-assembly-plugin.version>
+    <plexus-compiler-java-errorprone.version>2.8.2</plexus-compiler-java-errorprone.version>
+    <error_prone_core.version>2.2.0</error_prone_core.version>
 
     <compiler.error.flag>-Werror</compiler.error.flag>
     <compiler.default.pkginfo.flag>-Xpkginfo:always</compiler.default.pkginfo.flag>
@@ -354,6 +356,38 @@
     </profile>
 
     <profile>
+      <id>errorprone</id>
+      <build>
+        <plugins>
+          <!-- Turn on Error Prone -->
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-compiler-plugin</artifactId>
+            <configuration>
+              <compilerId>javac-with-errorprone</compilerId>
+              <forceJavacCompilerUse>true</forceJavacCompilerUse>
+              <showWarnings>true</showWarnings>
+            </configuration>
+            <dependencies>
+              <dependency>
+                <groupId>org.codehaus.plexus</groupId>
+                <artifactId>plexus-compiler-javac-errorprone</artifactId>
+		<version>${plexus-compiler-java-errorprone.version}</version>
+              </dependency>
+              <!-- override plexus-compiler-javac-errorprone's dependency on
+                   Error Prone with the latest version -->
+              <dependency>
+                <groupId>com.google.errorprone</groupId>
+                <artifactId>error_prone_core</artifactId>
+		<version>${error_prone_core.version}</version>
+              </dependency>
+            </dependencies>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+
+    <profile>
       <id>build-containers</id>
       <build>
         <!-- TODO(BEAM-2878): enable container build for releases -->
@@ -416,18 +450,6 @@
 
       <dependency>
         <groupId>org.apache.beam</groupId>
-        <artifactId>beam-sdks-java-extensions-join-library</artifactId>
-        <version>${project.version}</version>
-      </dependency>
-
-      <dependency>
-        <groupId>org.apache.beam</groupId>
-        <artifactId>beam-sdks-java-extensions-protobuf</artifactId>
-        <version>${project.version}</version>
-      </dependency>
-
-      <dependency>
-        <groupId>org.apache.beam</groupId>
         <artifactId>beam-sdks-java-extensions-google-cloud-platform-core</artifactId>
         <version>${project.version}</version>
       </dependency>
@@ -436,6 +458,24 @@
         <groupId>org.apache.beam</groupId>
         <artifactId>beam-sdks-java-extensions-google-cloud-platform-core</artifactId>
         <classifier>tests</classifier>
+        <version>${project.version}</version>
+      </dependency>
+
+      <dependency>
+        <groupId>org.apache.beam</groupId>
+        <artifactId>beam-sdks-java-extensions-join-library</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+
+      <dependency>
+        <groupId>org.apache.beam</groupId>
+        <artifactId>beam-sdks-java-extensions-json-jackson</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+
+      <dependency>
+        <groupId>org.apache.beam</groupId>
+        <artifactId>beam-sdks-java-extensions-protobuf</artifactId>
         <version>${project.version}</version>
       </dependency>
 
@@ -515,14 +555,6 @@
 
       <dependency>
         <groupId>org.apache.beam</groupId>
-        <artifactId>beam-sdks-java-io-elasticsearch-tests-common</artifactId>
-        <version>${project.version}</version>
-        <scope>test</scope>
-        <classifier>tests</classifier>
-      </dependency>
-
-      <dependency>
-        <groupId>org.apache.beam</groupId>
         <artifactId>beam-sdks-java-io-elasticsearch-tests-2</artifactId>
         <version>${project.version}</version>
         <scope>test</scope>
@@ -533,6 +565,14 @@
         <artifactId>beam-sdks-java-io-elasticsearch-tests-5</artifactId>
         <version>${project.version}</version>
         <scope>test</scope>
+      </dependency>
+
+      <dependency>
+        <groupId>org.apache.beam</groupId>
+        <artifactId>beam-sdks-java-io-elasticsearch-tests-common</artifactId>
+        <version>${project.version}</version>
+        <scope>test</scope>
+        <classifier>tests</classifier>
       </dependency>
 
       <dependency>
@@ -557,6 +597,12 @@
       <dependency>
         <groupId>org.apache.beam</groupId>
         <artifactId>beam-sdks-java-io-hadoop-file-system</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+
+      <dependency>
+        <groupId>org.apache.beam</groupId>
+        <artifactId>beam-sdks-java-io-hadoop-input-format</artifactId>
         <version>${project.version}</version>
       </dependency>
 
@@ -610,13 +656,25 @@
 
       <dependency>
         <groupId>org.apache.beam</groupId>
+        <artifactId>beam-sdks-java-io-redis</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+
+      <dependency>
+        <groupId>org.apache.beam</groupId>
         <artifactId>beam-sdks-java-io-solr</artifactId>
         <version>${project.version}</version>
       </dependency>
 
       <dependency>
         <groupId>org.apache.beam</groupId>
-        <artifactId>beam-sdks-java-io-hadoop-input-format</artifactId>
+        <artifactId>beam-sdks-java-io-tika</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+
+      <dependency>
+        <groupId>org.apache.beam</groupId>
+        <artifactId>beam-sdks-java-io-xml</artifactId>
         <version>${project.version}</version>
       </dependency>
 
@@ -1596,6 +1654,7 @@
             <useDefaultExcludes>true</useDefaultExcludes>
             <excludes>
               <!-- rat uses .gitignore for excludes -->
+              <exclude>**/gogradle.lock</exclude>
 
               <!-- ignore files we track but do not distribute -->
               <exclude>.github/**/*</exclude>
@@ -1681,6 +1740,7 @@
             <useManifestOnlyJar>false</useManifestOnlyJar>
             <trimStackTrace>false</trimStackTrace>
             <redirectTestOutputToFile>true</redirectTestOutputToFile>
+            <runOrder>random</runOrder>
             <argLine>${beamSurefireArgline}</argLine>
           </configuration>
           <dependencies>
