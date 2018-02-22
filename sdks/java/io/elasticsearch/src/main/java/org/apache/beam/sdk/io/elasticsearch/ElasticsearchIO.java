@@ -472,6 +472,7 @@ public class ElasticsearchIO {
       this.numSlices = numSlices;
       this.sliceId = sliceId;
     }
+
     @Override
     public List<? extends BoundedSource<String>> split(
         long desiredBundleSizeBytes, PipelineOptions options) throws Exception {
@@ -858,6 +859,7 @@ public class ElasticsearchIO {
       }
     }
   }
+
   static int getBackendVersion(ConnectionConfiguration connectionConfiguration) {
     try (RestClient restClient = connectionConfiguration.createClient()) {
       Response response = restClient.performRequest("GET", "");
