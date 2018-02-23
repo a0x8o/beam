@@ -15,23 +15,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.beam.sdk.transforms.reflect;
-
-import com.google.auto.value.AutoValue;
-import org.apache.beam.sdk.transforms.DoFn;
 
 /**
- * Used by {@link ByteBuddyOnTimerInvokerFactory} to Dynamically generate
- * {@link OnTimerInvoker} instances for invoking a particular
- * {@link DoFn.TimerId} on a particular {@link DoFn}.
+ * Classes used to instantiate and manage SDK harness environments.
  */
-
-@AutoValue
-abstract class OnTimerMethodSpecifier {
-    public abstract Class<? extends DoFn<?, ?>> fnClass();
-    public abstract String timerId();
-    public static OnTimerMethodSpecifier
-    forClassAndTimerId(Class<? extends DoFn<?, ?>> fnClass, String timerId) {
-        return  new AutoValue_OnTimerMethodSpecifier(fnClass, timerId);
-    }
-}
+package org.apache.beam.runners.fnexecution.environment;

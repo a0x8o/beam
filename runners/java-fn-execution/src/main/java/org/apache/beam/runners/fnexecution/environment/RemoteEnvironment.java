@@ -15,23 +15,25 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.beam.sdk.transforms.reflect;
 
-import com.google.auto.value.AutoValue;
-import org.apache.beam.sdk.transforms.DoFn;
+package org.apache.beam.runners.fnexecution.environment;
+
+import org.apache.beam.model.pipeline.v1.RunnerApi.Environment;
+import org.apache.beam.runners.fnexecution.control.SdkHarnessClient;
 
 /**
- * Used by {@link ByteBuddyOnTimerInvokerFactory} to Dynamically generate
- * {@link OnTimerInvoker} instances for invoking a particular
- * {@link DoFn.TimerId} on a particular {@link DoFn}.
+ * A handle to an available remote {@link Environment}. This environment is connected to a
+ * Fn API Control service, and the associated client is available via {@link #getClient()}.
  */
+interface RemoteEnvironment extends AutoCloseable {
+  /**
+   * Return the environment that the remote handles.
+   */
+  Environment getEnvironment();
 
-@AutoValue
-abstract class OnTimerMethodSpecifier {
-    public abstract Class<? extends DoFn<?, ?>> fnClass();
-    public abstract String timerId();
-    public static OnTimerMethodSpecifier
-    forClassAndTimerId(Class<? extends DoFn<?, ?>> fnClass, String timerId) {
-        return  new AutoValue_OnTimerMethodSpecifier(fnClass, timerId);
-    }
+  /**
+   * Return an {@link SdkHarnessClient} which can communicate with an instance of the environment.
+   */
+  SdkHarnessClient getClient();
 }
+

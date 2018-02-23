@@ -15,23 +15,23 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.beam.sdk.transforms.reflect;
 
-import com.google.auto.value.AutoValue;
-import org.apache.beam.sdk.transforms.DoFn;
+package org.apache.beam.runners.fnexecution.environment;
+
+import org.apache.beam.model.pipeline.v1.RunnerApi;
+import org.apache.beam.model.pipeline.v1.RunnerApi.Environment;
+import org.apache.beam.runners.fnexecution.control.SdkHarnessClient;
 
 /**
- * Used by {@link ByteBuddyOnTimerInvokerFactory} to Dynamically generate
- * {@link OnTimerInvoker} instances for invoking a particular
- * {@link DoFn.TimerId} on a particular {@link DoFn}.
+ * Manages access to {@link Environment environments} which communicate to an {@link
+ * SdkHarnessClient}.
  */
-
-@AutoValue
-abstract class OnTimerMethodSpecifier {
-    public abstract Class<? extends DoFn<?, ?>> fnClass();
-    public abstract String timerId();
-    public static OnTimerMethodSpecifier
-    forClassAndTimerId(Class<? extends DoFn<?, ?>> fnClass, String timerId) {
-        return  new AutoValue_OnTimerMethodSpecifier(fnClass, timerId);
-    }
+public interface EnvironmentManager {
+  /**
+   * Retrieve a handle to an active {@link Environment}. This may allocate resources if required.
+   *
+   * <p>TODO: Determine and document the owner of the returned environment. If the environment is
+   * owned by the manager, make the Manager {@link AutoCloseable}..
+   */
+  RemoteEnvironment getEnvironment(RunnerApi.Environment container) throws Exception;
 }
