@@ -15,21 +15,25 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.beam.sdk.io.gcp.spanner;
+package org.apache.beam.sdk.extensions.sql.impl.interpreter.operator;
 
-import com.google.auto.value.AutoValue;
-import com.google.cloud.spanner.BatchTransactionId;
-import java.io.Serializable;
-import javax.annotation.Nullable;
+import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
+import org.apache.beam.sdk.values.Row;
+import org.apache.calcite.sql.type.SqlTypeName;
 
-/** A transaction object. */
-@AutoValue
-public abstract class Transaction implements Serializable {
+/**
+ * DEFAULT keyword for UDF with optional parameter.
+ */
+public class BeamSqlDefaultExpression extends BeamSqlExpression {
 
-  @Nullable
-  abstract BatchTransactionId transactionId();
-
-  public static Transaction create(BatchTransactionId txId) {
-    return new AutoValue_Transaction(txId);
+  @Override
+  public boolean accept() {
+    return true;
   }
+
+  @Override
+  public BeamSqlPrimitive evaluate(Row inputRow, BoundedWindow window) {
+    return BeamSqlPrimitive.of(SqlTypeName.ANY, null);
+  }
+
 }
