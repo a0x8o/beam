@@ -30,6 +30,8 @@ prefix the PATH_TO_HTML where they are included followed by a descriptive
 string. The tags can contain only letters, digits and _.
 """
 
+import six
+
 import apache_beam as beam
 from apache_beam.io import iobase
 from apache_beam.io.range_trackers import OffsetRangeTracker
@@ -811,7 +813,10 @@ class SimpleKVSink(iobase.Sink):
     table_name = 'table' + uid
     return SimpleKVWriter(self._simplekv, access_token, table_name)
 
-  def finalize_write(self, access_token, table_names):
+  def pre_finalize(self, init_result, writer_results):
+    pass
+
+  def finalize_write(self, access_token, table_names, pre_finalize_result):
     for i, table_name in enumerate(table_names):
       self._simplekv.rename_table(
           access_token, table_name, self._final_table_name + str(i))
@@ -983,7 +988,8 @@ def model_datastoreio():
   def to_entity(content):
     entity = entity_pb2.Entity()
     googledatastore.helper.add_key_path(entity.key, kind, str(uuid.uuid4()))
-    googledatastore.helper.add_properties(entity, {'content': unicode(content)})
+    googledatastore.helper.add_properties(entity,
+                                          {'content': six.text_type(content)})
     return entity
 
   entities = musicians | 'To Entity' >> beam.Map(to_entity)

@@ -63,7 +63,7 @@ class DataflowMetrics extends MetricResults {
    * After the job has finished running, Metrics no longer will change, so their results are
    * cached here.
    */
-  private MetricQueryResults cachedMetricResults = null;
+  private JobMetrics cachedMetricResults = null;
 
   /**
    * Constructor for the DataflowMetrics class.
@@ -88,14 +88,15 @@ class DataflowMetrics extends MetricResults {
         .build();
   }
 
-  private MetricQueryResults queryServiceForMetrics(MetricsFilter filter) {
+  @Override
+  public MetricQueryResults queryMetrics(MetricsFilter filter) {
     List<com.google.api.services.dataflow.model.MetricUpdate> metricUpdates;
     ImmutableList<MetricResult<Long>> counters = ImmutableList.of();
     ImmutableList<MetricResult<DistributionResult>> distributions = ImmutableList.of();
     ImmutableList<MetricResult<GaugeResult>> gauges = ImmutableList.of();
     JobMetrics jobMetrics;
     try {
-      jobMetrics = dataflowClient.getJobMetrics(dataflowPipelineJob.jobId);
+      jobMetrics = getJobMetrics();
     } catch (IOException e) {
       LOG.warn("Unable to query job metrics.\n");
       return DataflowMetricQueryResults.create(counters, distributions, gauges);
@@ -106,17 +107,12 @@ class DataflowMetrics extends MetricResults {
     return populateMetricQueryResults(metricUpdates, filter);
   }
 
-  public MetricQueryResults queryMetrics() {
-    return queryMetrics(null);
-  }
-
-  @Override
-  public MetricQueryResults queryMetrics(MetricsFilter filter) {
+  private JobMetrics getJobMetrics() throws IOException {
     if (cachedMetricResults != null) {
       // Metric results have been cached after the job ran.
       return cachedMetricResults;
     }
-    MetricQueryResults result = queryServiceForMetrics(filter);
+    JobMetrics result = dataflowClient.getJobMetrics(dataflowPipelineJob.jobId);
     if (dataflowPipelineJob.getState().isTerminal()) {
       // Add current query result to the cache.
       cachedMetricResults = result;
@@ -153,9 +149,10 @@ class DataflowMetrics extends MetricResults {
                 metricKey.metricName(),
                 metricKey.stepName(),
                 isStreamingJob ? null : value, // Committed
-                isStreamingJob ? value : null)); // Attempted
+                value)); // Attempted
         /* In Dataflow streaming jobs, only ATTEMPTED metrics are available.
-         * In Dataflow batch jobs, only COMMITTED metrics are available.
+         * In Dataflow batch jobs, only COMMITTED metrics are available, but
+         * we must provide ATTEMPTED, so we use COMMITTED as a good approximation.
          * Reporting the appropriate metric depending on whether it's a batch/streaming job.
          */
       } else if (committed.getScalar() != null && attempted.getScalar() != null) {
@@ -166,9 +163,10 @@ class DataflowMetrics extends MetricResults {
                 metricKey.metricName(),
                 metricKey.stepName(),
                 isStreamingJob ? null : value, // Committed
-                isStreamingJob ? value : null)); // Attempted
+                value)); // Attempted
         /* In Dataflow streaming jobs, only ATTEMPTED metrics are available.
-         * In Dataflow batch jobs, only COMMITTED metrics are available.
+         * In Dataflow batch jobs, only COMMITTED metrics are available, but
+         * we must provide ATTEMPTED, so we use COMMITTED as a good approximation.
          * Reporting the appropriate metric depending on whether it's a batch/streaming job.
          */
       } else {
@@ -350,9 +348,17 @@ class DataflowMetrics extends MetricResults {
     public abstract MetricName name();
     public abstract String step();
     @Nullable
-    public abstract T committed();
-    @Nullable
+    protected abstract T committedInternal();
     public abstract T attempted();
+
+    public T committed() {
+      T committed = committedInternal();
+      if (committed == null) {
+        throw new UnsupportedOperationException("This runner does not currently support committed"
+            + " metrics results. Please use 'attempted' instead.");
+      }
+      return committed;
+    }
 
     public static <T> MetricResult<T> create(MetricName name, String scope,
         T committed, T attempted) {
