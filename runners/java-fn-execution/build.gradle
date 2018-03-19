@@ -16,7 +16,7 @@
  */
 
 apply from: project(":").file("build_rules.gradle")
-applyJavaNature()
+applyJavaNature(artifactId: "beam-runners-java-fn-execution")
 
 description = "Apache Beam :: Runners :: Java Fn Execution"
 
@@ -35,6 +35,7 @@ dependencies {
   shadow project(path: ":model:fn-execution", configuration: "shadow")
   shadow project(path: ":sdks:java:core", configuration: "shadow")
   shadow project(path: ":sdks:java:fn-execution", configuration: "shadow")
+  shadow project(path: ":runners:core-construction-java", configuration: "shadow")
   shadow library.java.grpc_core
   shadow library.java.grpc_stub
   shadow library.java.grpc_netty

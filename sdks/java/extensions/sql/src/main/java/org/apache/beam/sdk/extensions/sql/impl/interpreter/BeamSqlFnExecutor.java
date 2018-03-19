@@ -24,6 +24,7 @@ import java.util.List;
 import org.apache.beam.sdk.extensions.sql.impl.interpreter.operator.BeamSqlCaseExpression;
 import org.apache.beam.sdk.extensions.sql.impl.interpreter.operator.BeamSqlCastExpression;
 import org.apache.beam.sdk.extensions.sql.impl.interpreter.operator.BeamSqlDefaultExpression;
+import org.apache.beam.sdk.extensions.sql.impl.interpreter.operator.BeamSqlDotExpression;
 import org.apache.beam.sdk.extensions.sql.impl.interpreter.operator.BeamSqlExpression;
 import org.apache.beam.sdk.extensions.sql.impl.interpreter.operator.BeamSqlInputRefExpression;
 import org.apache.beam.sdk.extensions.sql.impl.interpreter.operator.BeamSqlPrimitive;
@@ -202,10 +203,14 @@ public class BeamSqlFnExecutor implements BeamSqlExpressionExecutor {
       ret = new BeamSqlInputRefExpression(node.getType().getSqlTypeName(), node.getIndex());
     } else if (rexNode instanceof RexFieldAccess) {
       RexFieldAccess fieldAccessNode = (RexFieldAccess) rexNode;
-      int rowFieldIndex = ((RexInputRef) fieldAccessNode.getReferenceExpr()).getIndex();
+      BeamSqlExpression referenceExpression = buildExpression(fieldAccessNode.getReferenceExpr());
       int nestedFieldIndex = fieldAccessNode.getField().getIndex();
       SqlTypeName nestedFieldType = fieldAccessNode.getField().getType().getSqlTypeName();
-      ret = new BeamSqlFieldAccessExpression(rowFieldIndex, nestedFieldIndex, nestedFieldType);
+
+      ret = new BeamSqlFieldAccessExpression(
+          referenceExpression,
+          nestedFieldIndex,
+          nestedFieldType);
     } else if (rexNode instanceof RexCall) {
       RexCall node = (RexCall) rexNode;
       String opName = node.op.getName();
@@ -409,6 +414,9 @@ public class BeamSqlFnExecutor implements BeamSqlExpressionExecutor {
 
         case "CARDINALITY":
           return new BeamSqlCardinalityExpression(subExps, node.type.getSqlTypeName());
+
+        case "DOT":
+          return new BeamSqlDotExpression(subExps, node.type.getSqlTypeName());
 
         //DEFAULT keyword for UDF with optional parameter
         case "DEFAULT":
