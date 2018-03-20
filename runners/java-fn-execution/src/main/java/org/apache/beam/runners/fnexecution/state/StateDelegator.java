@@ -15,21 +15,20 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+package org.apache.beam.runners.fnexecution.state;
 
-package org.apache.beam.runners.fnexecution.environment;
-
-import org.apache.beam.model.pipeline.v1.RunnerApi.Environment;
-import org.apache.beam.runners.fnexecution.control.InstructionRequestHandler;
+import org.apache.beam.model.fnexecution.v1.BeamFnApi.StateRequest;
 
 /**
- * A handle to an available remote {@link Environment}. This environment is connected to a Fn API
- * Control service, and the associated client is available via {@link
- * #getInstructionRequestHandler()}.
+ * The {@link StateDelegator} is able to delegate {@link StateRequest}s to a set of registered
+ * handlers. Any request for an unregistered process bundle instruction id is automatically failed.
  */
-interface RemoteEnvironment extends AutoCloseable {
-  /** Return the environment that the remote handles. */
-  Environment getEnvironment();
-
-  /** Return an {@link InstructionRequestHandler} which can communicate with the environment. */
-  InstructionRequestHandler getInstructionRequestHandler();
+public interface StateDelegator {
+  /**
+   * Registers the supplied handler for the given process bundle instruction id for all {@link
+   * StateRequest}s with a matching id. A handle is returned which allows one to deregister from
+   * this {@link StateDelegator}.
+   */
+  AutoCloseable registerForProcessBundleInstructionId(
+      String processBundleInstructionId, StateRequestHandler handler);
 }

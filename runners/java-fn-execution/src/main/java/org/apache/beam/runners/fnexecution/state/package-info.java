@@ -16,20 +16,5 @@
  * limitations under the License.
  */
 
-package org.apache.beam.runners.fnexecution.environment;
-
-import org.apache.beam.model.pipeline.v1.RunnerApi.Environment;
-import org.apache.beam.runners.fnexecution.control.InstructionRequestHandler;
-
-/**
- * A handle to an available remote {@link Environment}. This environment is connected to a Fn API
- * Control service, and the associated client is available via {@link
- * #getInstructionRequestHandler()}.
- */
-interface RemoteEnvironment extends AutoCloseable {
-  /** Return the environment that the remote handles. */
-  Environment getEnvironment();
-
-  /** Return an {@link InstructionRequestHandler} which can communicate with the environment. */
-  InstructionRequestHandler getInstructionRequestHandler();
-}
+/** State API services. */
+package org.apache.beam.runners.fnexecution.state;
