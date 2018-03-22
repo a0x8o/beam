@@ -65,6 +65,12 @@ public interface ExecutableStage {
   PCollectionNode getInputPCollection();
 
   /**
+   * Returns the set of {@link PCollectionNode PCollections} that will be accessed by this {@link
+   * ExecutableStage} as side inputs.
+   */
+  Collection<PCollectionNode> getSideInputPCollections();
+
+  /**
    * Returns the leaf {@link PCollectionNode PCollections} of this {@link ExecutableStage}.
    *
    * <p>All of these {@link PCollectionNode PCollections} are consumed by a {@link PTransformNode
@@ -81,53 +87,59 @@ public interface ExecutableStage {
    * follows:
    *
    * <ul>
-   *   <li>The {@link PTransform#getSubtransformsList()} contains no subtransforms. This ensures
+   *   <li>The {@link PTransform#getSubtransformsList()} is empty. This ensures
    *       that executable stages are treated as primitive transforms.
    *   <li>The only {@link PCollection} in the {@link PTransform#getInputsMap()} is the result of
    *       {@link #getInputPCollection()}.
    *   <li>The output {@link PCollection PCollections} in the values of {@link
    *       PTransform#getOutputsMap()} are the {@link PCollectionNode PCollections} returned by
    *       {@link #getOutputPCollections()}.
-   *   <li>The {@link FunctionSpec} contains an {@link ExecutableStagePayload} which has its input
-   *       and output PCollections set to the same values as the outer PTransform itself. It further
-   *       contains the environment set of transforms for this stage.
+   *   <li>The {@link PTransform#getSpec()} contains an {@link ExecutableStagePayload} with inputs
+   *       and outputs equal to the PTransform's inputs and outputs, and transforms equal to the
+   *       result of {@link #getTransforms}.
    * </ul>
    *
    * <p>The executable stage can be reconstructed from the resulting {@link ExecutableStagePayload}
    * and components alone via {@link #fromPayload(ExecutableStagePayload, Components)}.
    */
   default PTransform toPTransform() {
+    PTransform.Builder pt = PTransform.newBuilder();
     ExecutableStagePayload.Builder payload = ExecutableStagePayload.newBuilder();
 
     payload.setEnvironment(getEnvironment());
 
+    // Populate inputs and outputs of the stage payload and outer PTransform simultaneously.
     PCollectionNode input = getInputPCollection();
+    pt.putInputs("input", getInputPCollection().getId());
     payload.setInput(input.getId());
 
+    int sideInputIndex = 0;
+    for (PCollectionNode sideInputNode : getSideInputPCollections()) {
+      pt.putInputs(String.format("side_input_%s", sideInputIndex), sideInputNode.getId());
+      payload.addSideInputs(sideInputNode.getId());
+      sideInputIndex++;
+    }
+
+    int outputIndex = 0;
+    for (PCollectionNode output : getOutputPCollections()) {
+      pt.putOutputs(String.format("materialized_%d", outputIndex), output.getId());
+      payload.addOutputs(output.getId());
+      outputIndex++;
+    }
+
+    // Inner PTransforms of this stage are hidden from the outer pipeline and only belong in the
+    // stage payload.
     for (PTransformNode transform : getTransforms()) {
       payload.addTransforms(transform.getId());
     }
 
-    for (PCollectionNode output : getOutputPCollections()) {
-      payload.addOutputs(output.getId());
-    }
-
-    PTransform.Builder pt = PTransform.newBuilder();
     pt.setSpec(FunctionSpec.newBuilder()
         .setUrn(ExecutableStage.URN)
         .setPayload(payload.build().toByteString())
         .build());
-    pt.putInputs("input", getInputPCollection().getId());
-    int outputIndex = 0;
-    for (PCollectionNode pcNode : getOutputPCollections()) {
-      // Do something
-      pt.putOutputs(String.format("materialized_%d", outputIndex), pcNode.getId());
-      outputIndex++;
-    }
     return pt.build();
   }
 
-  // TODO: Should this live under ExecutableStageTranslation?
   /**
    * Return an {@link ExecutableStage} constructed from the provided {@link FunctionSpec}
    * representation.
@@ -139,14 +151,27 @@ public interface ExecutableStage {
    */
   static ExecutableStage fromPayload(ExecutableStagePayload payload, Components components) {
     Environment environment = payload.getEnvironment();
-    PCollectionNode input = PipelineNode.pCollection(payload.getInput(),
-        components.getPcollectionsOrThrow(payload.getInput()));
-    List<PTransformNode> transforms = payload.getTransformsList().stream()
-        .map(id -> PipelineNode.pTransform(id, components.getTransformsOrThrow(id)))
-        .collect(Collectors.toList());
-    List<PCollectionNode> outputs = payload.getOutputsList().stream()
-        .map(id -> PipelineNode.pCollection(id, components.getPcollectionsOrThrow(id)))
-        .collect(Collectors.toList());
-    return ImmutableExecutableStage.of(environment, input, transforms, outputs);
+    PCollectionNode input =
+        PipelineNode.pCollection(
+            payload.getInput(), components.getPcollectionsOrThrow(payload.getInput()));
+    List<PCollectionNode> sideInputs =
+        payload
+            .getSideInputsList()
+            .stream()
+            .map(id -> PipelineNode.pCollection(id, components.getPcollectionsOrThrow(id)))
+            .collect(Collectors.toList());
+    List<PTransformNode> transforms =
+        payload
+            .getTransformsList()
+            .stream()
+            .map(id -> PipelineNode.pTransform(id, components.getTransformsOrThrow(id)))
+            .collect(Collectors.toList());
+    List<PCollectionNode> outputs =
+        payload
+            .getOutputsList()
+            .stream()
+            .map(id -> PipelineNode.pCollection(id, components.getPcollectionsOrThrow(id)))
+            .collect(Collectors.toList());
+    return ImmutableExecutableStage.of(environment, input, sideInputs, transforms, outputs);
   }
 }
