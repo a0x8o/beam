@@ -26,7 +26,7 @@ import java.util.List;
 import org.apache.beam.sdk.extensions.sql.BeamSqlTable;
 import org.apache.beam.sdk.extensions.sql.meta.Table;
 import org.apache.beam.sdk.extensions.sql.meta.provider.TableProvider;
-import org.apache.beam.sdk.values.RowType;
+import org.apache.beam.sdk.schemas.Schema;
 import org.apache.commons.csv.CSVFormat;
 
 /**
@@ -40,7 +40,7 @@ import org.apache.commons.csv.CSVFormat;
  * )
  * TYPE 'text'
  * COMMENT 'this is the table orders'
- * LOCATION 'text://home/admin/orders'
+ * LOCATION '/home/admin/orders'
  * TBLPROPERTIES '{"format": "Excel"}' -- format of each text line(csv format)
  * }</pre>
  */
@@ -51,9 +51,9 @@ public class TextTableProvider implements TableProvider {
   }
 
   @Override public BeamSqlTable buildBeamSqlTable(Table table) {
-    RowType rowType = getRowTypeFromTable(table);
+    Schema schema = getRowTypeFromTable(table);
 
-    String filePattern = table.getLocationAsString();
+    String filePattern = table.getLocation();
     CSVFormat format = CSVFormat.DEFAULT;
     JSONObject properties = table.getProperties();
     String csvFormatStr = properties.getString("format");
@@ -61,7 +61,7 @@ public class TextTableProvider implements TableProvider {
       format = CSVFormat.valueOf(csvFormatStr);
     }
 
-    BeamTextCSVTable txtTable = new BeamTextCSVTable(rowType, filePattern, format);
+    BeamTextCSVTable txtTable = new BeamTextCSVTable(schema, filePattern, format);
     return txtTable;
   }
 

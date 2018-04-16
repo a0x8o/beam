@@ -31,14 +31,48 @@
 
 println "Applying build_rules.gradle to $project.name"
 
+// Define the set of repositories and dependencies required to
+// fetch and enable plugins.
+buildscript {
+  repositories {
+    maven { url file(offlineRepositoryRoot) }
+
+    // To run gradle in offline mode, one must first invoke
+    // 'updateOfflineRepository' to create an offline repo
+    // inside the root project directory. See the application
+    // of the offline repo plugin within build_rules.gradle
+    // for further details.
+    if (gradle.startParameter.isOffline()) {
+      return
+    }
+
+    mavenLocal()
+    mavenCentral()
+    jcenter()
+    maven { url "https://plugins.gradle.org/m2/" }
+    maven { url "http://repo.spring.io/plugins-release" }
+  }
+  dependencies {
+    classpath "com.github.jengelman.gradle.plugins:shadow:2.0.1"                                        // Enable shading Java dependencies
+  }
+}
+
 /*************************************************************************************************/
 // Apply common properties/repositories and tasks to all projects.
 
-// Gradle determines project uniqueness based upon the project group and its name.
-// We use the project.path as the group name to make this mapping unique since
-// we have a few projects with the same name.
-group = project.path
-version = "2.5.0-SNAPSHOT"
+// Create a function which returns true iff we are performing a release.
+def isRelease() {
+  return project.hasProperty('release')
+}
+
+group = 'org.apache.beam'
+
+// Automatically use the official release version if we are performing a release
+// otherwise append '-SNAPSHOT'
+version = '2.5.0'
+if (!isRelease()) {
+  version += '-SNAPSHOT'
+}
 
 // Define the default set of repositories for all builds.
 repositories {
@@ -138,12 +172,13 @@ def grpc_google_common_protos = "0.1.9"
 def hamcrest_version = "1.3"
 def hadoop_version = "2.7.3"
 def jackson_version = "2.8.9"
-def spark_version = "2.2.1"
+def spark_version = "2.3.0"
 def pubsub_grpc_version = "0.1.18"
 def apex_core_version = "3.6.0"
 def apex_malhar_version = "3.4.0"
 def postgres_version = "9.4.1212.jre7"
 def jaxb_api_version = "2.2.12"
+def kafka_version = "1.0.0"
 
 // A map of maps containing common libraries used per language. To use:
 // dependencies {
@@ -227,7 +262,8 @@ ext.library = [
     jaxb_api: "javax.xml.bind:jaxb-api:$jaxb_api_version",
     joda_time: "joda-time:joda-time:2.4",
     junit: "junit:junit:4.12",
-    kafka_clients: "org.apache.kafka:kafka-clients:1.0.0",
+    kafka_2_11: "org.apache.kafka:kafka_2.11:$kafka_version",
+    kafka_clients: "org.apache.kafka:kafka-clients:$kafka_version",
     malhar_library: "org.apache.apex:malhar-library:$apex_malhar_version",
     mockito_core: "org.mockito:mockito-core:1.9.5",
     netty_handler: "io.netty:netty-handler:$netty_version",
@@ -265,18 +301,39 @@ ext.library = [
 // Returns a string representing the relocated path to be used with the shadow plugin when
 // given a suffix such as "com.google.common".
 ext.getJavaRelocatedPath = { String suffix ->
-  return "org.apache.beam"
-    + (project.path + ":" + project.name).replace(":", ".").replace("-", "_")
-    + ".repackaged."
-    + suffix;
+  return ("org.apache.beam.repackaged."
+          + project.name.replace("-", "_")
+          + "."
+          + suffix)
+}
+
+ext.DEFAULT_SHADOW_CLOSURE = {
+  dependencies {
+    exclude(".*")
+    include(dependency(library.java.guava))
+  }
+  relocate("com.google.common", getJavaRelocatedPath("com.google.common")) {
+    // com.google.common is too generic, need to exclude guava-testlib
+    exclude "com.google.common.collect.testing.**"
+    exclude "com.google.common.escape.testing.**"
+    exclude "com.google.common.testing.**"
+    exclude "com.google.common.util.concurrent.testing.**"
+  }
 }
 
 // A class defining the set of configurable properties accepted by applyJavaNature
 class JavaNatureConfiguration {
   double javaVersion = 1.8        // Controls the JDK source language and target compatibility
   boolean enableFindbugs = true   // Controls whether the findbugs plugin is enabled and configured
-  boolean enableShadow = true     // Controls whether the shadow plugin is enabled and configured
-  String artifactId = null        // Sets the maven publication artifact id
+  // The shadowJar / shadowTestJar tasks execute the following closure to configure themselves.
+  // Users can compose their closure with the default closure via:
+  // DEFAULT_SHADOW_CLOSURE << {
+  //    dependencies {
+  //      include(...)
+  //    }
+  //    relocate(...)
+  // }
+  Closure shadowClosure;
 }
 
 // Configures a project with a default set of plugins that should apply to all Java projects.
@@ -291,7 +348,7 @@ class JavaNatureConfiguration {
 //  * maven
 //  * net.ltgt.apt (plugin to configure annotation processing tool)
 //  * propdeps (provide optional and provided dependency configurations)
-//  * propdeps-maven (configure Maven pom generation to understand optional and provided dependency configurations)
+//  * propdeps-maven
 //  * checkstyle
 //  * findbugs
 //  * shadow
@@ -328,17 +385,11 @@ ext.applyJavaNature = {
   println "applyJavaNature with " + (it ? "$it" : "default configuration") + " for project $project.name"
   // Use the implicit it parameter of the closure to handle zero argument or one argument map calls.
   JavaNatureConfiguration configuration = it ? it as JavaNatureConfiguration : new JavaNatureConfiguration()
-  apply plugin: "maven-publish"
-  apply plugin: "java"
-
-  publishing {
-    repositories {
-      maven {
-        url project.properties["distMgmtSnapshotsUrl"] ?: "https://repository.apache.org/content/repositories/snapshots"
-      }
-    }
+  if (!configuration.shadowClosure) {
+    configuration.shadowClosure = DEFAULT_SHADOW_CLOSURE
   }
 
+  apply plugin: "java"
 
   // Configure the Java compiler source language and target compatibility levels. Also ensure that
   // we configure the Java compiler to use UTF-8.
@@ -444,97 +495,290 @@ ext.applyJavaNature = {
   //
   // TODO: Enforce all relocations are always performed to:
   // getJavaRelocatedPath(package_suffix) where package_suffix is something like "com.google.commmon"
-  if (configuration.enableShadow) {
-    apply plugin: 'com.github.johnrengelman.shadow'
+  apply plugin: 'com.github.johnrengelman.shadow'
 
-    // Shade guava in all our dependencies.
-    shadowJar {
-      classifier = "shaded"
-      mergeServiceFiles()
-      dependencies {
-        exclude(".*")
-        include(dependency(library.java.guava))
-      }
-      relocate("com.google.common", getJavaRelocatedPath("com.google.common")) {
-        // com.google.common is too generic, need to exclude guava-testlib
-        exclude "com.google.common.collect.testing.**"
-        exclude "com.google.common.escape.testing.**"
-        exclude "com.google.common.testing.**"
-        exclude "com.google.common.util.concurrent.testing.**"
-      }
+  // Create a new configuration 'shadowTest' like 'shadow' for the test scope
+  configurations {
+    shadow {
+      description = "Dependencies for shaded source set 'main'"
     }
-
-    // Create a new configuration 'shadowTest' like 'shadow' for the test scope
-    configurations {
-      shadow {
-        description = "Dependencies for shaded source set 'main'"
-      }
-      compile.extendsFrom shadow
-      shadowTest {
-        description = "Dependencies for shaded source set 'test'"
-        extendsFrom shadow
-      }
-      testCompile.extendsFrom shadowTest
+    compile.extendsFrom shadow
+    shadowTest {
+      description = "Dependencies for shaded source set 'test'"
+      extendsFrom shadow
     }
+    testCompile.extendsFrom shadowTest
+  }
 
-    // Ensure that shaded classes are part of the artifact set.
+  // Always configure the shadowJar classifier and merge service files.
+  shadowJar ({
+    classifier = "shaded"
+    mergeServiceFiles()
+  } << configuration.shadowClosure)
+
+  // Always configure the shadowTestJar classifier and merge service files.
+  tasks.create(name: 'shadowTestJar', type: com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar, {
+    classifier = "shaded-tests"
+    from sourceSets.test.output
+    configurations = [project.configurations.testRuntime]
+  } << configuration.shadowClosure)
+
+  // Ensure that shaded jar and test-jar are part of the their own configuration artifact sets
+  artifacts.shadow shadowJar
+  artifacts.shadowTest shadowTestJar
+
+  if (isRelease() || project.hasProperty('publishing')) {
+    apply plugin: "maven-publish"
+
+    // Only build artifacts for archives if we are publishing
     artifacts.archives shadowJar
+    artifacts.archives shadowTestJar
 
-    if (configuration.artifactId) {
-      task sourcesJar(type: Jar) {
-        from sourceSets.main.allSource
-        classifier = 'sources'
-      }
-      task testSourcesJar(type: Jar) {
-        from sourceSets.test.allSource
-        classifier = 'test-sources'
-      }
-      task javadocJar(type: Jar, dependsOn: javadoc) {
-        classifier = 'javadoc'
-        from javadoc.destinationDir
+    task sourcesJar(type: Jar) {
+      from sourceSets.main.allSource
+      classifier = 'sources'
+    }
+    artifacts.archives sourcesJar
+
+    task testSourcesJar(type: Jar) {
+      from sourceSets.test.allSource
+      classifier = 'test-sources'
+    }
+    artifacts.archives testSourcesJar
+
+    task javadocJar(type: Jar, dependsOn: javadoc) {
+      classifier = 'javadoc'
+      from javadoc.destinationDir
+    }
+    artifacts.archives javadocJar
+
+    // Only sign artifacts if we are performing a release
+    if (isRelease()) {
+      apply plugin: "signing"
+      signing {
+        useGpgCmd()
+        // Drop the unshaded jar because we don't want to publish it.
+        // Otherwise the unshaded one is the only one published since they
+        // both have no classifier and the names conflict.
+        def unshaded = configurations.archives.getArtifacts().matching({
+          artifact -> artifact.classifier == "" })
+        configurations.archives.getArtifacts().removeAll(unshaded)
+        sign configurations.archives
       }
 
-      // If a publication artifact id is supplied, publish the shadow jar.
-      publishing {
-        publications {
-          mavenJava(MavenPublication) {
-            artifact(shadowJar) {
-              groupId "org.apache.beam"
-              artifactId configuration.artifactId
-              // Strip the "shaded" classifier.
-              classifier null
-              // Set readable name to project description.
-              pom.withXml {
-                asNode().appendNode('name', description)
+      model {
+        tasks.generatePomFileForMavenJavaPublication {
+          destination = file("$buildDir/generated-pom.xml")
+        }
+        tasks.publishMavenJavaPublicationToMavenLocal {
+          dependsOn project.tasks.signArchives
+        }
+        tasks.publishMavenJavaPublicationToMavenRepository {
+          dependsOn project.tasks.signArchives
+        }
+      }
+    }
+
+    uploadArchives {
+      repositories {
+        mavenDeployer {
+          beforeDeployment { MavenDeployment deployment -> isRelease() && signing.signPom(deployment) }
+        }
+      }
+    }
+
+    publishing {
+      repositories {
+        maven {
+          url(project.properties['distMgmtSnapshotsUrl'] ?: isRelease()
+                  ? 'https://repository.apache.org/service/local/staging/deploy/maven2'
+                  : 'https://repository.apache.org/content/repositories/snapshots')
+
+          // We attempt to find and load credentials from ~/.m2/settings.xml file that a user
+          // has configured with the Apache release and snapshot staging credentials.
+          // <settings>
+          //   <servers>
+          //     <server>
+          //       <id>apache.releases.https</id>
+          //       <username>USER_TOKEN</username>
+          //       <password>PASS_TOKEN</password>
+          //     </server>
+          //     <server>
+          //       <id>apache.snapshots.https</id>
+          //       <username>USER_TOKEN</username>
+          //       <password>PASS_TOKEN</password>
+          //     </server>
+          //   </servers>
+          // </settings>
+          def settingsXml = new File(System.getProperty('user.home'), '.m2/settings.xml')
+          if (settingsXml.exists()) {
+            def serverId = (isRelease() ? 'apache.releases.https' : 'apache.snapshots.https')
+            def m2SettingCreds = new XmlSlurper().parse(settingsXml).servers.server.find { server -> serverId.equals(server.id.text()) }
+            if (m2SettingCreds) {
+              credentials {
+                username m2SettingCreds.username.text()
+                password m2SettingCreds.password.text()
               }
             }
-            // TODO: Use the shadow test jar here instead of the test jar.
-            artifact packageTests {
-              classifier "tests"
+          }
+        }
+      }
+
+      publications {
+        mavenJava(MavenPublication) {
+          artifact shadowJar {
+            // Strip the "shaded" classifier.
+            classifier null
+          }
+          artifact shadowTestJar {
+            classifier "tests"
+          }
+          artifact sourcesJar {
+            classifier "sources"
+          }
+          artifact testSourcesJar {
+            classifier "test-sources"
+          }
+          artifact javadocJar {
+            classifier "javadoc"
+          }
+
+          pom.withXml {
+            def root = asNode()
+            root.appendNode('name', project.description)
+            if (project.hasProperty("summary")) {
+                root.appendNode('description', project.summary)
             }
-            artifact sourcesJar {
-              classifier "sources"
+            root.appendNode('url', "http://beam.apache.org")
+            root.appendNode('inceptionYear', "2016")
+
+            def licenseNode = root.appendNode('licenses').appendNode('license')
+            licenseNode.appendNode('name', "Apache License, Version 2.0")
+            licenseNode.appendNode('url', "http://www.apache.org/licenses/LICENSE-2.0.txt")
+            licenseNode.appendNode('distribution', "repo")
+
+            def scmNode = root.appendNode('scm')
+            scmNode.appendNode('connection', "scm:git:https://gitbox.apache.org/repos/asf/beam.git")
+            scmNode.appendNode('developerConnection', "scm:git:https://gitbox.apache.org/repos/asf/beam.git")
+            scmNode.appendNode('url', "https://gitbox.apache.org/repos/asf?p=beam.git;a=summary")
+
+            def issueMgmtNode = root.appendNode('issueManagement')
+            issueMgmtNode.appendNode('system', "jira")
+            issueMgmtNode.appendNode('url', "https://issues.apache.org/jira/browse/BEAM")
+
+            def mailingListsNode = root.appendNode('mailingLists')
+            def devListNode = mailingListsNode.appendNode('mailingList')
+            devListNode.appendNode('name', "Beam Dev")
+            devListNode.appendNode('subscribe', "dev-subscribe@beam.apache.org")
+            devListNode.appendNode('unsubscribe', "dev-unsubscribe@beam.apache.org")
+            devListNode.appendNode('post', "dev@beam.apache.org")
+            devListNode.appendNode('archive', "http://www.mail-archive.com/dev%beam.apache.org")
+            def userListNode = mailingListsNode.appendNode('mailingList')
+            userListNode.appendNode('name', "Beam User")
+            userListNode.appendNode('subscribe', "user-subscribe@beam.apache.org")
+            userListNode.appendNode('unsubscribe', "user-unsubscribe@beam.apache.org")
+            userListNode.appendNode('post', "user@beam.apache.org")
+            userListNode.appendNode('archive', "http://www.mail-archive.com/user%beam.apache.org")
+            def commitListNode = mailingListsNode.appendNode('mailingList')
+            commitListNode.appendNode('name', "Beam Commits")
+            commitListNode.appendNode('subscribe', "commits-subscribe@beam.apache.org")
+            commitListNode.appendNode('unsubscribe', "commits-unsubscribe@beam.apache.org")
+            commitListNode.appendNode('post', "commits@beam.apache.org")
+            commitListNode.appendNode('archive', "http://www.mail-archive.com/commits%beam.apache.org")
+
+            def developerNode = root.appendNode('developers').appendNode('developer')
+            developerNode.appendNode('name', "The Apache Beam Team")
+            developerNode.appendNode('email', "dev@beam.apache.org")
+            developerNode.appendNode('url', "http://beam.apache.org")
+            developerNode.appendNode('organization', "Apache Software Foundation")
+            developerNode.appendNode('organizationUrl', "http://www.apache.org")
+
+            // Iterate over the dependencies that would exist post shading,
+            // adding a <dependency> node for each
+            def dependenciesNode = root.appendNode('dependencies')
+            def generateDependenciesFromConfiguration = { param ->
+              configurations."${param.configuration}".allDependencies.each {
+                def dependencyNode = dependenciesNode.appendNode('dependency')
+                dependencyNode.appendNode('groupId', it.group)
+                dependencyNode.appendNode('artifactId', it.name)
+                dependencyNode.appendNode('version', it.version)
+
+                dependencyNode.appendNode('scope', param.scope)
+
+                // Start with any exclusions that were added via configuration exclude rules.
+                // Then add all the exclusions that are specific to the dependency (if any
+                // were declared). Finally build the node that represents all exclusions.
+                def exclusions = []
+                exclusions += configurations."${param.configuration}".excludeRules
+                if (it.hasProperty('excludeRules')) {
+                  exclusions += it.excludeRules
+                }
+                if (!exclusions.empty) {
+                  def exclusionsNode = dependencyNode.appendNode('exclusions')
+                  for (ExcludeRule exclude : exclusions) {
+                    def exclusionNode = exclusionsNode.appendNode('exclusion')
+                    exclusionNode.appendNode('groupId', exclude.group)
+                    exclusionNode.appendNode('artifactId', exclude.module)
+                  }
+                }
+              }
             }
-            artifact testSourcesJar {
-              classifier "test-sources"
+
+            // TODO: Should we use the runtime scope instead of the compile scope
+            // which forces all our consumers to declare what they consume?
+            generateDependenciesFromConfiguration(configuration: 'shadow', scope: 'compile')
+            generateDependenciesFromConfiguration(configuration: 'provided', scope: 'provided')
+
+            // NB: This must come after asNode() logic, as it seems asNode()
+            // removes XML comments.
+            // TODO: Load this from file?
+            def elem = asElement()
+            def hdr = elem.getOwnerDocument().createComment(
+                    '''
+  Licensed to the Apache Software Foundation (ASF) under one or more
+  contributor license agreements.  See the NOTICE file distributed with
+  this work for additional information regarding copyright ownership.
+  The ASF licenses this file to You under the Apache License, Version 2.0
+  (the "License"); you may not use this file except in compliance with
+  the License.  You may obtain a copy of the License at
+      http://www.apache.org/licenses/LICENSE-2.0
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+''')
+            elem.insertBefore(hdr, elem.getFirstChild())
+
+            // create the sign pom artifact
+            def pomFile = file("${project.buildDir}/generated-pom.xml")
+            writeTo(pomFile)
+            if (isRelease()) {
+              def pomAscFile = signing.sign(pomFile).signatureFiles[0]
+              artifact(pomAscFile) {
+                classifier = null
+                extension = 'pom.asc'
+              }
             }
-            artifact javadocJar {
-              classifier "javadoc"
+          }
+
+          // create the signed artifacts
+          if (isRelease()) {
+            project.tasks.signArchives.signatureFiles.each {
+              artifact(it) {
+                def matcher = it.file =~ /-(tests|sources|test-sources|javadoc)\.jar\.asc$/
+                if (matcher.find()) {
+                  classifier = matcher.group(1)
+                } else {
+                  classifier = null
+                }
+                extension = 'jar.asc'
+              }
             }
           }
         }
       }
     }
-
-    // TODO: Figure out how to create ShadowJar task for ShadowTestJar here
-    // that is extendable within each sub-project with any additional includes.
-    // This could mirror the "shadowJar" configuration block.
-    // Optionally, we could also copy the shading configuration from the main
-    // source set and apply it here.
-    //
-    // Shading the test jar has a lot less need but can still be beneficial for
-    // resolving class conflicts for tests during test execution or exposing
-    // test libraries for users.
   }
 
   // Ban these dependencies from all configurations

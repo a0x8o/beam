@@ -70,14 +70,6 @@ public class ExecutableStageTest {
     PCollection sideInput = PCollection.newBuilder().setUniqueName("sideInput.in").build();
     PCollection output = PCollection.newBuilder().setUniqueName("output.out").build();
 
-    ImmutableExecutableStage stage =
-        ImmutableExecutableStage.of(
-            env,
-            PipelineNode.pCollection("input.out", input),
-            Collections.singleton(PipelineNode.pCollection("sideInput.in", sideInput)),
-            Collections.singleton(PipelineNode.pTransform("pt", pt)),
-            Collections.singleton(PipelineNode.pCollection("output.out", output)));
-
     Components components =
         Components.newBuilder()
             .putTransforms("pt", pt)
@@ -86,6 +78,15 @@ public class ExecutableStageTest {
             .putPcollections("output.out", output)
             .putEnvironments("foo", env)
             .build();
+
+    ImmutableExecutableStage stage =
+        ImmutableExecutableStage.of(
+            components,
+            env,
+            PipelineNode.pCollection("input.out", input),
+            Collections.singleton(PipelineNode.pCollection("sideInput.in", sideInput)),
+            Collections.singleton(PipelineNode.pTransform("pt", pt)),
+            Collections.singleton(PipelineNode.pCollection("output.out", output)));
 
     PTransform stagePTransform = stage.toPTransform();
     assertThat(stagePTransform.getOutputsMap(), hasValue("output.out"));
@@ -97,7 +98,7 @@ public class ExecutableStageTest {
     ExecutableStagePayload payload = ExecutableStagePayload.parseFrom(
         stagePTransform.getSpec().getPayload());
     assertThat(payload.getTransformsList(), contains("pt"));
-    assertThat(ExecutableStage.fromPayload(payload, components), equalTo(stage));
+    assertThat(ExecutableStage.fromPayload(payload), equalTo(stage));
   }
 
   @Test
@@ -163,7 +164,7 @@ public class ExecutableStageTest {
     ExecutableStagePayload payload = ExecutableStagePayload.parseFrom(
         ptransform.getSpec().getPayload());
     assertThat(payload.getTransformsList(), contains("parDo", "window"));
-    ExecutableStage desered = ExecutableStage.fromPayload(payload, components);
+    ExecutableStage desered = ExecutableStage.fromPayload(payload);
     assertThat(desered, equalTo(subgraph));
   }
 }

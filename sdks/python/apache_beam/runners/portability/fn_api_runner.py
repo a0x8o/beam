@@ -18,6 +18,7 @@
 """A PipelineRunner using the SDK harness.
 """
 import collections
+import contextlib
 import copy
 import logging
 import Queue as queue
@@ -37,6 +38,7 @@ from apache_beam.coders.coder_impl import create_InputStream
 from apache_beam.coders.coder_impl import create_OutputStream
 from apache_beam.internal import pickler
 from apache_beam.metrics.execution import MetricsEnvironment
+from apache_beam.options.value_provider import RuntimeValueProvider
 from apache_beam.portability import common_urns
 from apache_beam.portability.api import beam_fn_api_pb2
 from apache_beam.portability.api import beam_fn_api_pb2_grpc
@@ -207,6 +209,7 @@ class FnApiRunner(runner.PipelineRunner):
 
   def run_pipeline(self, pipeline):
     MetricsEnvironment.set_metrics_supported(False)
+    RuntimeValueProvider.set_runtime_options({})
     # This is sometimes needed if type checking is disabled
     # to enforce that the inputs (and outputs) of GroupByKey operations
     # are known to be KVs.
@@ -903,7 +906,7 @@ class FnApiRunner(runner.PipelineRunner):
                 side_input_id=tag,
                 window=window,
                 key=key))
-        controller.state_handler.blocking_append(state_key, elements_data, None)
+        controller.state_handler.blocking_append(state_key, elements_data)
 
     def get_buffer(pcoll_id):
       if pcoll_id.startswith('materialize:'):
@@ -945,15 +948,19 @@ class FnApiRunner(runner.PipelineRunner):
       self._lock = threading.Lock()
       self._state = collections.defaultdict(list)
 
-    def blocking_get(self, state_key, instruction_reference=None):
+    @contextlib.contextmanager
+    def process_instruction_id(self, unused_instruction_id):
+      yield
+
+    def blocking_get(self, state_key):
       with self._lock:
         return ''.join(self._state[self._to_key(state_key)])
 
-    def blocking_append(self, state_key, data, instruction_reference=None):
+    def blocking_append(self, state_key, data):
       with self._lock:
         self._state[self._to_key(state_key)].append(data)
 
-    def blocking_clear(self, state_key, instruction_reference=None):
+    def blocking_clear(self, state_key):
       with self._lock:
         del self._state[self._to_key(state_key)]
 
