@@ -40,7 +40,7 @@ processResources {
   filter org.apache.tools.ant.filters.ReplaceTokens, tokens: [
     'dataflow.legacy_environment_major_version' : '7',
     'dataflow.fnapi_environment_major_version' : '1',
-    'dataflow.container_version' : 'beam-master-20180228'
+    'dataflow.container_version' : 'beam-master-20180410'
   ]
 }
 
@@ -112,7 +112,9 @@ task validatesRunnerTest(type: Test) {
           "--tempRoot=${dataflowTempRoot}",
   ])
 
-  maxParallelForks 4
+  // Increase test parallelism up to the number of Gradle workers. By default this is equal
+  // to the number of CPU cores, but can be increased by setting --max-workers=N.
+  maxParallelForks Integer.MAX_VALUE
   classpath = configurations.validatesRunner
   testClassesDirs = files(project(":beam-sdks-java-core").sourceSets.test.output.classesDirs)
   useJUnit {
@@ -180,7 +182,7 @@ task examplesJavaIntegrationTest(type: Test) {
 }
 
 task postCommit {
-  group = "Verfication"
+  group = "Verification"
   description = "Various integration tests using the Dataflow runner."
   dependsOn googleCloudPlatformIntegrationTest
   dependsOn examplesJavaIntegrationTest
