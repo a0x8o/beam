@@ -22,7 +22,6 @@ import contextlib
 import copy
 import logging
 import Queue as queue
-import re
 import threading
 import time
 from concurrent import futures
@@ -43,6 +42,7 @@ from apache_beam.portability import common_urns
 from apache_beam.portability.api import beam_fn_api_pb2
 from apache_beam.portability.api import beam_fn_api_pb2_grpc
 from apache_beam.portability.api import beam_runner_api_pb2
+from apache_beam.portability.api import endpoints_pb2
 from apache_beam.runners import pipeline_context
 from apache_beam.runners import runner
 from apache_beam.runners.worker import bundle_processor
@@ -147,11 +147,11 @@ class _WindowGroupingBuffer(object):
   def __init__(self, side_input_data):
     # Here's where we would use a different type of partitioning
     # (e.g. also by key) for a different access pattern.
-    if side_input_data.access_pattern == common_urns.ITERABLE_SIDE_INPUT:
+    if side_input_data.access_pattern == common_urns.side_inputs.ITERABLE.urn:
       self._kv_extrator = lambda value: ('', value)
       self._key_coder = coders.SingletonCoder('')
       self._value_coder = side_input_data.coder.wrapped_value_coder
-    elif side_input_data.access_pattern == common_urns.MULTIMAP_SIDE_INPUT:
+    elif side_input_data.access_pattern == common_urns.side_inputs.MULTIMAP.urn:
       self._kv_extrator = lambda value: value
       self._key_coder = side_input_data.coder.wrapped_value_coder.key_coder()
       self._value_coder = (
@@ -269,12 +269,12 @@ class FnApiRunner(runner.PipelineRunner):
             union(self.must_follow, other.must_follow))
 
       def is_flatten(self):
-        return any(transform.spec.urn == common_urns.FLATTEN_TRANSFORM
+        return any(transform.spec.urn == common_urns.primitives.FLATTEN.urn
                    for transform in self.transforms)
 
       def side_inputs(self):
         for transform in self.transforms:
-          if transform.spec.urn == common_urns.PARDO_TRANSFORM:
+          if transform.spec.urn == common_urns.primitives.PAR_DO.urn:
             payload = proto_utils.parse_Bytes(
                 transform.spec.payload, beam_runner_api_pb2.ParDoPayload)
             for side_input in payload.side_inputs:
@@ -282,7 +282,7 @@ class FnApiRunner(runner.PipelineRunner):
 
       def has_as_main_input(self, pcoll):
         for transform in self.transforms:
-          if transform.spec.urn == common_urns.PARDO_TRANSFORM:
+          if transform.spec.urn == common_urns.primitives.PAR_DO.urn:
             payload = proto_utils.parse_Bytes(
                 transform.spec.payload, beam_runner_api_pb2.ParDoPayload)
             local_side_inputs = payload.side_inputs
@@ -329,14 +329,14 @@ class FnApiRunner(runner.PipelineRunner):
         proto = beam_runner_api_pb2.Coder(
             spec=beam_runner_api_pb2.SdkFunctionSpec(
                 spec=beam_runner_api_pb2.FunctionSpec(
-                    urn=common_urns.WINDOWED_VALUE_CODER)),
+                    urn=common_urns.coders.WINDOWED_VALUE.urn)),
             component_coder_ids=[coder_id, window_coder_id])
         return add_or_get_coder_id(proto)
 
       for stage in stages:
         assert len(stage.transforms) == 1
         transform = stage.transforms[0]
-        if transform.spec.urn == common_urns.COMBINE_PER_KEY_TRANSFORM:
+        if transform.spec.urn == common_urns.composites.COMBINE_PER_KEY.urn:
           combine_payload = proto_utils.parse_Bytes(
               transform.spec.payload, beam_runner_api_pb2.CombinePayload)
 
@@ -356,14 +356,14 @@ class FnApiRunner(runner.PipelineRunner):
           key_accumulator_coder = beam_runner_api_pb2.Coder(
               spec=beam_runner_api_pb2.SdkFunctionSpec(
                   spec=beam_runner_api_pb2.FunctionSpec(
-                      urn=common_urns.KV_CODER)),
+                      urn=common_urns.coders.KV.urn)),
               component_coder_ids=[key_coder_id, accumulator_coder_id])
           key_accumulator_coder_id = add_or_get_coder_id(key_accumulator_coder)
 
           accumulator_iter_coder = beam_runner_api_pb2.Coder(
               spec=beam_runner_api_pb2.SdkFunctionSpec(
                   spec=beam_runner_api_pb2.FunctionSpec(
-                      urn=common_urns.ITERABLE_CODER)),
+                      urn=common_urns.coders.ITERABLE.urn)),
               component_coder_ids=[accumulator_coder_id])
           accumulator_iter_coder_id = add_or_get_coder_id(
               accumulator_iter_coder)
@@ -371,7 +371,7 @@ class FnApiRunner(runner.PipelineRunner):
           key_accumulator_iter_coder = beam_runner_api_pb2.Coder(
               spec=beam_runner_api_pb2.SdkFunctionSpec(
                   spec=beam_runner_api_pb2.FunctionSpec(
-                      urn=common_urns.KV_CODER)),
+                      urn=common_urns.coders.KV.urn)),
               component_coder_ids=[key_coder_id, accumulator_iter_coder_id])
           key_accumulator_iter_coder_id = add_or_get_coder_id(
               key_accumulator_iter_coder)
@@ -415,7 +415,7 @@ class FnApiRunner(runner.PipelineRunner):
               beam_runner_api_pb2.PTransform(
                   unique_name=transform.unique_name + '/Precombine',
                   spec=beam_runner_api_pb2.FunctionSpec(
-                      urn=common_urns.COMBINE_PGBKCV_TRANSFORM,
+                      urn=common_urns.combine_components.COMBINE_PGBKCV.urn,
                       payload=transform.spec.payload),
                   inputs=transform.inputs,
                   outputs={'out': precombined_pcoll_id}))
@@ -425,7 +425,7 @@ class FnApiRunner(runner.PipelineRunner):
               beam_runner_api_pb2.PTransform(
                   unique_name=transform.unique_name + '/Group',
                   spec=beam_runner_api_pb2.FunctionSpec(
-                      urn=common_urns.GROUP_BY_KEY_TRANSFORM),
+                      urn=common_urns.primitives.GROUP_BY_KEY.urn),
                   inputs={'in': precombined_pcoll_id},
                   outputs={'out': grouped_pcoll_id}))
 
@@ -434,7 +434,8 @@ class FnApiRunner(runner.PipelineRunner):
               beam_runner_api_pb2.PTransform(
                   unique_name=transform.unique_name + '/Merge',
                   spec=beam_runner_api_pb2.FunctionSpec(
-                      urn=common_urns.COMBINE_MERGE_ACCUMULATORS_TRANSFORM,
+                      urn=common_urns.combine_components
+                      .COMBINE_MERGE_ACCUMULATORS.urn,
                       payload=transform.spec.payload),
                   inputs={'in': grouped_pcoll_id},
                   outputs={'out': merged_pcoll_id}))
@@ -444,7 +445,8 @@ class FnApiRunner(runner.PipelineRunner):
               beam_runner_api_pb2.PTransform(
                   unique_name=transform.unique_name + '/ExtractOutputs',
                   spec=beam_runner_api_pb2.FunctionSpec(
-                      urn=common_urns.COMBINE_EXTRACT_OUTPUTS_TRANSFORM,
+                      urn=common_urns.combine_components
+                      .COMBINE_EXTRACT_OUTPUTS.urn,
                       payload=transform.spec.payload),
                   inputs={'in': merged_pcoll_id},
                   outputs=transform.outputs))
@@ -456,12 +458,11 @@ class FnApiRunner(runner.PipelineRunner):
       """Transforms each GBK into a write followed by a read.
       """
       good_coder_urns = set(
-          value for key, value in common_urns.__dict__.items()
-          if re.match('[A-Z][A-Z_]*$', key))
+          value.urn for value in common_urns.coders.__dict__.values())
       coders = pipeline_components.coders
 
       for coder_id, coder_proto in coders.items():
-        if coder_proto.spec.spec.urn == common_urns.BYTES_CODER:
+        if coder_proto.spec.spec.urn == common_urns.coders.BYTES.urn:
           bytes_coder_id = coder_id
           break
       else:
@@ -475,7 +476,7 @@ class FnApiRunner(runner.PipelineRunner):
         if (coder_id, with_bytes) not in coder_substitutions:
           wrapped_coder_id = None
           coder_proto = coders[coder_id]
-          if coder_proto.spec.spec.urn == common_urns.LENGTH_PREFIX_CODER:
+          if coder_proto.spec.spec.urn == common_urns.coders.LENGTH_PREFIX.urn:
             coder_substitutions[coder_id, with_bytes] = (
                 bytes_coder_id if with_bytes else coder_id)
           elif coder_proto.spec.spec.urn in good_coder_urns:
@@ -502,7 +503,7 @@ class FnApiRunner(runner.PipelineRunner):
               len_prefix_coder_proto = beam_runner_api_pb2.Coder(
                   spec=beam_runner_api_pb2.SdkFunctionSpec(
                       spec=beam_runner_api_pb2.FunctionSpec(
-                          urn=common_urns.LENGTH_PREFIX_CODER)),
+                          urn=common_urns.coders.LENGTH_PREFIX.urn)),
                   component_coder_ids=[coder_id])
               coders[wrapped_coder_id].CopyFrom(len_prefix_coder_proto)
               coder_substitutions[coder_id, with_bytes] = wrapped_coder_id
@@ -519,7 +520,7 @@ class FnApiRunner(runner.PipelineRunner):
       for stage in stages:
         assert len(stage.transforms) == 1
         transform = stage.transforms[0]
-        if transform.spec.urn == common_urns.GROUP_BY_KEY_TRANSFORM:
+        if transform.spec.urn == common_urns.primitives.GROUP_BY_KEY.urn:
           for pcoll_id in transform.inputs.values():
             fix_pcoll_coder(pipeline_components.pcollections[pcoll_id])
           for pcoll_id in transform.outputs.values():
@@ -566,7 +567,7 @@ class FnApiRunner(runner.PipelineRunner):
       for stage in stages:
         assert len(stage.transforms) == 1
         transform = stage.transforms[0]
-        if transform.spec.urn == common_urns.FLATTEN_TRANSFORM:
+        if transform.spec.urn == common_urns.primitives.FLATTEN.urn:
           # This is used later to correlate the read and writes.
           param = str("materialize:%s" % transform.unique_name)
           output_pcoll_id, = transform.outputs.values()
@@ -792,8 +793,8 @@ class FnApiRunner(runner.PipelineRunner):
     coders.populate_map(pipeline_components.coders)
 
     known_composites = set(
-        [common_urns.GROUP_BY_KEY_TRANSFORM,
-         common_urns.COMBINE_PER_KEY_TRANSFORM])
+        [common_urns.primitives.GROUP_BY_KEY.urn,
+         common_urns.composites.COMBINE_PER_KEY.urn])
 
     def leaf_transforms(root_ids):
       for root_id in root_ids:
@@ -847,11 +848,11 @@ class FnApiRunner(runner.PipelineRunner):
       self, controller, pipeline_components, stage, pcoll_buffers, safe_coders):
 
     context = pipeline_context.PipelineContext(pipeline_components)
-    data_operation_spec = controller.data_operation_spec()
+    data_api_service_descriptor = controller.data_api_service_descriptor()
 
     def extract_endpoints(stage):
       # Returns maps of transform names to PCollection identifiers.
-      # Also mutates IO stages to point to the data data_operation_spec.
+      # Also mutates IO stages to point to the data ApiServiceDescriptor.
       data_input = {}
       data_side_input = {}
       data_output = {}
@@ -867,11 +868,14 @@ class FnApiRunner(runner.PipelineRunner):
             data_output[target] = pcoll_id
           else:
             raise NotImplementedError
-          if data_operation_spec:
-            transform.spec.payload = data_operation_spec.SerializeToString()
+          if data_api_service_descriptor:
+            data_spec = beam_fn_api_pb2.RemoteGrpcPort()
+            data_spec.api_service_descriptor.url = (
+                data_api_service_descriptor.url)
+            transform.spec.payload = data_spec.SerializeToString()
           else:
             transform.spec.payload = ""
-        elif transform.spec.urn == common_urns.PARDO_TRANSFORM:
+        elif transform.spec.urn == common_urns.primitives.PAR_DO.urn:
           payload = proto_utils.parse_Bytes(
               transform.spec.payload, beam_runner_api_pb2.ParDoPayload)
           for tag, si in payload.side_inputs.items():
@@ -893,6 +897,10 @@ class FnApiRunner(runner.PipelineRunner):
         windowing_strategies=dict(
             pipeline_components.windowing_strategies.items()),
         environments=dict(pipeline_components.environments.items()))
+
+    if controller.state_api_service_descriptor():
+      process_bundle_descriptor.state_api_service_descriptor.url = (
+          controller.state_api_service_descriptor().url)
 
     # Store the required side inputs into state.
     for (transform_id, tag), (pcoll_id, si) in data_side_input.items():
@@ -990,15 +998,30 @@ class FnApiRunner(runner.PipelineRunner):
               id=request.id,
               clear=beam_fn_api_pb2.ClearResponse())
 
+  class SingletonStateHandlerFactory(sdk_worker.StateHandlerFactory):
+    """A singleton cache for a StateServicer."""
+
+    def __init__(self, state_handler):
+      self._state_handler = state_handler
+
+    def create_state_handler(self, api_service_descriptor):
+      """Returns the singleton state handler."""
+      return self._state_handler
+
+    def close(self):
+      """Does nothing."""
+      pass
+
   class DirectController(object):
     """An in-memory controller for fn API control, state and data planes."""
 
     def __init__(self):
-      self.state_handler = FnApiRunner.StateServicer()
       self.control_handler = self
       self.data_plane_handler = data_plane.InMemoryDataChannel()
+      self.state_handler = FnApiRunner.StateServicer()
       self.worker = sdk_worker.SdkWorker(
-          self.state_handler, data_plane.InMemoryDataChannelFactory(
+          FnApiRunner.SingletonStateHandlerFactory(self.state_handler),
+          data_plane.InMemoryDataChannelFactory(
               self.data_plane_handler.inverse()), {})
       self._uid_counter = 0
 
@@ -1017,7 +1040,10 @@ class FnApiRunner(runner.PipelineRunner):
     def close(self):
       pass
 
-    def data_operation_spec(self):
+    def data_api_service_descriptor(self):
+      return None
+
+    def state_api_service_descriptor(self):
       return None
 
   class GrpcController(object):
@@ -1032,6 +1058,10 @@ class FnApiRunner(runner.PipelineRunner):
       self.data_server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
       self.data_port = self.data_server.add_insecure_port('[::]:0')
 
+      self.state_server = grpc.server(
+          futures.ThreadPoolExecutor(max_workers=10))
+      self.state_port = self.state_server.add_insecure_port('[::]:0')
+
       self.control_handler = BeamFnControlServicer()
       beam_fn_api_pb2_grpc.add_BeamFnControlServicer_to_server(
           self.control_handler, self.control_server)
@@ -1040,14 +1070,13 @@ class FnApiRunner(runner.PipelineRunner):
       beam_fn_api_pb2_grpc.add_BeamFnDataServicer_to_server(
           self.data_plane_handler, self.data_server)
 
-      # TODO(robertwb): Is sharing the control channel fine?  Alternatively,
-      # how should this be plumbed?
       self.state_handler = FnApiRunner.GrpcStateServicer()
       beam_fn_api_pb2_grpc.add_BeamFnStateServicer_to_server(
-          self.state_handler, self.control_server)
+          self.state_handler, self.state_server)
 
       logging.info('starting control server on port %s', self.control_port)
       logging.info('starting data server on port %s', self.data_port)
+      self.state_server.start()
       self.data_server.start()
       self.control_server.start()
 
@@ -1061,11 +1090,17 @@ class FnApiRunner(runner.PipelineRunner):
       logging.info('starting worker')
       self.worker_thread.start()
 
-    def data_operation_spec(self):
+    def data_api_service_descriptor(self):
       url = 'localhost:%s' % self.data_port
-      remote_grpc_port = beam_fn_api_pb2.RemoteGrpcPort()
-      remote_grpc_port.api_service_descriptor.url = url
-      return remote_grpc_port
+      api_service_descriptor = endpoints_pb2.ApiServiceDescriptor()
+      api_service_descriptor.url = url
+      return api_service_descriptor
+
+    def state_api_service_descriptor(self):
+      url = 'localhost:%s' % self.state_port
+      api_service_descriptor = endpoints_pb2.ApiServiceDescriptor()
+      api_service_descriptor.url = url
+      return api_service_descriptor
 
     def close(self):
       self.control_handler.done()
@@ -1073,6 +1108,7 @@ class FnApiRunner(runner.PipelineRunner):
       self.data_plane_handler.close()
       self.control_server.stop(5).wait()
       self.data_server.stop(5).wait()
+      self.state_server.stop(5).wait()
 
 
 class BundleManager(object):

@@ -49,9 +49,10 @@ buildscript {
     maven { url "http://repo.spring.io/plugins-release" }
   }
   dependencies {
+    classpath 'net.researchgate:gradle-release:2.6.0'                                                   // Enable gradle-based release management
     classpath "com.gradle:build-scan-plugin:1.13.1"                                                     // Enable publishing build scans
     classpath "net.ltgt.gradle:gradle-apt-plugin:0.13"                                                  // Enable a Java annotation processor
-    classpath "com.google.protobuf:protobuf-gradle-plugin:0.8.1"                                        // Enable proto code generation
+    classpath "com.google.protobuf:protobuf-gradle-plugin:0.8.5"                                        // Enable proto code generation
     classpath "io.spring.gradle:propdeps-plugin:0.0.9.RELEASE"                                          // Enable provided and optional configurations
     classpath "gradle.plugin.org.nosphere.apache:creadur-rat-gradle:0.3.1"                              // Enable Apache license enforcement
     classpath "com.commercehub.gradle.plugin:gradle-avro-plugin:0.11.0"                                 // Enable Avro code generation
@@ -62,6 +63,7 @@ buildscript {
     classpath "com.github.jengelman.gradle.plugins:shadow:2.0.1"                                        // Enable shading Java dependencies
     classpath "ca.coglinc:javacc-gradle-plugin:2.4.0"                                                   // Enable the JavaCC parser generator
     classpath "gradle.plugin.io.pry.gradle.offline_dependencies:gradle-offline-dependencies-plugin:0.3" // Enable creating an offline repository
+    classpath "net.ltgt.gradle:gradle-errorprone-plugin:0.0.13"                                         // Enable errorprone Java static analysis
   }
 }
 
@@ -160,3 +162,11 @@ task pythonPreCommit() {
   dependsOn ":beam-sdks-python:check"
 }
 
+apply plugin: 'net.researchgate.release'
+release {
+  revertOnFail = true
+  tagTemplate = 'v${version}'
+  git {
+    requireBranch = 'release-.*|master'
+  }
+}

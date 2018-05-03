@@ -572,7 +572,7 @@ class Pipeline(object):
       ok = True  # Really a nonlocal.
 
       def enter_composite_transform(self, transform_node):
-        self.visit_transform(transform_node)
+        pass
 
       def visit_transform(self, transform_node):
         try:
@@ -590,11 +590,12 @@ class Pipeline(object):
     self.visit(Visitor())
     return Visitor.ok
 
-  def to_runner_api(self, return_context=False):
+  def to_runner_api(self, return_context=False, context=None):
     """For internal use only; no backwards-compatibility guarantees."""
     from apache_beam.runners import pipeline_context
     from apache_beam.portability.api import beam_runner_api_pb2
-    context = pipeline_context.PipelineContext()
+    if context is None:
+      context = pipeline_context.PipelineContext()
     # Mutates context; placing inline would force dependence on
     # argument evaluation order.
     root_transform_id = context.transforms.get_id(self._root_transform())
@@ -822,7 +823,7 @@ class AppliedPTransform(object):
       if transform is None:
         return None
       else:
-        return transform.to_runner_api(context)
+        return transform.to_runner_api(context, has_parts=bool(self.parts))
     return beam_runner_api_pb2.PTransform(
         unique_name=self.full_label,
         spec=transform_to_runner_api(self.transform, context),
@@ -866,7 +867,7 @@ class AppliedPTransform(object):
         None if tag == 'None' else tag: context.pcollections.get_by_id(id)
         for tag, id in proto.outputs.items()}
     # This annotation is expected by some runners.
-    if proto.spec.urn == common_urns.PARDO_TRANSFORM:
+    if proto.spec.urn == common_urns.primitives.PAR_DO.urn:
       result.transform.output_tags = set(proto.outputs.keys()).difference(
           {'None'})
     if not result.parts:
@@ -892,6 +893,13 @@ class PTransformOverride(object):
   @abc.abstractmethod
   def matches(self, applied_ptransform):
     """Determines whether the given AppliedPTransform matches.
+
+    Note that the matching will happen *after* Runner API proto translation.
+    If matching is done via type checks, to/from_runner_api[_parameter] methods
+    must be implemented to preserve the type (and other data) through proto
+    serialization.
+
+    Consider URN-based translation instead.
 
     Args:
       applied_ptransform: AppliedPTransform to be matched.

@@ -58,6 +58,7 @@ import org.apache.beam.sdk.transforms.PTransform;
 import org.apache.beam.sdk.transforms.ParDo;
 import org.apache.beam.sdk.transforms.Reshuffle;
 import org.apache.beam.sdk.transforms.View;
+import org.apache.beam.sdk.transforms.Wait;
 import org.apache.beam.sdk.transforms.display.DisplayData;
 import org.apache.beam.sdk.util.BackOff;
 import org.apache.beam.sdk.util.BackOffUtils;
@@ -179,7 +180,7 @@ import org.joda.time.Duration;
 @Experimental(Experimental.Kind.SOURCE_SINK)
 public class SpannerIO {
 
-  private static final long DEFAULT_BATCH_SIZE_BYTES = 1024 * 1024; // 1 MB
+  private static final long DEFAULT_BATCH_SIZE_BYTES = 1024L * 1024L; // 1 MB
   // Max number of mutations to batch together.
   private static final int MAX_NUM_MUTATIONS = 10000;
   // The maximum number of keys to fit in memory when computing approximate quantiles.
@@ -198,6 +199,7 @@ public class SpannerIO {
         .setSpannerConfig(SpannerConfig.create())
         .setTimestampBound(TimestampBound.strong())
         .setReadOperation(ReadOperation.create())
+        .setBatching(true)
         .build();
   }
 
@@ -210,6 +212,7 @@ public class SpannerIO {
     return new AutoValue_SpannerIO_ReadAll.Builder()
         .setSpannerConfig(SpannerConfig.create())
         .setTimestampBound(TimestampBound.strong())
+        .setBatching(true)
         .build();
   }
 
@@ -263,6 +266,8 @@ public class SpannerIO {
       abstract Builder setTransaction(PCollectionView<Transaction> transaction);
 
       abstract Builder setTimestampBound(TimestampBound timestampBound);
+
+      abstract Builder setBatching(Boolean batching);
 
       abstract ReadAll build();
     }
@@ -329,12 +334,29 @@ public class SpannerIO {
       return toBuilder().setTimestampBound(timestampBound).build();
     }
 
+    /**
+     * By default Batch API is used to read data from Cloud Spanner.
+     * It is useful to disable batching when the underlying query is not root-partitionable.
+     */
+    public ReadAll withBatching(boolean batching) {
+      return toBuilder().setBatching(batching).build();
+    }
+
+    abstract Boolean getBatching();
+
     @Override
     public PCollection<Struct> expand(PCollection<ReadOperation> input) {
+      PTransform<PCollection<ReadOperation>, PCollection<Struct>> readTransform;
+      if (getBatching()) {
+        readTransform = BatchSpannerRead
+            .create(getSpannerConfig(), getTransaction(), getTimestampBound());
+      } else {
+        readTransform = NaiveSpannerRead
+            .create(getSpannerConfig(), getTransaction(), getTimestampBound());
+      }
       return input
-          .apply("Reshuffle", Reshuffle.<ReadOperation>viaRandomKey())
-          .apply("Read from Cloud Spanner",
-              BatchSpannerRead.create(getSpannerConfig(), getTransaction(), getTimestampBound()));
+          .apply("Reshuffle", Reshuffle.viaRandomKey())
+          .apply("Read from Cloud Spanner", readTransform);
     }
   }
 
@@ -356,6 +378,8 @@ public class SpannerIO {
     @Nullable
     abstract PartitionOptions getPartitionOptions();
 
+    abstract Boolean getBatching();
+
     abstract Builder toBuilder();
 
     @AutoValue.Builder
@@ -370,6 +394,8 @@ public class SpannerIO {
       abstract Builder setTransaction(PCollectionView<Transaction> transaction);
 
       abstract Builder setPartitionOptions(PartitionOptions partitionOptions);
+
+      abstract Builder setBatching(Boolean batching);
 
       abstract Read build();
     }
@@ -416,6 +442,11 @@ public class SpannerIO {
     public Read withHost(String host) {
       SpannerConfig config = getSpannerConfig();
       return withSpannerConfig(config.withHost(host));
+    }
+
+    /** If true the uses Cloud Spanner batch API. */
+    public Read withBatching(boolean batching) {
+      return toBuilder().setBatching(batching).build();
     }
 
     @VisibleForTesting
@@ -501,6 +532,7 @@ public class SpannerIO {
       ReadAll readAll = readAll()
           .withSpannerConfig(getSpannerConfig())
           .withTimestampBound(getTimestampBound())
+          .withBatching(getBatching())
           .withTransaction(getTransaction());
       return input.apply(Create.of(getReadOperation())).apply("Execute query", readAll);
     }
@@ -755,9 +787,10 @@ public class SpannerIO {
       }
       // First, read the Cloud Spanner schema.
       final PCollectionView<SpannerSchema> schemaView =
-          input
-              .getPipeline()
-              .apply(Create.of((Void) null))
+          input.getPipeline()
+              .apply("Create seed", Create.of((Void) null))
+              // Wait for input mutations so it is possible to chain transforms.
+              .apply(Wait.on(input))
               .apply(
                   "Read information schema",
                   ParDo.of(new ReadSpannerSchema(spec.getSpannerConfig())))
@@ -851,11 +884,9 @@ public class SpannerIO {
     @ProcessElement
     public void processElement(ProcessContext c) {
       SerializedMutation m = c.element();
-      c.output(KV.of(m.getTableName(), m.getEncodedKey()));
+      c.output(KV.of(m.getTableName().toLowerCase(), m.getEncodedKey()));
     }
   }
-
-
 
   private static boolean isPointDelete(Mutation m) {
     return m.getOperation() == Mutation.Op.DELETE && Iterables.isEmpty(m.getKeySet().getRanges())
@@ -877,7 +908,7 @@ public class SpannerIO {
     @ProcessElement public void processElement(ProcessContext c) {
       Map<String, List<byte[]>> sample = c.sideInput(sampleView);
       SerializedMutation g = c.element();
-      String table = g.getTableName();
+      String table = g.getTableName().toLowerCase();
       byte[] key = g.getEncodedKey();
       String groupKey;
       if (key.length == 0) {

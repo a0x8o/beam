@@ -36,6 +36,8 @@ include "beam-runners-core-java"
 project(":beam-runners-core-java").dir = file("runners/core-java")
 include "beam-runners-direct-java"
 project(":beam-runners-direct-java").dir = file("runners/direct-java")
+include "beam-runners-extensions-java-metrics"
+project(":beam-runners-extensions-java-metrics").dir = file("runners/extensions-java/metrics")
 include "beam-runners-flink_2.11"
 project(":beam-runners-flink_2.11").dir = file("runners/flink")
 include "beam-runners-gcp-gcemd"
@@ -138,6 +140,8 @@ include "beam-sdks-java-io-tika"
 project(":beam-sdks-java-io-tika").dir = file("sdks/java/io/tika")
 include "beam-sdks-java-io-xml"
 project(":beam-sdks-java-io-xml").dir = file("sdks/java/io/xml")
+include "beam-sdks-java-javadoc"
+project(":beam-sdks-java-javadoc").dir = file("sdks/java/javadoc")
 include "beam-sdks-java-maven-archetypes-examples"
 project(":beam-sdks-java-maven-archetypes-examples").dir = file("sdks/java/maven-archetypes/examples")
 include "beam-sdks-java-maven-archetypes-starter"

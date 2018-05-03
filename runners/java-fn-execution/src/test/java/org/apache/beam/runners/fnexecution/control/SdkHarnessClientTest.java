@@ -34,6 +34,7 @@ import static org.mockito.Mockito.when;
 
 import com.google.common.collect.ImmutableMap;
 import java.io.IOException;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -53,7 +54,6 @@ import org.apache.beam.runners.core.construction.PipelineTranslation;
 import org.apache.beam.runners.fnexecution.InProcessSdkHarness;
 import org.apache.beam.runners.fnexecution.control.SdkHarnessClient.ActiveBundle;
 import org.apache.beam.runners.fnexecution.control.SdkHarnessClient.BundleProcessor;
-import org.apache.beam.runners.fnexecution.control.SdkHarnessClient.RemoteOutputReceiver;
 import org.apache.beam.runners.fnexecution.data.FnDataService;
 import org.apache.beam.runners.fnexecution.data.RemoteInputDestination;
 import org.apache.beam.runners.fnexecution.state.StateDelegator;
@@ -92,7 +92,9 @@ public class SdkHarnessClientTest {
   @Mock public FnApiControlClient fnApiControlClient;
   @Mock public FnDataService dataService;
 
-  @Rule public InProcessSdkHarness harness = InProcessSdkHarness.create();
+  @Rule
+  public InProcessSdkHarness harness = InProcessSdkHarness.withClientTimeout(Duration.ofSeconds(5));
+
   @Rule public ExpectedException thrown = ExpectedException.none();
 
   private SdkHarnessClient sdkHarnessClient;
@@ -146,7 +148,7 @@ public class SdkHarnessClientTest {
 
     thrown.expect(IllegalStateException.class);
     thrown.expectMessage("containing a state");
-    BundleProcessor<?> processor = sdkHarnessClient.getProcessor(descriptor, remoteInputs);
+    sdkHarnessClient.getProcessor(descriptor, remoteInputs);
   }
 
   @Test

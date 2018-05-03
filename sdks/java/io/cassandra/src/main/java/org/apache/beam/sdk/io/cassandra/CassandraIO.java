@@ -23,6 +23,7 @@ import static com.google.common.base.Preconditions.checkState;
 import com.google.auto.value.AutoValue;
 import com.google.common.annotations.VisibleForTesting;
 import java.util.List;
+import java.util.concurrent.ExecutionException;
 import javax.annotation.Nullable;
 import org.apache.beam.sdk.annotations.Experimental;
 import org.apache.beam.sdk.coders.Coder;
@@ -79,7 +80,6 @@ import org.apache.beam.sdk.values.PDone;
  */
 @Experimental(Experimental.Kind.SOURCE_SINK)
 public class CassandraIO {
-
   private CassandraIO() {}
 
   /**
@@ -102,7 +102,6 @@ public class CassandraIO {
    */
   @AutoValue
   public abstract static class Read<T> extends PTransform<PBegin, PCollection<T>> {
-
     @Nullable abstract List<String> hosts();
     @Nullable abstract Integer port();
     @Nullable abstract String keyspace();
@@ -113,6 +112,7 @@ public class CassandraIO {
     @Nullable abstract String password();
     @Nullable abstract String localDc();
     @Nullable abstract String consistencyLevel();
+    @Nullable abstract Integer minNumberOfSplits();
     @Nullable abstract CassandraService<T> cassandraService();
     abstract Builder<T> builder();
 
@@ -197,6 +197,18 @@ public class CassandraIO {
     }
 
     /**
+     * It's possible that system.size_estimates isn't populated or that the number of splits
+     * computed by Beam is still to low for Cassandra to handle it.
+     * This setting allows to enforce a minimum number of splits in case Beam cannot compute
+     * it correctly.
+     */
+    public Read<T> withMinNumberOfSplits(Integer minNumberOfSplits) {
+      checkArgument(minNumberOfSplits != null, "minNumberOfSplits can not be null");
+      checkArgument(minNumberOfSplits > 0, "minNumberOfSplits must be greater than 0");
+      return builder().setMinNumberOfSplits(minNumberOfSplits).build();
+    }
+
+    /**
      * Specify an instance of {@link CassandraService} used to connect and read from Cassandra
      * database.
      */
@@ -230,6 +242,7 @@ public class CassandraIO {
       abstract Builder<T> setPassword(String password);
       abstract Builder<T> setLocalDc(String localDc);
       abstract Builder<T> setConsistencyLevel(String consistencyLevel);
+      abstract Builder<T> setMinNumberOfSplits(Integer minNumberOfSplits);
       abstract Builder<T> setCassandraService(CassandraService<T> cassandraService);
       abstract Read<T> build();
     }
@@ -246,19 +259,16 @@ public class CassandraIO {
       }
       return new CassandraServiceImpl<>();
     }
-
   }
 
   @VisibleForTesting
   static class CassandraSource<T> extends BoundedSource<T> {
+    final Read<T> spec;
+    final List<String> splitQueries;
 
-    protected final Read<T> spec;
-    protected final String splitQuery;
-
-    CassandraSource(Read<T> spec,
-                    String splitQuery) {
+    CassandraSource(Read<T> spec, List<String> splitQueries) {
       this.spec = spec;
-      this.splitQuery = splitQuery;
+      this.splitQueries = splitQueries;
     }
 
     @Override
@@ -272,15 +282,14 @@ public class CassandraIO {
     }
 
     @Override
-    public long getEstimatedSizeBytes(PipelineOptions pipelineOptions) throws Exception {
+    public long getEstimatedSizeBytes(PipelineOptions pipelineOptions) {
       return spec.getCassandraService().getEstimatedSizeBytes(spec);
     }
 
     @Override
-    public List<BoundedSource<T>> split(long desiredBundleSizeBytes,
-                                                   PipelineOptions pipelineOptions) {
-      return spec.getCassandraService()
-          .split(spec, desiredBundleSizeBytes);
+    public List<BoundedSource<T>> split(
+        long desiredBundleSizeBytes, PipelineOptions pipelineOptions) {
+      return spec.getCassandraService().split(spec, desiredBundleSizeBytes);
     }
 
     @Override
@@ -462,7 +471,8 @@ public class CassandraIO {
     }
 
     @ProcessElement
-    public void processElement(ProcessContext processContext) {
+    public void processElement(ProcessContext processContext)
+        throws ExecutionException, InterruptedException {
       T entity = processContext.element();
       writer.write(entity);
     }
