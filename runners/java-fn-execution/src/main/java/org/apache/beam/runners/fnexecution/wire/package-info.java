@@ -16,7 +16,5 @@
  * limitations under the License.
  */
 
-/**
- * table schema for KafkaIO.
- */
-package org.apache.beam.sdk.extensions.sql.meta.provider.kafka;
+/** Wire coders for communications between runner and SDK harness. */
+package org.apache.beam.runners.fnexecution.wire;

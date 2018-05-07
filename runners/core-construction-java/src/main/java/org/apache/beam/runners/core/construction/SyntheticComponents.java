@@ -16,7 +16,29 @@
  * limitations under the License.
  */
 
+package org.apache.beam.runners.core.construction;
+
+import java.util.function.Predicate;
+
 /**
- * table schema for KafkaIO.
+ * A utility class to interact with synthetic pipeline components.
  */
-package org.apache.beam.sdk.extensions.sql.meta.provider.kafka;
+public class SyntheticComponents {
+  private SyntheticComponents() {}
+
+  /**
+   * Generate an ID which does not collide with any existing ID, as determined by the input
+   * predicate.
+   *
+   * <p>The returned ID will be in the form "${baseName}:${number}".
+   */
+  public static String uniqueId(String baseName, Predicate<String> existingIds) {
+    int i = 0;
+    String name;
+    do {
+      name = String.format("%s:%s", baseName, i);
+      i++;
+    } while (existingIds.test(name));
+    return name;
+  }
+}
