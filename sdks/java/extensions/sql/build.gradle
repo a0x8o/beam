@@ -24,8 +24,6 @@ description = "Apache Beam :: SDKs :: Java :: Extensions :: SQL"
 ext.summary = "Beam SQL provides a new interface to generate a Beam pipeline from SQL statement"
 
 test {
-  jvmArgs "-da"
-
   // charset that calcite will use for the tables in the tests
   // need to setup as system property prior to running any tests
   // or some of the tests may fail as calcite will init itself
@@ -66,11 +64,13 @@ dependencies {
   shadow library.java.joda_time
   shadow project(path: ":beam-runners-direct-java", configuration: "shadow")
   provided project(path: ":beam-sdks-java-io-kafka", configuration: "shadow")
+  provided project(path: ":beam-sdks-java-io-google-cloud-platform", configuration: "shadow")
   provided library.java.kafka_clients
   testCompile library.java.slf4j_jdk14
   testCompile library.java.junit
   testCompile library.java.hamcrest_core
   testCompile library.java.mockito_core
+  testCompile library.java.quickcheck_core
 }
 
 // Copy Caclcite templates and our own template into the build directory

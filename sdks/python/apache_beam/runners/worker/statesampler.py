@@ -19,7 +19,6 @@
 import threading
 from collections import namedtuple
 
-from apache_beam.metrics import execution
 from apache_beam.utils.counters import Counter
 from apache_beam.utils.counters import CounterName
 
@@ -47,7 +46,10 @@ def get_current_tracker():
 
 StateSamplerInfo = namedtuple(
     'StateSamplerInfo',
-    ['state_name', 'transition_count', 'time_since_transition'])
+    ['state_name',
+     'transition_count',
+     'time_since_transition',
+     'tracked_thread'])
 
 
 # Default period for sampling current state of pipeline execution.
@@ -63,6 +65,7 @@ class StateSampler(statesampler_impl.StateSampler):
     self._counter_factory = counter_factory
     self._states_by_name = {}
     self.sampling_period_ms = sampling_period_ms
+    self.tracked_thread = None
     super(StateSampler, self).__init__(sampling_period_ms)
 
   def stop_if_still_running(self):
@@ -70,8 +73,8 @@ class StateSampler(statesampler_impl.StateSampler):
       self.stop()
 
   def start(self):
+    self.tracked_thread = threading.current_thread()
     set_current_tracker(self)
-    execution.metrics_startup()
     super(StateSampler, self).start()
     self.started = True
 
@@ -80,7 +83,8 @@ class StateSampler(statesampler_impl.StateSampler):
     return StateSamplerInfo(
         self.current_state().name,
         self.state_transition_count,
-        self.time_since_transition)
+        self.time_since_transition,
+        self.tracked_thread)
 
   def scoped_state(self,
                    step_name,

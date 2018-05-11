@@ -17,22 +17,19 @@
  */
 package org.apache.beam.sdk.extensions.sql;
 
-import java.util.List;
 import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.annotations.Experimental;
 import org.apache.beam.sdk.extensions.sql.impl.BeamSqlEnv;
-import org.apache.beam.sdk.extensions.sql.impl.parser.BeamSqlParser;
-import org.apache.beam.sdk.extensions.sql.impl.parser.SqlCreateTable;
-import org.apache.beam.sdk.extensions.sql.impl.parser.SqlDropTable;
 import org.apache.beam.sdk.extensions.sql.impl.rel.BeamRelNode;
-import org.apache.beam.sdk.extensions.sql.meta.Table;
 import org.apache.beam.sdk.extensions.sql.meta.store.MetaStore;
 import org.apache.beam.sdk.options.PipelineOptions;
 import org.apache.beam.sdk.options.PipelineOptionsFactory;
-import org.apache.beam.sdk.values.PCollection;
-import org.apache.beam.sdk.values.Row;
 import org.apache.calcite.plan.RelOptUtil;
+import org.apache.calcite.sql.SqlExecutableStatement;
 import org.apache.calcite.sql.SqlNode;
+import org.apache.calcite.sql.parser.SqlParseException;
+import org.apache.calcite.tools.RelConversionException;
+import org.apache.calcite.tools.ValidationException;
 
 /**
  * {@link BeamSqlCli} provides methods to execute Beam SQL with an interactive client.
@@ -47,13 +44,7 @@ public class BeamSqlCli {
 
   public BeamSqlCli metaStore(MetaStore metaStore) {
     this.metaStore = metaStore;
-    this.env = new BeamSqlEnv();
-
-    // dump tables in metaStore into schema
-    List<Table> tables = this.metaStore.listTables();
-    for (Table table : tables) {
-      env.registerTable(table.getName(), metaStore.buildBeamSqlTable(table.getName()));
-    }
+    this.env = new BeamSqlEnv(metaStore);
 
     return this;
   }
@@ -65,7 +56,8 @@ public class BeamSqlCli {
   /**
    * Returns a human readable representation of the query execution plan.
    */
-  public String explainQuery(String sqlString) throws Exception {
+  public String explainQuery(String sqlString)
+      throws ValidationException, RelConversionException, SqlParseException {
     BeamRelNode exeTree = env.getPlanner().convertToBeamRel(sqlString);
     String beamPlan = RelOptUtil.toString(exeTree);
     return beamPlan;
@@ -74,49 +66,20 @@ public class BeamSqlCli {
   /**
    * Executes the given sql.
    */
-  public void execute(String sqlString) throws Exception {
-    BeamSqlParser parser = new BeamSqlParser(sqlString);
-    SqlNode sqlNode = parser.impl().parseSqlStmtEof();
+  public void execute(String sqlString)
+      throws ValidationException, RelConversionException, SqlParseException {
+    SqlNode sqlNode = env.getPlanner().parse(sqlString);
 
-    if (sqlNode instanceof SqlCreateTable) {
-      handleCreateTable((SqlCreateTable) sqlNode, metaStore);
-    } else if (sqlNode instanceof SqlDropTable) {
-      handleDropTable((SqlDropTable) sqlNode);
+    // DDL nodes are SqlExecutableStatement
+    if (sqlNode instanceof SqlExecutableStatement) {
+      ((SqlExecutableStatement) sqlNode).execute(env.getContext());
     } else {
       PipelineOptions options = PipelineOptionsFactory.fromArgs(new String[] {}).withValidation()
           .as(PipelineOptions.class);
       options.setJobName("BeamPlanCreator");
       Pipeline pipeline = Pipeline.create(options);
-      compilePipeline(sqlString, pipeline, env);
+      env.getPlanner().compileBeamPipeline(sqlString, pipeline);
       pipeline.run();
     }
-  }
-
-  private void handleCreateTable(SqlCreateTable stmt, MetaStore store) {
-    Table table = stmt.toTable();
-    if (table.getType() == null) {
-      throw new IllegalStateException("Table type is not specified and BeamSqlCli#defaultTableType"
-          + "is not configured!");
-    }
-
-    store.createTable(table);
-
-    // register the new table into the schema
-    env.registerTable(table.getName(), metaStore.buildBeamSqlTable(table.getName()));
-  }
-
-  private void handleDropTable(SqlDropTable stmt) {
-    metaStore.dropTable(stmt.getNameSimple());
-    env.deregisterTable(stmt.getNameSimple());
-  }
-
-  /**
-   * compile SQL, and return a {@link Pipeline}.
-   */
-  private static PCollection<Row> compilePipeline(String sqlStatement, Pipeline basePipeline,
-                                                  BeamSqlEnv sqlEnv) throws Exception {
-    PCollection<Row> resultStream =
-        sqlEnv.getPlanner().compileBeamPipeline(sqlStatement, basePipeline, sqlEnv);
-    return resultStream;
   }
 }

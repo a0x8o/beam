@@ -21,7 +21,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import org.apache.beam.sdk.Pipeline;
-import org.apache.beam.sdk.extensions.sql.impl.BeamSqlEnv;
 import org.apache.beam.sdk.extensions.sql.impl.parser.impl.BeamSqlParserImpl;
 import org.apache.beam.sdk.extensions.sql.impl.rel.BeamLogicalConvention;
 import org.apache.beam.sdk.extensions.sql.impl.rel.BeamRelNode;
@@ -39,7 +38,7 @@ import org.apache.calcite.plan.RelTraitDef;
 import org.apache.calcite.plan.RelTraitSet;
 import org.apache.calcite.prepare.CalciteCatalogReader;
 import org.apache.calcite.rel.RelCollationTraitDef;
-import org.apache.calcite.rel.RelNode;
+import org.apache.calcite.rel.RelRoot;
 import org.apache.calcite.rel.type.RelDataTypeSystem;
 import org.apache.calcite.schema.SchemaPlus;
 import org.apache.calcite.sql.SqlNode;
@@ -65,12 +64,12 @@ import org.slf4j.LoggerFactory;
 public class BeamQueryPlanner {
   private static final Logger LOG = LoggerFactory.getLogger(BeamQueryPlanner.class);
 
-  protected final Planner planner;
+  private final FrameworkConfig config;
 
   public static final JavaTypeFactory TYPE_FACTORY = new JavaTypeFactoryImpl(
       RelDataTypeSystem.DEFAULT);
 
-  public BeamQueryPlanner(BeamSqlEnv sqlEnv, SchemaPlus schema) {
+  public BeamQueryPlanner(SchemaPlus schema) {
     String defaultCharsetKey = "saffron.default.charset";
     if (System.getProperty(defaultCharsetKey) == null) {
       System.setProperty(defaultCharsetKey, ConversionUtil.NATIVE_UTF16_CHARSET_NAME);
@@ -88,30 +87,36 @@ public class BeamQueryPlanner {
     sqlOperatorTables.add(SqlStdOperatorTable.instance());
     sqlOperatorTables.add(
         new CalciteCatalogReader(
-            CalciteSchema.from(schema), Collections.emptyList(), TYPE_FACTORY, null));
+            CalciteSchema.from(schema).root(), Collections.emptyList(), TYPE_FACTORY, null));
 
-    FrameworkConfig config =
+    config =
         Frameworks.newConfigBuilder()
             .parserConfig(SqlParser.configBuilder()
-                .setLex(Lex.MYSQL)
+                .setLex(Lex.JAVA)
                 .setParserFactory(BeamSqlParserImpl.FACTORY)
                 .build())
             .defaultSchema(schema)
             .traitDefs(traitDefs)
             .context(Contexts.EMPTY_CONTEXT)
-            .ruleSets(BeamRuleSets.getRuleSets(sqlEnv))
+            .ruleSets(BeamRuleSets.getRuleSets())
             .costFactory(null)
             .typeSystem(BeamRelDataTypeSystem.BEAM_REL_DATATYPE_SYSTEM)
             .operatorTable(new ChainedSqlOperatorTable(sqlOperatorTables))
             .build();
-    this.planner = Frameworks.getPlanner(config);
   }
 
   /**
    * Parse input SQL query, and return a {@link SqlNode} as grammar tree.
    */
-  public SqlNode parseQuery(String sqlQuery) throws SqlParseException{
-    return planner.parse(sqlQuery);
+  public SqlNode parse(String sqlStatement) throws SqlParseException {
+    Planner planner = getPlanner();
+    SqlNode parsed;
+    try {
+      parsed = planner.parse(sqlStatement);
+    } finally {
+      planner.close();
+    }
+    return parsed;
   }
 
   /**
@@ -119,8 +124,8 @@ public class BeamQueryPlanner {
    * which is linked with the given {@code pipeline}. The final output stream is returned as
    * {@code PCollection} so more operations can be applied.
    */
-  public PCollection<Row> compileBeamPipeline(String sqlStatement, Pipeline basePipeline
-      , BeamSqlEnv sqlEnv) throws Exception {
+  public PCollection<Row> compileBeamPipeline(String sqlStatement, Pipeline basePipeline)
+      throws ValidationException, RelConversionException, SqlParseException {
     BeamRelNode relNode = convertToBeamRel(sqlStatement);
 
     // the input PCollectionTuple is empty, and be rebuilt in BeamIOSourceRel.
@@ -135,41 +140,28 @@ public class BeamQueryPlanner {
   public BeamRelNode convertToBeamRel(String sqlStatement)
       throws ValidationException, RelConversionException, SqlParseException {
     BeamRelNode beamRelNode;
+    Planner planner = getPlanner();
     try {
-      beamRelNode = (BeamRelNode) validateAndConvert(planner.parse(sqlStatement));
+      SqlNode parsed = planner.parse(sqlStatement);
+      SqlNode validated = planner.validate(parsed);
+      LOG.info("SQL:\n" + validated);
+
+      RelRoot root = planner.rel(validated);
+      LOG.info("SQLPlan>\n" + RelOptUtil.toString(root.rel));
+
+      RelTraitSet desiredTraits = root.rel.getTraitSet()
+          .replace(BeamLogicalConvention.INSTANCE)
+          .replace(root.collation)
+          .simplify();
+      beamRelNode = (BeamRelNode) planner.transform(0, desiredTraits, root.rel);
     } finally {
       planner.close();
     }
     return beamRelNode;
   }
 
-  private RelNode validateAndConvert(SqlNode sqlNode)
-      throws ValidationException, RelConversionException {
-    SqlNode validated = validateNode(sqlNode);
-    LOG.info("SQL:\n" + validated);
-    RelNode relNode = convertToRelNode(validated);
-    return convertToBeamRel(relNode);
-  }
-
-  private RelNode convertToBeamRel(RelNode relNode) throws RelConversionException {
-    RelTraitSet traitSet = relNode.getTraitSet();
-
-    LOG.info("SQLPlan>\n" + RelOptUtil.toString(relNode));
-
-    // PlannerImpl.transform() optimizes RelNode with ruleset
-    return planner.transform(0, traitSet.plus(BeamLogicalConvention.INSTANCE), relNode);
-  }
-
-  private RelNode convertToRelNode(SqlNode sqlNode) throws RelConversionException {
-    return planner.rel(sqlNode).rel;
-  }
-
-  private SqlNode validateNode(SqlNode sqlNode) throws ValidationException {
-    return planner.validate(sqlNode);
-  }
-
-  public Planner getPlanner() {
-    return planner;
+  private Planner getPlanner() {
+    return Frameworks.getPlanner(config);
   }
 
 }

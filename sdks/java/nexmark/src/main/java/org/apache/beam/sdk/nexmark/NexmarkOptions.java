@@ -19,6 +19,7 @@ package org.apache.beam.sdk.nexmark;
 
 import javax.annotation.Nullable;
 import org.apache.beam.sdk.extensions.gcp.options.GcpOptions;
+import org.apache.beam.sdk.io.gcp.pubsub.PubsubOptions;
 import org.apache.beam.sdk.options.ApplicationNameOptions;
 import org.apache.beam.sdk.options.Default;
 import org.apache.beam.sdk.options.Description;
@@ -29,7 +30,7 @@ import org.apache.beam.sdk.options.StreamingOptions;
  * Command line flags.
  */
 public interface NexmarkOptions
-    extends ApplicationNameOptions, GcpOptions, PipelineOptions, StreamingOptions {
+    extends ApplicationNameOptions, GcpOptions, PipelineOptions, PubsubOptions, StreamingOptions {
   @Description("Which suite to run. Default is to use command line arguments for one job.")
   @Default.Enum("DEFAULT")
   NexmarkSuite getSuite();
@@ -407,23 +408,31 @@ public interface NexmarkOptions
 
   void setQueryLanguage(String value);
 
-  @Description("Base name of Kafka source topic in streaming mode.")
+  @Description("Base name of Kafka events topic in streaming mode.")
   @Nullable
-  @Default.String("nexmark-source")
-  String getKafkaSourceTopic();
+  @Default.String("nexmark")
+  String getKafkaTopic();
 
-  void setKafkaSourceTopic(String value);
+  void setKafkaTopic(String value);
 
-  @Description("Base name of Kafka sink topic in streaming mode.")
+  @Description("Base name of Kafka results topic in streaming mode.")
   @Nullable
-  @Default.String("nexmark-sink")
-  String getKafkaSinkTopic();
+  @Default.String("nexmark-results")
+  String getKafkaResultsTopic();
 
-  void setKafkaSinkTopic(String value);
+  void setKafkaResultsTopic(String value);
 
   @Description("Kafka Bootstrap Server domains.")
   @Nullable
   String getBootstrapServers();
 
   void setBootstrapServers(String value);
+
+  @Description("Same as --numWorkers in DataflowPipelineWorkerPoolOptions")
+  int getNumWorkers();
+  void setNumWorkers(int value);
+
+  @Description("Same as --maxNumWorkers in DataflowPipelineWorkerPoolOptions.")
+  int getMaxNumWorkers();
+  void setMaxNumWorkers(int value);
 }

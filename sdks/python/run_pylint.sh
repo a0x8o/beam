@@ -89,25 +89,6 @@ done
 isort ${MODULE} -p apache_beam --line-width 120 --check-only --order-by-type \
     --combine-star --force-single-line-imports --diff --recursive ${SKIP_PARAM}
 
-FUTURIZE_EXCLUDED=(
-  "typehints.py"
-  "pb2"
-  "trivial_infernce.py"
-)
-FUTURIZE_GREP_PARAM=$( IFS='|'; echo "${ids[*]}" )
-echo "Checking for files requiring stage 1 refactoring from futurize"
-futurize_results=$(futurize -j 8 --stage1 apache_beam 2>&1 |grep Refactored)
-futurize_filtered=$(echo "$futurize_results" |grep -v "$FUTURIZE_GREP_PARAM" || echo "")
-count=${#futurize_filtered}
-if [ "$count" != "0" ]; then
-  echo "Some of the changes require futurize stage 1 changes."
-  echo "The files with required changes:"
-  echo "$futurize_filtered"
-  echo "You can run futurize apache_beam to see the proposed changes."
-  exit 1
-fi
-echo "No future changes needed"
-
 echo "Checking unittest.main for module ${MODULE}:"
 TESTS_MISSING_MAIN=$(find ${MODULE} | grep '\.py$' | xargs grep -l '^import unittest$' | xargs grep -L unittest.main)
 if [ -n "${TESTS_MISSING_MAIN}" ]; then
