@@ -56,6 +56,8 @@ dependencies {
   compile project(path: ":beam-runners-core-construction-java", configuration: "shadow")
   compile project(path: ":beam-runners-core-java", configuration: "shadow")
   compile project(path: ":beam-runners-local-java-core", configuration: "shadow")
+  compile project(path: ":beam-runners-java-fn-execution", configuration: "shadow")
+  compile project(path: ":beam-sdks-java-fn-execution", configuration: "shadow")
   shadow project(path: ":beam-sdks-java-core", configuration: "shadow")
   shadow library.java.joda_time
   shadow library.java.findbugs_jsr305
@@ -76,8 +78,11 @@ dependencies {
   needsRunner project(path: ":beam-sdks-java-core", configuration: "shadowTest")
   needsRunner project(path: project.path, configuration: "shadow")
   needsRunner project(path: project.path, configuration: "shadowTest")
+  validatesRunner project(path: ":beam-runners-core-construction-java", configuration: "shadowTest")
+  validatesRunner project(path: ":beam-runners-core-java", configuration: "shadowTest")
   validatesRunner project(path: ":beam-sdks-java-core", configuration: "shadowTest")
   validatesRunner project(path: project.path, configuration: "shadow")
+  validatesRunner project(path: project.path, configuration: "shadowTest")
 }
 
 task needsRunnerTests(type: Test) {
@@ -106,11 +111,17 @@ task validatesRunner(type: Test) {
   group = "Verification"
   description "Validates Direct runner"
 
-  // Run in parallel up to configured --max-workers
-  maxParallelForks Integer.MAX_VALUE
-  testClassesDirs = files(project(":beam-sdks-java-core").sourceSets.test.output.classesDirs)
+  def pipelineOptions = JsonOutput.toJson(["--runner=DirectRunner", "--runnerDeterminedSharding=false", "--protoTranslation"])
+  systemProperty "beamTestPipelineOptions", pipelineOptions
+
+  classpath = configurations.validatesRunner
+  // NOTE: We only add to the test class dirs to ensure that the direct runner
+  // tests (i.e., those from this subproject) get scanned.
+  testClassesDirs += files(project(":beam-runners-core-construction-java").sourceSets.test.output.classesDirs)
+  testClassesDirs += files(project(":beam-runners-core-java").sourceSets.test.output.classesDirs)
+  testClassesDirs += files(project(":beam-sdks-java-core").sourceSets.test.output.classesDirs)
   useJUnit {
-    includeCategories 'org.apache.beam.sdk.testing.ValidatesRunner'
+    includeCategories "org.apache.beam.sdk.testing.ValidatesRunner"
     excludeCategories "org.apache.beam.sdk.testing.LargeKeys\$Above100MB"
   }
 }

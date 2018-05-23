@@ -55,6 +55,7 @@ RUN \
     pip install "six == 1.10.0" && \
     pip install "typing == 3.6.1" && \
     pip install "futures == 3.1.1" && \
+    pip install "future == 0.16.0" && \
     # Setup packages
     pip install "nose == 1.3.7" && \
     # GCP extra features
@@ -64,7 +65,7 @@ RUN \
     pip install "google-cloud-pubsub == 0.26.0" && \
     pip install "google-cloud-bigquery == 0.25.0" && \
     # Optional packages
-    pip install "cython == 0.27.2" && \
+    pip install "cython == 0.28.1" && \
     pip install "guppy == 0.1.10" && \
     pip install "python-snappy == 0.5.1" && \
     # These are additional packages likely to be used by customers.

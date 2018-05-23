@@ -60,7 +60,7 @@ buildscript {
     classpath "gradle.plugin.com.github.blindpirate:gogradle:0.9"                                       // Enable Go code compilation
     classpath "gradle.plugin.com.palantir.gradle.docker:gradle-docker:0.13.0"                           // Enable building Docker containers
     classpath "cz.malohlava:visteg:1.0.3"                                                               // Enable generating Gradle task dependencies as ".dot" files
-    classpath "com.github.jengelman.gradle.plugins:shadow:2.0.1"                                        // Enable shading Java dependencies
+    classpath "com.github.jengelman.gradle.plugins:shadow:2.0.4"                                        // Enable shading Java dependencies
     classpath "ca.coglinc:javacc-gradle-plugin:2.4.0"                                                   // Enable the JavaCC parser generator
     classpath "gradle.plugin.io.pry.gradle.offline_dependencies:gradle-offline-dependencies-plugin:0.3" // Enable creating an offline repository
     classpath "net.ltgt.gradle:gradle-errorprone-plugin:0.0.13"                                         // Enable errorprone Java static analysis
@@ -109,6 +109,9 @@ rat {
 
     // VCF test files
     "**/apache_beam/testing/data/vcf/*",
+
+    // JDBC package config files
+    "**/META-INF/services/java.sql.Driver",
   ]
 
   // Add .gitignore excludes to the Apache Rat exclusion list. We re-create the behavior
@@ -137,14 +140,13 @@ task javaPreCommit() {
   dependsOn ":rat"
   dependsOn ":beam-sdks-java-core:buildNeeded"
   dependsOn ":beam-sdks-java-core:buildDependents"
-  dependsOn ":beam-sdks-java-maven-archetypes-examples:generateAndBuildArchetypeTest"
-  dependsOn ":beam-sdks-java-maven-archetypes-starter:generateAndBuildArchetypeTest"
   dependsOn ":beam-examples-java:preCommit"
 }
 
 task javaPostCommit() {
   dependsOn ":javaPreCommit"
   dependsOn ":beam-runners-google-cloud-dataflow-java:postCommit"
+  dependsOn ":beam-sdks-java-extensions-sql:postCommit"
 }
 
 task goPreCommit() {
@@ -153,8 +155,18 @@ task goPreCommit() {
 }
 
 task goPostCommit() {
-  // Same currently as precommit, but duplicated to provide a clearer signal of reliability.
   dependsOn ":goPreCommit"
+  dependsOn ":goIntegrationTests"
+}
+
+task goIntegrationTests() {
+  doLast {
+    exec {
+      executable 'sh'
+      args '-c', './sdks/go/test/run_integration_tests.sh'
+    }
+  }
+  dependsOn ":beam-sdks-go-test:build"
 }
 
 task pythonPreCommit() {
