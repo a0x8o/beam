@@ -31,18 +31,18 @@ import org.joda.time.DurationFieldType;
 /**
  * Infix '-' operation for timestamps.
  *
- * <p>Implements 2 SQL subtraction operations at the moment:
- * 'timestampdiff(timeunit, timestamp, timestamp)', and 'timestamp - interval'
+ * <p>Implements 2 SQL subtraction operations at the moment: 'timestampdiff(timeunit, timestamp,
+ * timestamp)', and 'timestamp - interval'
  *
  * <p>Calcite converts both of the above into infix '-' expression, with different operands and
  * return types.
  *
- * <p>This class delegates evaluation to specific implementation of one of the above operations,
- * see {@link BeamSqlTimestampMinusTimestampExpression}
- * and {@link BeamSqlTimestampMinusIntervalExpression}
+ * <p>This class delegates evaluation to specific implementation of one of the above operations, see
+ * {@link BeamSqlTimestampMinusTimestampExpression} and {@link
+ * BeamSqlTimestampMinusIntervalExpression}
  *
- * <p>Calcite supports one more subtraction kind: 'interval - interval',
- * but it is not implemented yet.
+ * <p>Calcite supports one more subtraction kind: 'interval - interval', but it is not implemented
+ * yet.
  */
 public class BeamSqlDatetimeMinusExpression extends BeamSqlExpression {
 
@@ -94,12 +94,12 @@ public class BeamSqlDatetimeMinusExpression extends BeamSqlExpression {
   }
 
   @Override
-  public BeamSqlPrimitive evaluate(Row inputRow, BoundedWindow window) {
+  public BeamSqlPrimitive evaluate(
+      Row inputRow, BoundedWindow window, ImmutableMap<Integer, Object> correlateEnv) {
     if (delegateExpression == null) {
       throw new IllegalStateException("Unable to execute unsupported 'datetime minus' expression");
     }
 
-    return delegateExpression.evaluate(inputRow, window);
+    return delegateExpression.evaluate(inputRow, window, correlateEnv);
   }
 }
-

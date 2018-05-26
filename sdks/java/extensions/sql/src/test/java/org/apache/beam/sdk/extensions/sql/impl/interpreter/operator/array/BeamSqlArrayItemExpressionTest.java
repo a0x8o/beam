@@ -22,6 +22,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableMap;
 import java.util.Arrays;
 import java.util.List;
 import org.apache.beam.sdk.extensions.sql.impl.interpreter.operator.BeamSqlExpression;
@@ -31,9 +32,7 @@ import org.apache.beam.sdk.values.Row;
 import org.apache.calcite.sql.type.SqlTypeName;
 import org.junit.Test;
 
-/**
- * Unit tests for {@link BeamSqlArrayItemExpression}.
- */
+/** Unit tests for {@link BeamSqlArrayItemExpression}. */
 public class BeamSqlArrayItemExpressionTest {
 
   private static final Row NULL_ROW = null;
@@ -49,9 +48,7 @@ public class BeamSqlArrayItemExpressionTest {
     BeamSqlArrayItemExpression expression =
         new BeamSqlArrayItemExpression(input, SqlTypeName.VARCHAR);
 
-    assertEquals(
-        "aaa",
-        expression.evaluate(NULL_ROW, NULL_WINDOW).getValue());
+    assertEquals("aaa", expression.evaluate(NULL_ROW, NULL_WINDOW, ImmutableMap.of()).getValue());
   }
 
   @Test
@@ -64,9 +61,7 @@ public class BeamSqlArrayItemExpressionTest {
     BeamSqlArrayItemExpression expression =
         new BeamSqlArrayItemExpression(input, SqlTypeName.VARCHAR);
 
-    assertEquals(
-        "bbb",
-        expression.evaluate(NULL_ROW, NULL_WINDOW).getValue());
+    assertEquals("bbb", expression.evaluate(NULL_ROW, NULL_WINDOW, ImmutableMap.of()).getValue());
   }
 
   @Test
@@ -85,8 +80,7 @@ public class BeamSqlArrayItemExpressionTest {
   @Test
   public void testRejectsLessThanTwoOperands() {
     List<BeamSqlExpression> input =
-        ImmutableList.of(
-            BeamSqlPrimitive.of(SqlTypeName.ARRAY, Arrays.asList("aaa", "bbb")));
+        ImmutableList.of(BeamSqlPrimitive.of(SqlTypeName.ARRAY, Arrays.asList("aaa", "bbb")));
 
     BeamSqlArrayItemExpression expression =
         new BeamSqlArrayItemExpression(input, SqlTypeName.VARCHAR);

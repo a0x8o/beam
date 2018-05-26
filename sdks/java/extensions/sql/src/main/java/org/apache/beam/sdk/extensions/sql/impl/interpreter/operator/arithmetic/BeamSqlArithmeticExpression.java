@@ -18,6 +18,7 @@
 
 package org.apache.beam.sdk.extensions.sql.impl.interpreter.operator.arithmetic;
 
+import com.google.common.collect.ImmutableMap;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
@@ -28,11 +29,10 @@ import org.apache.beam.sdk.values.Row;
 import org.apache.calcite.runtime.SqlFunctions;
 import org.apache.calcite.sql.type.SqlTypeName;
 
-/**
- * Base class for all arithmetic operators.
- */
+/** Base class for all arithmetic operators. */
 public abstract class BeamSqlArithmeticExpression extends BeamSqlExpression {
   private static final List<SqlTypeName> ORDERED_APPROX_TYPES = new ArrayList<>();
+
   static {
     ORDERED_APPROX_TYPES.add(SqlTypeName.TINYINT);
     ORDERED_APPROX_TYPES.add(SqlTypeName.SMALLINT);
@@ -44,18 +44,22 @@ public abstract class BeamSqlArithmeticExpression extends BeamSqlExpression {
   }
 
   protected BeamSqlArithmeticExpression(List<BeamSqlExpression> operands) {
-    super(operands, deduceOutputType(operands.get(0).getOutputType(),
-        operands.get(1).getOutputType()));
+    super(
+        operands,
+        deduceOutputType(operands.get(0).getOutputType(), operands.get(1).getOutputType()));
   }
 
   protected BeamSqlArithmeticExpression(List<BeamSqlExpression> operands, SqlTypeName outputType) {
     super(operands, outputType);
   }
 
-  @Override public BeamSqlPrimitive<? extends Number> evaluate(Row inputRow,
-      BoundedWindow window) {
-    BigDecimal left = SqlFunctions.toBigDecimal((Object) opValueEvaluated(0, inputRow, window));
-    BigDecimal right = SqlFunctions.toBigDecimal((Object) opValueEvaluated(1, inputRow, window));
+  @Override
+  public BeamSqlPrimitive<? extends Number> evaluate(
+      Row inputRow, BoundedWindow window, ImmutableMap<Integer, Object> correlateEnv) {
+    BigDecimal left =
+        SqlFunctions.toBigDecimal((Object) opValueEvaluated(0, inputRow, window, correlateEnv));
+    BigDecimal right =
+        SqlFunctions.toBigDecimal((Object) opValueEvaluated(1, inputRow, window, correlateEnv));
 
     BigDecimal result = calc(left, right);
     return getCorrectlyTypedResult(result);
@@ -80,7 +84,8 @@ public abstract class BeamSqlArithmeticExpression extends BeamSqlExpression {
     }
   }
 
-  @Override public boolean accept() {
+  @Override
+  public boolean accept() {
     if (operands.size() != 2) {
       return false;
     }

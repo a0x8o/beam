@@ -20,6 +20,7 @@ package org.apache.beam.sdk.extensions.sql.impl.interpreter.operator;
 import static org.junit.Assert.assertEquals;
 
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableMap;
 import java.util.List;
 import org.apache.beam.sdk.extensions.sql.RowSqlTypes;
 import org.apache.beam.sdk.schemas.Schema;
@@ -30,9 +31,7 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.ExpectedException;
 
-/**
- * Unit tests for {@link BeamSqlDotExpression}.
- */
+/** Unit tests for {@link BeamSqlDotExpression}. */
 public class BeamSqlDotExpressionTest {
 
   private static final Row NULL_ROW = null;
@@ -43,49 +42,35 @@ public class BeamSqlDotExpressionTest {
   @Test
   public void testReturnsFieldValue() {
     Schema schema =
-        RowSqlTypes
-          .builder()
-          .withVarcharField("f_string")
-          .withIntegerField("f_int")
-          .build();
+        RowSqlTypes.builder().withVarcharField("f_string").withIntegerField("f_int").build();
 
     List<BeamSqlExpression> elements =
         ImmutableList.of(
             BeamSqlPrimitive.of(
-                SqlTypeName.ROW,
-                Row
-                  .withSchema(schema)
-                  .addValues("aaa", 14)
-                  .build()),
+                SqlTypeName.ROW, Row.withSchema(schema).addValues("aaa", 14).build()),
             BeamSqlPrimitive.of(SqlTypeName.VARCHAR, "f_string"));
 
     BeamSqlDotExpression arrayExpression = new BeamSqlDotExpression(elements, SqlTypeName.VARCHAR);
 
-    assertEquals("aaa", arrayExpression.evaluate(NULL_ROW, NULL_WINDOW).getValue());
+    assertEquals(
+        "aaa", arrayExpression.evaluate(NULL_ROW, NULL_WINDOW, ImmutableMap.of()).getValue());
   }
 
   @Test
   public void testThrowsForNonExistentField() {
     Schema schema =
-        RowSqlTypes
-            .builder()
-            .withVarcharField("f_string")
-            .withIntegerField("f_int")
-            .build();
+        RowSqlTypes.builder().withVarcharField("f_string").withIntegerField("f_int").build();
 
     List<BeamSqlExpression> elements =
         ImmutableList.of(
             BeamSqlPrimitive.of(
-                SqlTypeName.ROW,
-                Row
-                    .withSchema(schema)
-                    .addValues("aaa", 14)
-                    .build()),
+                SqlTypeName.ROW, Row.withSchema(schema).addValues("aaa", 14).build()),
             BeamSqlPrimitive.of(SqlTypeName.VARCHAR, "f_nonExistent"));
 
     thrown.expect(IllegalArgumentException.class);
     thrown.expectMessage("Cannot find field");
 
-    new BeamSqlDotExpression(elements, SqlTypeName.VARCHAR).evaluate(NULL_ROW, NULL_WINDOW);
+    new BeamSqlDotExpression(elements, SqlTypeName.VARCHAR)
+        .evaluate(NULL_ROW, NULL_WINDOW, ImmutableMap.of());
   }
 }

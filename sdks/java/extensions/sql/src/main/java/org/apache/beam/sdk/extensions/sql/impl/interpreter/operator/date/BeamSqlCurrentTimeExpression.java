@@ -18,6 +18,7 @@
 
 package org.apache.beam.sdk.extensions.sql.impl.interpreter.operator.date;
 
+import com.google.common.collect.ImmutableMap;
 import java.util.List;
 import org.apache.beam.sdk.extensions.sql.impl.interpreter.operator.BeamSqlExpression;
 import org.apache.beam.sdk.extensions.sql.impl.interpreter.operator.BeamSqlPrimitive;
@@ -39,12 +40,15 @@ public class BeamSqlCurrentTimeExpression extends BeamSqlExpression {
     super(operands, SqlTypeName.TIME);
   }
 
-  @Override public boolean accept() {
+  @Override
+  public boolean accept() {
     int opCount = getOperands().size();
     return opCount <= 1;
   }
 
-  @Override public BeamSqlPrimitive evaluate(Row inputRow, BoundedWindow window) {
+  @Override
+  public BeamSqlPrimitive evaluate(
+      Row inputRow, BoundedWindow window, ImmutableMap<Integer, Object> correlateEnv) {
     return BeamSqlPrimitive.of(outputType, DateTime.now());
   }
 }
