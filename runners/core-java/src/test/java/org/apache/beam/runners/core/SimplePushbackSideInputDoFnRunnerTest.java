@@ -43,7 +43,6 @@ import org.apache.beam.sdk.util.IdentitySideInputWindowFn;
 import org.apache.beam.sdk.util.WindowedValue;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.PCollectionView;
-import org.hamcrest.Matchers;
 import org.joda.time.Instant;
 import org.junit.Before;
 import org.junit.Rule;
@@ -54,17 +53,14 @@ import org.mockito.Mock;
 import org.mockito.Mockito;
 import org.mockito.MockitoAnnotations;
 
-/**
- * Tests for {@link SimplePushbackSideInputDoFnRunner}.
- */
+/** Tests for {@link SimplePushbackSideInputDoFnRunner}. */
 @RunWith(JUnit4.class)
 public class SimplePushbackSideInputDoFnRunnerTest {
   @Mock private ReadyCheckingSideInputReader reader;
   private TestDoFnRunner<Integer, Integer> underlying;
   private PCollectionView<Integer> singletonView;
 
-  @Rule
-  public TestPipeline p = TestPipeline.create().enableAbandonedNodeEnforcement(false);
+  @Rule public TestPipeline p = TestPipeline.create().enableAbandonedNodeEnforcement(false);
 
   @Before
   public void setup() {
@@ -113,7 +109,7 @@ public class SimplePushbackSideInputDoFnRunnerTest {
     Iterable<WindowedValue<Integer>> oneWindowPushback =
         runner.processElementInReadyWindows(oneWindow);
     assertThat(oneWindowPushback, containsInAnyOrder(oneWindow));
-    assertThat(underlying.inputElems, Matchers.emptyIterable());
+    assertThat(underlying.inputElems, emptyIterable());
   }
 
   @Test
@@ -136,17 +132,16 @@ public class SimplePushbackSideInputDoFnRunnerTest {
     Iterable<WindowedValue<Integer>> multiWindowPushback =
         runner.processElementInReadyWindows(multiWindow);
     assertThat(multiWindowPushback, equalTo(multiWindow.explodeWindows()));
-    assertThat(underlying.inputElems, Matchers.emptyIterable());
+    assertThat(underlying.inputElems, emptyIterable());
   }
 
   @Test
   public void processElementSideInputNotReadySomeWindows() {
     when(reader.isReady(Mockito.eq(singletonView), Mockito.eq(GlobalWindow.INSTANCE)))
         .thenReturn(false);
-    when(
-            reader.isReady(
-                Mockito.eq(singletonView),
-                org.mockito.AdditionalMatchers.not(Mockito.eq(GlobalWindow.INSTANCE))))
+    when(reader.isReady(
+            Mockito.eq(singletonView),
+            org.mockito.AdditionalMatchers.not(Mockito.eq(GlobalWindow.INSTANCE))))
         .thenReturn(true);
 
     SimplePushbackSideInputDoFnRunner<Integer, Integer> runner =
@@ -266,8 +261,8 @@ public class SimplePushbackSideInputDoFnRunnerTest {
     }
 
     @Override
-    public void onTimer(String timerId, BoundedWindow window, Instant timestamp,
-        TimeDomain timeDomain) {
+    public void onTimer(
+        String timerId, BoundedWindow window, Instant timestamp, TimeDomain timeDomain) {
       firedTimers.add(
           TimerData.of(
               timerId,

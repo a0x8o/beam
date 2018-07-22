@@ -23,8 +23,6 @@ import static org.apache.beam.runners.core.construction.PipelineResources.detect
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Sets;
-import com.google.protobuf.ByteString;
-import io.grpc.ManagedChannel;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -51,6 +49,8 @@ import org.apache.beam.sdk.options.PipelineOptions;
 import org.apache.beam.sdk.options.PipelineOptionsValidator;
 import org.apache.beam.sdk.options.PortablePipelineOptions;
 import org.apache.beam.sdk.util.ZipFiles;
+import org.apache.beam.vendor.grpc.v1.io.grpc.ManagedChannel;
+import org.apache.beam.vendor.protobuf.v3.com.google.protobuf.ByteString;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -145,10 +145,9 @@ public class PortableRunner extends PipelineRunner<PipelineResult> {
             .setPipelineOptions(PipelineOptionsTranslation.toProto(options))
             .build();
 
+    LOG.info("Using job server endpoint: {}", endpoint);
     ManagedChannel jobServiceChannel =
-        channelFactory.forDescriptor(
-            ApiServiceDescriptor.newBuilder()
-                .setUrl(endpoint).build());
+        channelFactory.forDescriptor(ApiServiceDescriptor.newBuilder().setUrl(endpoint).build());
 
     JobServiceBlockingStub jobService = JobServiceGrpc.newBlockingStub(jobServiceChannel);
     try (CloseableResource<JobServiceBlockingStub> wrappedJobService =
@@ -159,18 +158,19 @@ public class PortableRunner extends PipelineRunner<PipelineResult> {
 
       ApiServiceDescriptor artifactStagingEndpoint =
           prepareJobResponse.getArtifactStagingEndpoint();
+      String stagingSessionToken = prepareJobResponse.getStagingSessionToken();
 
-      String stagingToken = null;
+      String retrievalToken = null;
       try (CloseableResource<ManagedChannel> artifactChannel =
           CloseableResource.of(
               channelFactory.forDescriptor(artifactStagingEndpoint), ManagedChannel::shutdown)) {
         ArtifactServiceStager stager = ArtifactServiceStager.overChannel(artifactChannel.get());
         LOG.debug("Actual files staged: {}", filesToStage);
-        stagingToken = stager.stage(filesToStage);
+        retrievalToken = stager.stage(stagingSessionToken, filesToStage);
       } catch (CloseableResource.CloseException e) {
         LOG.warn("Error closing artifact staging channel", e);
         // CloseExceptions should only be thrown while closing the channel.
-        checkState(stagingToken != null);
+        checkState(retrievalToken != null);
       } catch (Exception e) {
         throw new RuntimeException("Error staging files.", e);
       }
@@ -178,7 +178,7 @@ public class PortableRunner extends PipelineRunner<PipelineResult> {
       RunJobRequest runJobRequest =
           RunJobRequest.newBuilder()
               .setPreparationId(prepareJobResponse.getPreparationId())
-              .setStagingToken(stagingToken)
+              .setRetrievalToken(retrievalToken)
               .build();
 
       RunJobResponse runJobResponse = jobService.run(runJobRequest);

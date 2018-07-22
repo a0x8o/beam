@@ -37,39 +37,38 @@ import org.apache.beam.sdk.values.Row;
  *
  * <p>At the moment single pojo class corresponds to single {@link Schema}.
  *
- * <p>Supported pojo getter types depend on types supported by the {@link RowTypeFactory}.
- * See {@link DefaultRowTypeFactory} for default implementation.
+ * <p>Supported pojo getter types depend on types supported by the {@link SchemaFactory}. See {@link
+ * DefaultSchemaFactory} for default implementation.
  */
 @Internal
 public class RowFactory implements Serializable {
 
-  private RowTypeFactory rowTypeFactory;
+  private SchemaFactory schemaFactory;
   private final List<GetterFactory> getterFactories;
-  private transient Map<Class, RowTypeGetters> rowTypesCache;
+  private transient Map<Class, SchemaGetters> schemaCache;
 
   /**
-   * Creates an instance of {@link RowFactory} using {@link DefaultRowTypeFactory}
-   * and {@link GeneratedGetterFactory}.
+   * Creates an instance of {@link RowFactory} using {@link DefaultSchemaFactory} and {@link
+   * GeneratedGetterFactory}.
    */
   public static RowFactory createDefault() {
-    return withRowTypeFactory(new DefaultRowTypeFactory());
-  }
-
-
-  /**
-   * Creates an instance of {@link RowFactory} using provided {@link RowTypeFactory}
-   * and {@link GeneratedGetterFactory}.
-   */
-  public static RowFactory withRowTypeFactory(RowTypeFactory rowTypeFactory) {
-    return of(rowTypeFactory, new GeneratedGetterFactory());
+    return withSchemaFactory(new DefaultSchemaFactory());
   }
 
   /**
-   * Creates an instance of {@link RowFactory} using provided {@link RowTypeFactory}
-   * and {@link GetterFactory}.
+   * Creates an instance of {@link RowFactory} using provided {@link SchemaFactory} and {@link
+   * GeneratedGetterFactory}.
    */
-  public static RowFactory of(RowTypeFactory rowTypeFactory, GetterFactory getterFactory) {
-    return new RowFactory(rowTypeFactory, getterFactory);
+  public static RowFactory withSchemaFactory(SchemaFactory schemaFactory) {
+    return of(schemaFactory, new GeneratedGetterFactory());
+  }
+
+  /**
+   * Creates an instance of {@link RowFactory} using provided {@link SchemaFactory} and {@link
+   * GetterFactory}.
+   */
+  public static RowFactory of(SchemaFactory schemaFactory, GetterFactory getterFactory) {
+    return new RowFactory(schemaFactory, getterFactory);
   }
 
   /**
@@ -77,46 +76,46 @@ public class RowFactory implements Serializable {
    *
    * <p>For example this can be used to create BeamRecordSqlTypes instead of {@link Schema}.
    */
-  RowFactory(RowTypeFactory rowTypeFactory, GetterFactory ... getterFactories) {
-    this.rowTypeFactory = rowTypeFactory;
+  RowFactory(SchemaFactory schemaFactory, GetterFactory... getterFactories) {
+    this.schemaFactory = schemaFactory;
     this.getterFactories = Arrays.asList(getterFactories);
   }
 
-  public <T> Schema getRowType(Class<T> elementType) {
-    return getRecordType(elementType).rowType();
+  public <T> Schema getSchema(Class<T> elementType) {
+    return getRecordType(elementType).schema();
   }
 
   /**
    * Create a {@link Row} of the pojo.
    *
-   * <p>This implementation copies the return values of the pojo getters into
-   * the record fields on creation.
+   * <p>This implementation copies the return values of the pojo getters into the record fields on
+   * creation.
    *
    * <p>Currently all public getters are used to populate the record type and instance.
    *
-   * <p>Field names for getters are stripped of the 'get' prefix.
-   * For example record field 'name' will be generated for 'getName()' pojo method.
+   * <p>Field names for getters are stripped of the 'get' prefix. For example record field 'name'
+   * will be generated for 'getName()' pojo method.
    */
   public <T> Row create(T pojo) {
-    RowTypeGetters getters = getRecordType(pojo.getClass());
+    SchemaGetters getters = getRecordType(pojo.getClass());
     List<Object> fieldValues = getFieldValues(getters.valueGetters(), pojo);
-    return Row.withSchema(getters.rowType()).addValues(fieldValues).build();
+    return Row.withSchema(getters.schema()).addValues(fieldValues).build();
   }
 
-  private synchronized RowTypeGetters getRecordType(Class pojoClass) {
-    if (rowTypesCache == null) {
-      rowTypesCache = new HashMap<>();
+  private synchronized SchemaGetters getRecordType(Class pojoClass) {
+    if (schemaCache == null) {
+      schemaCache = new HashMap<>();
     }
 
-    if (rowTypesCache.containsKey(pojoClass)) {
-      return rowTypesCache.get(pojoClass);
+    if (schemaCache.containsKey(pojoClass)) {
+      return schemaCache.get(pojoClass);
     }
 
     List<FieldValueGetter> fieldValueGetters = createGetters(pojoClass);
-    Schema schema = rowTypeFactory.createRowType(fieldValueGetters);
-    rowTypesCache.put(pojoClass, new RowTypeGetters(schema, fieldValueGetters));
+    Schema schema = schemaFactory.createSchema(fieldValueGetters);
+    schemaCache.put(pojoClass, new SchemaGetters(schema, fieldValueGetters));
 
-    return rowTypesCache.get(pojoClass);
+    return schemaCache.get(pojoClass);
   }
 
   private List<FieldValueGetter> createGetters(Class pojoClass) {

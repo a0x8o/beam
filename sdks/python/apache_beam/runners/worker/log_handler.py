@@ -16,16 +16,22 @@
 #
 """Beam fn API log handler."""
 
+from __future__ import absolute_import
+
 import logging
 import math
-import Queue as queue
+import queue
 import threading
+from builtins import range
 
 import grpc
+from future import standard_library
 
 from apache_beam.portability.api import beam_fn_api_pb2
 from apache_beam.portability.api import beam_fn_api_pb2_grpc
 from apache_beam.runners.worker.worker_id_interceptor import WorkerIdInterceptor
+
+standard_library.install_aliases()
 
 # This module is experimental. No backwards-compatibility guarantees.
 
@@ -49,9 +55,10 @@ class FnApiLogRecordHandler(logging.Handler):
 
   def __init__(self, log_service_descriptor):
     super(FnApiLogRecordHandler, self).__init__()
-    self._log_channel = grpc.intercept_channel(
-        grpc.insecure_channel(log_service_descriptor.url),
-        WorkerIdInterceptor())
+    # Make sure the channel is ready to avoid [BEAM-4649]
+    ch = grpc.insecure_channel(log_service_descriptor.url)
+    grpc.channel_ready_future(ch).result(timeout=60)
+    self._log_channel = grpc.intercept_channel(ch, WorkerIdInterceptor())
     self._logging_stub = beam_fn_api_pb2_grpc.BeamFnLoggingStub(
         self._log_channel)
     self._log_entry_queue = queue.Queue()

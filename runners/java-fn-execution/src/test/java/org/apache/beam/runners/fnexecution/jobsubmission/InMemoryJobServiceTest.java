@@ -26,12 +26,12 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.google.protobuf.Struct;
-import io.grpc.stub.StreamObserver;
 import java.util.ArrayList;
 import org.apache.beam.model.jobmanagement.v1.JobApi;
 import org.apache.beam.model.pipeline.v1.Endpoints;
 import org.apache.beam.model.pipeline.v1.RunnerApi;
+import org.apache.beam.vendor.grpc.v1.io.grpc.stub.StreamObserver;
+import org.apache.beam.vendor.protobuf.v3.com.google.protobuf.Struct;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -44,16 +44,13 @@ import org.mockito.MockitoAnnotations;
 public class InMemoryJobServiceTest {
   private static final String TEST_JOB_NAME = "test-job";
   private static final String TEST_JOB_ID = "test-job-id";
-  private static final String TEST_STAGING_TOKEN = "test-staging-token";
+  private static final String TEST_RETRIEVAL_TOKEN = "test-staging-token";
   private static final RunnerApi.Pipeline TEST_PIPELINE = RunnerApi.Pipeline.getDefaultInstance();
   private static final Struct TEST_OPTIONS = Struct.getDefaultInstance();
 
-
   Endpoints.ApiServiceDescriptor stagingServiceDescriptor;
-  @Mock
-  JobInvoker invoker;
-  @Mock
-  JobInvocation invocation;
+  @Mock JobInvoker invoker;
+  @Mock JobInvocation invocation;
 
   InMemoryJobService service;
 
@@ -61,16 +58,15 @@ public class InMemoryJobServiceTest {
   public void setUp() throws Exception {
     MockitoAnnotations.initMocks(this);
     stagingServiceDescriptor = Endpoints.ApiServiceDescriptor.getDefaultInstance();
-    service = InMemoryJobService.create(stagingServiceDescriptor, invoker);
-    when(invoker.invoke(TEST_PIPELINE, TEST_OPTIONS, TEST_STAGING_TOKEN)).thenReturn(invocation);
+    service = InMemoryJobService.create(stagingServiceDescriptor, session -> "token", invoker);
+    when(invoker.invoke(TEST_PIPELINE, TEST_OPTIONS, TEST_RETRIEVAL_TOKEN)).thenReturn(invocation);
     when(invocation.getId()).thenReturn(TEST_JOB_ID);
   }
 
   @Test
   public void testPrepareIsSuccessful() {
     JobApi.PrepareJobRequest request =
-        JobApi.PrepareJobRequest
-            .newBuilder()
+        JobApi.PrepareJobRequest.newBuilder()
             .setJobName(TEST_JOB_NAME)
             .setPipeline(RunnerApi.Pipeline.getDefaultInstance())
             .setPipelineOptions(Struct.getDefaultInstance())
@@ -100,11 +96,11 @@ public class InMemoryJobServiceTest {
     JobApi.RunJobRequest runRequest =
         JobApi.RunJobRequest.newBuilder()
             .setPreparationId(prepareResponse.getPreparationId())
-            .setStagingToken(TEST_STAGING_TOKEN)
+            .setRetrievalToken(TEST_RETRIEVAL_TOKEN)
             .build();
     RecordingObserver<JobApi.RunJobResponse> runRecorder = new RecordingObserver<>();
     service.run(runRequest, runRecorder);
-    verify(invoker, times(1)).invoke(TEST_PIPELINE, TEST_OPTIONS, TEST_STAGING_TOKEN);
+    verify(invoker, times(1)).invoke(TEST_PIPELINE, TEST_OPTIONS, TEST_RETRIEVAL_TOKEN);
     assertThat(runRecorder.isSuccessful(), is(true));
     assertThat(runRecorder.values, hasSize(1));
     JobApi.RunJobResponse runResponse = runRecorder.values.get(0);

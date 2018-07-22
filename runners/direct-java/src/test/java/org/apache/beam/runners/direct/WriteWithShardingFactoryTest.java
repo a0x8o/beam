@@ -18,6 +18,7 @@
 
 package org.apache.beam.runners.direct;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.hamcrest.Matchers.allOf;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.equalTo;
@@ -27,11 +28,13 @@ import static org.hamcrest.Matchers.lessThan;
 import static org.hamcrest.Matchers.not;
 import static org.junit.Assert.assertThat;
 
+import com.google.common.base.Splitter;
 import java.io.File;
-import java.io.FileReader;
 import java.io.Reader;
 import java.io.Serializable;
 import java.nio.CharBuffer;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -67,9 +70,7 @@ import org.junit.rules.TemporaryFolder;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
 
-/**
- * Tests for {@link WriteWithShardingFactory}.
- */
+/** Tests for {@link WriteWithShardingFactory}. */
 @RunWith(JUnit4.class)
 public class WriteWithShardingFactoryTest implements Serializable {
 
@@ -108,12 +109,12 @@ public class WriteWithShardingFactoryTest implements Serializable {
       String filename = match.resourceId().toString();
       files.add(filename);
       CharBuffer buf = CharBuffer.allocate((int) new File(filename).length());
-      try (Reader reader = new FileReader(filename)) {
+      try (Reader reader = Files.newBufferedReader(Paths.get(filename), UTF_8)) {
         reader.read(buf);
         buf.flip();
       }
 
-      String[] readStrs = buf.toString().split("\n");
+      Iterable<String> readStrs = Splitter.on("\n").split(buf.toString());
       for (String read : readStrs) {
         if (read.length() > 0) {
           actuals.add(read);
@@ -167,8 +168,7 @@ public class WriteWithShardingFactoryTest implements Serializable {
     DoFnTester<Long, Integer> fnTester = DoFnTester.of(fn);
 
     List<Integer> outputs = fnTester.processBundle(0L);
-    assertThat(
-        outputs, containsInAnyOrder(1));
+    assertThat(outputs, containsInAnyOrder(1));
   }
 
   @Test
@@ -177,8 +177,7 @@ public class WriteWithShardingFactoryTest implements Serializable {
     DoFnTester<Long, Integer> fnTester = DoFnTester.of(fn);
 
     List<Integer> outputs = fnTester.processBundle(1L);
-    assertThat(
-        outputs, containsInAnyOrder(1));
+    assertThat(outputs, containsInAnyOrder(1));
   }
 
   @Test
@@ -212,8 +211,8 @@ public class WriteWithShardingFactoryTest implements Serializable {
   public void keyBasedOnCountFnFewElementsExtraShards() throws Exception {
     long countValue = (long) WriteWithShardingFactory.MIN_SHARDS_FOR_LOG + 3;
     PCollection<Long> inputCount = p.apply(Create.of(countValue));
-    PCollectionView<Long> elementCountView = inputCount.apply(
-        View.<Long>asSingleton().withDefaultValue(countValue));
+    PCollectionView<Long> elementCountView =
+        inputCount.apply(View.<Long>asSingleton().withDefaultValue(countValue));
     CalculateShardsFn fn = new CalculateShardsFn(3);
     DoFnTester<Long, Integer> fnTester = DoFnTester.of(fn);
 
@@ -248,9 +247,7 @@ public class WriteWithShardingFactoryTest implements Serializable {
     @Nullable
     @Override
     public ResourceId unwindowedFilename(
-        int shardNumber,
-        int numShards,
-        FileBasedSink.OutputFileHints outputFileHints) {
+        int shardNumber, int numShards, FileBasedSink.OutputFileHints outputFileHints) {
       throw new IllegalArgumentException("Should not be used");
     }
   }

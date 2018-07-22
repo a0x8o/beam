@@ -17,6 +17,7 @@
  */
 package org.apache.beam.sdk.nexmark.model;
 
+import com.google.common.base.Objects;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -32,12 +33,31 @@ import org.apache.beam.sdk.coders.VarIntCoder;
  */
 public class Event implements KnownSize, Serializable {
 
+  @Override
+  public boolean equals(Object o) {
+    if (this == o) {
+      return true;
+    }
+    if (o == null || getClass() != o.getClass()) {
+      return false;
+    }
+    Event event = (Event) o;
+    return Objects.equal(newPerson, event.newPerson)
+        && Objects.equal(newAuction, event.newAuction)
+        && Objects.equal(bid, event.bid);
+  }
+
+  @Override
+  public int hashCode() {
+    return Objects.hashCode(newPerson, newAuction, bid);
+  }
+
   private enum Tag {
     PERSON(0),
     AUCTION(1),
     BID(2);
 
-    private int value = -1;
+    private final int value;
 
     Tag(int value) {
       this.value = value;
@@ -83,19 +103,18 @@ public class Event implements KnownSize, Serializable {
 
         @Override
         public void verifyDeterministic() throws NonDeterministicException {}
+
+        @Override
+        public Object structuralValue(Event v) {
+          return v;
+        }
       };
 
-  @Nullable
-  @org.apache.avro.reflect.Nullable
-  public final Person newPerson;
+  @Nullable @org.apache.avro.reflect.Nullable public final Person newPerson;
 
-  @Nullable
-  @org.apache.avro.reflect.Nullable
-  public final Auction newAuction;
+  @Nullable @org.apache.avro.reflect.Nullable public final Auction newAuction;
 
-  @Nullable
-  @org.apache.avro.reflect.Nullable
-  public final Bid bid;
+  @Nullable @org.apache.avro.reflect.Nullable public final Bid bid;
 
   // For Avro only.
   @SuppressWarnings("unused")

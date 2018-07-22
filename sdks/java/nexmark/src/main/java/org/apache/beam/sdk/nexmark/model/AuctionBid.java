@@ -19,6 +19,7 @@ package org.apache.beam.sdk.nexmark.model;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.google.common.base.Objects;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -29,33 +30,33 @@ import org.apache.beam.sdk.coders.CustomCoder;
 import org.apache.beam.sdk.nexmark.NexmarkUtils;
 import org.apache.beam.sdk.nexmark.queries.WinningBids;
 
-/**
- * Result of {@link WinningBids} transform.
- */
+/** Result of {@link WinningBids} transform. */
 public class AuctionBid implements KnownSize, Serializable {
-  public static final Coder<AuctionBid> CODER = new CustomCoder<AuctionBid>() {
-    @Override
-    public void encode(AuctionBid value, OutputStream outStream)
-        throws CoderException, IOException {
-      Auction.CODER.encode(value.auction, outStream);
-      Bid.CODER.encode(value.bid, outStream);
-    }
+  public static final Coder<AuctionBid> CODER =
+      new CustomCoder<AuctionBid>() {
+        @Override
+        public void encode(AuctionBid value, OutputStream outStream)
+            throws CoderException, IOException {
+          Auction.CODER.encode(value.auction, outStream);
+          Bid.CODER.encode(value.bid, outStream);
+        }
 
-    @Override
-    public AuctionBid decode(
-        InputStream inStream)
-        throws CoderException, IOException {
-      Auction auction = Auction.CODER.decode(inStream);
-      Bid bid = Bid.CODER.decode(inStream);
-      return new AuctionBid(auction, bid);
-    }
-  };
+        @Override
+        public AuctionBid decode(InputStream inStream) throws CoderException, IOException {
+          Auction auction = Auction.CODER.decode(inStream);
+          Bid bid = Bid.CODER.decode(inStream);
+          return new AuctionBid(auction, bid);
+        }
 
-  @JsonProperty
-  public final Auction auction;
+        @Override
+        public Object structuralValue(AuctionBid v) {
+          return v;
+        }
+      };
 
-  @JsonProperty
-  public final Bid bid;
+  @JsonProperty public final Auction auction;
+
+  @JsonProperty public final Bid bid;
 
   // For Avro only.
   @SuppressWarnings("unused")
@@ -81,5 +82,22 @@ public class AuctionBid implements KnownSize, Serializable {
     } catch (JsonProcessingException e) {
       throw new RuntimeException(e);
     }
+  }
+
+  @Override
+  public boolean equals(Object o) {
+    if (this == o) {
+      return true;
+    }
+    if (o == null || getClass() != o.getClass()) {
+      return false;
+    }
+    AuctionBid that = (AuctionBid) o;
+    return Objects.equal(auction, that.auction) && Objects.equal(bid, that.bid);
+  }
+
+  @Override
+  public int hashCode() {
+    return Objects.hashCode(auction, bid);
   }
 }

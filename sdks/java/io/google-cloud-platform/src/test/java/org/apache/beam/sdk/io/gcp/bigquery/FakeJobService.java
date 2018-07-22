@@ -62,6 +62,7 @@ import org.apache.avro.file.DataFileWriter;
 import org.apache.avro.generic.GenericDatumWriter;
 import org.apache.avro.generic.GenericRecord;
 import org.apache.avro.generic.GenericRecordBuilder;
+import org.apache.beam.sdk.annotations.Experimental;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.coders.Coder.Context;
 import org.apache.beam.sdk.io.FileSystems;
@@ -75,10 +76,9 @@ import org.apache.beam.sdk.util.MimeTypes;
 import org.apache.beam.sdk.util.Transport;
 import org.joda.time.Duration;
 
-/**
- * A fake implementation of BigQuery's job service.
- */
-class FakeJobService implements JobService, Serializable {
+/** A fake implementation of BigQuery's job service. */
+@Experimental(Experimental.Kind.SOURCE_SINK)
+public class FakeJobService implements JobService, Serializable {
   private static final JsonFactory JSON_FACTORY = Transport.getJsonFactory();
   // Whenever a job is started, the first 2 calls to GetJob will report the job as pending,
   // the next 2 will return the job as running, and only then will the job report as done.
@@ -98,12 +98,10 @@ class FakeJobService implements JobService, Serializable {
   private static com.google.common.collect.Table<String, String, JobInfo> allJobs;
   private static int numExtractJobCalls;
 
-  private static com.google.common.collect.Table<String, String, List<ResourceId>>
-      filesForLoadJobs;
-  private static com.google.common.collect.Table<String, String, JobStatistics>
-      dryRunQueryResults;
+  private static com.google.common.collect.Table<String, String, List<ResourceId>> filesForLoadJobs;
+  private static com.google.common.collect.Table<String, String, JobStatistics> dryRunQueryResults;
 
-  FakeJobService() {
+  public FakeJobService() {
     this.datasetService = new FakeDatasetService();
   }
 
@@ -132,8 +130,9 @@ class FakeJobService implements JobService, Serializable {
         ImmutableList.Builder<ResourceId> loadFiles = ImmutableList.builder();
         for (String filename : loadConfig.getSourceUris()) {
           sourceFiles.add(FileSystems.matchNewResource(filename, false /* isDirectory */));
-          loadFiles.add(FileSystems.matchNewResource(
-              filename + ThreadLocalRandom.current().nextInt(), false /* isDirectory */));
+          loadFiles.add(
+              FileSystems.matchNewResource(
+                  filename + ThreadLocalRandom.current().nextInt(), false /* isDirectory */));
         }
 
         FileSystems.copy(sourceFiles.build(), loadFiles.build());
@@ -147,8 +146,8 @@ class FakeJobService implements JobService, Serializable {
   @Override
   public void startExtractJob(JobReference jobRef, JobConfigurationExtract extractConfig)
       throws IOException {
-    checkArgument("AVRO".equals(extractConfig.getDestinationFormat()),
-        "Only extract to AVRO is supported");
+    checkArgument(
+        "AVRO".equals(extractConfig.getDestinationFormat()), "Only extract to AVRO is supported");
     synchronized (allJobs) {
       verifyUniqueJobId(jobRef.getJobId());
       ++numExtractJobCalls;
@@ -195,8 +194,7 @@ class FakeJobService implements JobService, Serializable {
   }
 
   @Override
-  public Job pollJob(JobReference jobRef, int maxAttempts)
-      throws InterruptedException {
+  public Job pollJob(JobReference jobRef, int maxAttempts) throws InterruptedException {
     BackOff backoff =
         BackOffAdapter.toGcpBackOff(
             FluentBackoff.DEFAULT
@@ -255,9 +253,14 @@ class FakeJobService implements JobService, Serializable {
             job.job.setStatus(runJob(job.job));
           }
         } catch (Exception e) {
-          job.job.getStatus().setState("FAILED").setErrorResult(
-              new ErrorProto().setMessage(
-                  String.format("Job %s failed: %s", job.job.getConfiguration(), e.toString())));
+          job.job
+              .getStatus()
+              .setState("FAILED")
+              .setErrorResult(
+                  new ErrorProto()
+                      .setMessage(
+                          String.format(
+                              "Job %s failed: %s", job.job.getConfiguration(), e.toString())));
         }
         return JSON_FACTORY.fromString(JSON_FACTORY.toString(job.job), Job.class);
       }
@@ -285,8 +288,8 @@ class FakeJobService implements JobService, Serializable {
     return new JobStatus().setState("DONE");
   }
 
-  private boolean validateDispositions(Table table, CreateDisposition createDisposition,
-                                       WriteDisposition writeDisposition)
+  private boolean validateDispositions(
+      Table table, CreateDisposition createDisposition, WriteDisposition writeDisposition)
       throws InterruptedException, IOException {
     if (table == null) {
       if (createDisposition == CreateDisposition.CREATE_NEVER) {
@@ -295,8 +298,11 @@ class FakeJobService implements JobService, Serializable {
     } else if (writeDisposition == WriteDisposition.WRITE_TRUNCATE) {
       datasetService.deleteTable(table.getTableReference());
     } else if (writeDisposition == WriteDisposition.WRITE_EMPTY) {
-      List<TableRow> allRows = datasetService.getAllRows(table.getTableReference().getProjectId(),
-          table.getTableReference().getDatasetId(), table.getTableReference().getTableId());
+      List<TableRow> allRows =
+          datasetService.getAllRows(
+              table.getTableReference().getProjectId(),
+              table.getTableReference().getDatasetId(),
+              table.getTableReference().getTableId());
       if (!allRows.isEmpty()) {
         return false;
       }
@@ -322,10 +328,7 @@ class FakeJobService implements JobService, Serializable {
           destination
               .clone()
               .setTableId(BigQueryHelpers.stripPartitionDecorator(destination.getTableId()));
-      existingTable =
-          new Table()
-              .setTableReference(strippedDestination)
-              .setSchema(schema);
+      existingTable = new Table().setTableReference(strippedDestination).setSchema(schema);
       if (load.getTimePartitioning() != null) {
         existingTable = existingTable.setTimePartitioning(load.getTimePartitioning());
       }
@@ -368,13 +371,15 @@ class FakeJobService implements JobService, Serializable {
       partitioning = table.getTimePartitioning();
       schema = table.getSchema();
       first = false;
-      allRows.addAll(datasetService.getAllRows(
-          source.getProjectId(), source.getDatasetId(), source.getTableId()));
+      allRows.addAll(
+          datasetService.getAllRows(
+              source.getProjectId(), source.getDatasetId(), source.getTableId()));
     }
-    datasetService.createTable(new Table()
-        .setTableReference(destination)
-        .setSchema(schema)
-        .setTimePartitioning(partitioning));
+    datasetService.createTable(
+        new Table()
+            .setTableReference(destination)
+            .setSchema(schema)
+            .setTimePartitioning(partitioning));
     datasetService.insertAll(destination, allRows, null);
     return new JobStatus().setState("DONE");
   }
@@ -383,20 +388,22 @@ class FakeJobService implements JobService, Serializable {
       throws InterruptedException, IOException {
     TableReference sourceTable = extract.getSourceTable();
 
-    List<TableRow> rows = datasetService.getAllRows(
-        sourceTable.getProjectId(), sourceTable.getDatasetId(), sourceTable.getTableId());
+    List<TableRow> rows =
+        datasetService.getAllRows(
+            sourceTable.getProjectId(), sourceTable.getDatasetId(), sourceTable.getTableId());
     TableSchema schema = datasetService.getTable(sourceTable).getSchema();
     List<Long> destinationFileCounts = Lists.newArrayList();
     for (String destination : extract.getDestinationUris()) {
       destinationFileCounts.add(writeRows(sourceTable.getTableId(), rows, schema, destination));
     }
-    job.setStatistics(new JobStatistics().setExtract(
-        new JobStatistics4().setDestinationUriFileCounts(destinationFileCounts)));
+    job.setStatistics(
+        new JobStatistics()
+            .setExtract(new JobStatistics4().setDestinationUriFileCounts(destinationFileCounts)));
     return new JobStatus().setState("DONE");
   }
 
   private JobStatus runQueryJob(JobConfigurationQuery query)
-      throws IOException, InterruptedException  {
+      throws IOException, InterruptedException {
     List<TableRow> rows = FakeBigQueryServices.rowsFromEncodedQuery(query.getQuery());
     datasetService.createTable(new Table().setTableReference(query.getDestinationTable()));
     datasetService.insertAll(query.getDestinationTable(), rows, null);
@@ -410,16 +417,18 @@ class FakeJobService implements JobService, Serializable {
         Files.newBufferedReader(Paths.get(filename), StandardCharsets.UTF_8)) {
       String line;
       while ((line = reader.readLine()) != null) {
-        TableRow tableRow = coder.decode(
-            new ByteArrayInputStream(line.getBytes(StandardCharsets.UTF_8)), Context.OUTER);
+        TableRow tableRow =
+            coder.decode(
+                new ByteArrayInputStream(line.getBytes(StandardCharsets.UTF_8)), Context.OUTER);
         tableRows.add(tableRow);
       }
     }
     return tableRows;
   }
 
-  private long writeRows(String tableId, List<TableRow> rows, TableSchema schema,
-                         String destinationPattern) throws IOException {
+  private long writeRows(
+      String tableId, List<TableRow> rows, TableSchema schema, String destinationPattern)
+      throws IOException {
     Schema avroSchema = BigQueryAvroUtils.toGenericAvroSchema(tableId, schema.getFields());
     List<TableRow> rowsToWrite = Lists.newArrayList();
     int shard = 0;
@@ -436,14 +445,15 @@ class FakeJobService implements JobService, Serializable {
     return shard;
   }
 
-  private void writeRowsHelper(List<TableRow> rows, Schema avroSchema,
-                               String destinationPattern, int shard) {
+  private void writeRowsHelper(
+      List<TableRow> rows, Schema avroSchema, String destinationPattern, int shard) {
     String filename = destinationPattern.replace("*", String.format("%012d", shard));
-    try (WritableByteChannel channel = FileSystems.create(
-        FileSystems.matchNewResource(filename, false /* isDirectory */), MimeTypes.BINARY);
-         DataFileWriter<GenericRecord> tableRowWriter =
-             new DataFileWriter<>(new GenericDatumWriter<GenericRecord>(avroSchema))
-                 .create(avroSchema, Channels.newOutputStream(channel))) {
+    try (WritableByteChannel channel =
+            FileSystems.create(
+                FileSystems.matchNewResource(filename, false /* isDirectory */), MimeTypes.BINARY);
+        DataFileWriter<GenericRecord> tableRowWriter =
+            new DataFileWriter<>(new GenericDatumWriter<GenericRecord>(avroSchema))
+                .create(avroSchema, Channels.newOutputStream(channel))) {
       for (Map<String, Object> record : rows) {
         GenericRecordBuilder genericRecordBuilder = new GenericRecordBuilder(avroSchema);
         for (Map.Entry<String, Object> field : record.entrySet()) {

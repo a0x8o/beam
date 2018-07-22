@@ -71,6 +71,7 @@ python game_stats.py \
 """
 
 from __future__ import absolute_import
+from __future__ import division
 from __future__ import print_function
 
 import argparse
@@ -229,7 +230,7 @@ class CalculateSpammyUsers(beam.PTransform):
 class UserSessionActivity(beam.DoFn):
   """Calculate and output an element's session duration, in seconds."""
   def process(self, elem, window=beam.DoFn.WindowParam):
-    yield (window.end.micros - window.start.micros) / 1000000
+    yield (window.end.micros - window.start.micros)//1000000
 
 
 def run(argv=None):
@@ -238,8 +239,10 @@ def run(argv=None):
 
   parser.add_argument('--topic',
                       type=str,
-                      required=True,
                       help='Pub/Sub topic to read from')
+  parser.add_argument('--subscription',
+                      type=str,
+                      help='Pub/Sub subscription to read from')
   parser.add_argument('--dataset',
                       type=str,
                       required=True,
@@ -267,6 +270,11 @@ def run(argv=None):
 
   args, pipeline_args = parser.parse_known_args(argv)
 
+  if args.topic is None and args.subscription is None:
+    parser.print_usage()
+    print(sys.argv[0] + ': error: one of --topic or --subscription is required')
+    sys.exit(1)
+
   options = PipelineOptions(pipeline_args)
 
   # We also require the --project option to access --dataset
@@ -287,10 +295,16 @@ def run(argv=None):
   options.view_as(StandardOptions).streaming = True
 
   with beam.Pipeline(options=options) as p:
-    # Read events from Pub/Sub using custom timestamps
+    # Read game events from Pub/Sub using custom timestamps, which
+    # are extracted from the data elements, and parse the data.
+    if args.subscription:
+      scores = p | 'ReadPubSub' >> beam.io.ReadStringsFromPubSub(
+          subscription=args.subscription)
+    else:
+      scores = p | 'ReadPubSub' >> beam.io.ReadStringsFromPubSub(
+          topic=args.topic)
     raw_events = (
-        p
-        | 'ReadPubSub' >> beam.io.gcp.pubsub.ReadStringsFromPubSub(args.topic)
+        scores
         | 'ParseGameEventFn' >> beam.ParDo(ParseGameEventFn())
         | 'AddEventTimestamps' >> beam.Map(
             lambda elem: beam.window.TimestampedValue(elem, elem['timestamp'])))

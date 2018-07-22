@@ -22,7 +22,6 @@ import static com.google.common.collect.Iterables.getOnlyElement;
 import com.google.auto.value.AutoValue;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Iterables;
 import java.io.IOException;
 import java.util.Collection;
 import java.util.Collections;
@@ -120,6 +119,8 @@ class UnboundedReadEvaluatorFactory implements TransformEvaluatorFactory {
     }
 
     @Override
+    @SuppressWarnings("Finally") // Cannot use try-with-resources in order to ensure we don't
+    // double-close the reader.
     public void processElement(
         WindowedValue<UnboundedSourceShard<OutputT, CheckpointMarkT>> element) throws IOException {
       UncommittedBundle<OutputT> output =
@@ -154,8 +155,9 @@ class UnboundedReadEvaluatorFactory implements TransformEvaluatorFactory {
             reader = null;
             toClose.close();
           }
-          UnboundedSourceShard<OutputT, CheckpointMarkT> residual = UnboundedSourceShard.of(
-                shard.getSource(), shard.getDeduplicator(), reader, finishedCheckpoint);
+          UnboundedSourceShard<OutputT, CheckpointMarkT> residual =
+              UnboundedSourceShard.of(
+                  shard.getSource(), shard.getDeduplicator(), reader, finishedCheckpoint);
 
           resultBuilder
               .addOutput(output)
@@ -178,10 +180,31 @@ class UnboundedReadEvaluatorFactory implements TransformEvaluatorFactory {
                         watermark)));
           } else {
             // End of input. Close the reader after finalizing old checkpoint.
-            shard.getCheckpoint().finalizeCheckpoint();
-            UnboundedReader<?> toClose = reader;
-            reader = null; // Avoid double close below in case of an exception.
-            toClose.close();
+            // note: can be null for empty datasets so ensure to null check the checkpoint
+            final CheckpointMarkT checkpoint = shard.getCheckpoint();
+            IOException ioe = null;
+            try {
+              if (checkpoint != null) {
+                checkpoint.finalizeCheckpoint();
+              }
+            } catch (final IOException finalizeCheckpointException) {
+              ioe = finalizeCheckpointException;
+            } finally {
+              try {
+                UnboundedReader<?> toClose = reader;
+                reader = null; // Avoid double close below in case of an exception.
+                toClose.close();
+              } catch (final IOException closeEx) {
+                if (ioe != null) {
+                  ioe.addSuppressed(closeEx);
+                } else {
+                  throw closeEx;
+                }
+              }
+            }
+            if (ioe != null) {
+              throw ioe;
+            }
           }
         }
       } catch (IOException e) {
@@ -236,7 +259,7 @@ class UnboundedReadEvaluatorFactory implements TransformEvaluatorFactory {
       // committing the output.
       if (!watermark.isBefore(BoundedWindow.TIMESTAMP_MAX_VALUE)) {
         PCollection<OutputT> outputPc =
-            (PCollection<OutputT>) Iterables.getOnlyElement(transform.getOutputs().values());
+            (PCollection<OutputT>) getOnlyElement(transform.getOutputs().values());
         evaluationContext.scheduleAfterOutputWouldBeProduced(
             outputPc,
             GlobalWindow.INSTANCE,
@@ -294,21 +317,18 @@ class UnboundedReadEvaluatorFactory implements TransformEvaluatorFactory {
     private final EvaluationContext evaluationContext;
     private final PipelineOptions options;
 
-    InputProvider(
-        EvaluationContext evaluationContext, PipelineOptions options) {
+    InputProvider(EvaluationContext evaluationContext, PipelineOptions options) {
       this.evaluationContext = evaluationContext;
       this.options = options;
     }
 
     @Override
     public Collection<CommittedBundle<UnboundedSourceShard<T, ?>>> getInitialInputs(
-        AppliedPTransform<PBegin, PCollection<T>, PTransform<PBegin, PCollection<T>>>
-            transform,
+        AppliedPTransform<PBegin, PCollection<T>, PTransform<PBegin, PCollection<T>>> transform,
         int targetParallelism)
         throws Exception {
       UnboundedSource<T, ?> source = ReadTranslation.unboundedSourceFromTransform(transform);
-      List<? extends UnboundedSource<T, ?>> splits =
-          source.split(targetParallelism, options);
+      List<? extends UnboundedSource<T, ?>> splits = source.split(targetParallelism, options);
       UnboundedReadDeduplicator deduplicator =
           source.requiresDeduping()
               ? UnboundedReadDeduplicator.CachedIdDeduplicator.create()
@@ -317,8 +337,7 @@ class UnboundedReadEvaluatorFactory implements TransformEvaluatorFactory {
       ImmutableList.Builder<CommittedBundle<UnboundedSourceShard<T, ?>>> initialShards =
           ImmutableList.builder();
       for (UnboundedSource<T, ?> split : splits) {
-        UnboundedSourceShard<T, ?> shard =
-            UnboundedSourceShard.unstarted(split, deduplicator);
+        UnboundedSourceShard<T, ?> shard = UnboundedSourceShard.unstarted(split, deduplicator);
         initialShards.add(
             evaluationContext
                 .<UnboundedSourceShard<T, ?>>createRootBundle()

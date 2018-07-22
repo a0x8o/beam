@@ -23,19 +23,18 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
-import org.apache.beam.sdk.extensions.sql.RowSqlTypes;
+import org.apache.beam.sdk.extensions.sql.impl.utils.CalciteUtils;
 import org.apache.beam.sdk.nexmark.model.Auction;
 import org.apache.beam.sdk.nexmark.model.AuctionCount;
 import org.apache.beam.sdk.nexmark.model.AuctionPrice;
 import org.apache.beam.sdk.nexmark.model.Bid;
 import org.apache.beam.sdk.nexmark.model.NameCityStateId;
 import org.apache.beam.sdk.nexmark.model.Person;
+import org.apache.beam.sdk.schemas.Schema;
 import org.apache.beam.sdk.values.Row;
 import org.joda.time.DateTime;
 
-/**
- * Maps Java model classes to Beam SQL record types.
- */
+/** Maps Java model classes to Beam SQL record types. */
 public class ModelAdaptersMapping {
 
   public static final Map<Class, ModelFieldsAdapter> ADAPTERS =
@@ -50,15 +49,15 @@ public class ModelAdaptersMapping {
 
   private static ModelFieldsAdapter<Person> personAdapter() {
     return new ModelFieldsAdapter<Person>(
-        RowSqlTypes.builder()
-            .withBigIntField("id")
-            .withVarcharField("name")
-            .withVarcharField("emailAddress")
-            .withVarcharField("creditCard")
-            .withVarcharField("city")
-            .withVarcharField("state")
-            .withTimestampField("dateTime")
-            .withVarcharField("extra")
+        Schema.builder()
+            .addInt64Field("id")
+            .addStringField("name")
+            .addStringField("emailAddress")
+            .addStringField("creditCard")
+            .addStringField("city")
+            .addStringField("state")
+            .addField("dateTime", CalciteUtils.TIME)
+            .addStringField("extra")
             .build()) {
       @Override
       public List<Object> getFieldsValues(Person p) {
@@ -73,40 +72,37 @@ public class ModelAdaptersMapping {
                 new DateTime(p.dateTime),
                 p.extra));
       }
+
       @Override
       public Person getRowModel(Row row) {
         return new Person(
-           row.getInt64("id"),
-           row.getString("name"),
-           row.getString("emailAddress"),
-           row.getString("creditCard"),
-           row.getString("city"),
-           row.getString("state"),
-           row.getDateTime("dateTime").getMillis(),
-           row.getString("extra"));
+            row.getInt64("id"),
+            row.getString("name"),
+            row.getString("emailAddress"),
+            row.getString("creditCard"),
+            row.getString("city"),
+            row.getString("state"),
+            row.getDateTime("dateTime").getMillis(),
+            row.getString("extra"));
       }
     };
   }
 
   private static ModelFieldsAdapter<Bid> bidAdapter() {
     return new ModelFieldsAdapter<Bid>(
-        RowSqlTypes.builder()
-            .withBigIntField("auction")
-            .withBigIntField("bidder")
-            .withBigIntField("price")
-            .withTimestampField("dateTime")
-            .withVarcharField("extra")
+        Schema.builder()
+            .addInt64Field("auction")
+            .addInt64Field("bidder")
+            .addInt64Field("price")
+            .addField("dateTime", CalciteUtils.TIME)
+            .addStringField("extra")
             .build()) {
       @Override
       public List<Object> getFieldsValues(Bid b) {
         return Collections.unmodifiableList(
-            Arrays.asList(
-                b.auction,
-                b.bidder,
-                b.price,
-                new DateTime(b.dateTime),
-                b.extra));
+            Arrays.asList(b.auction, b.bidder, b.price, new DateTime(b.dateTime), b.extra));
       }
+
       @Override
       public Bid getRowModel(Row row) {
         return new Bid(
@@ -121,17 +117,17 @@ public class ModelAdaptersMapping {
 
   private static ModelFieldsAdapter<Auction> auctionAdapter() {
     return new ModelFieldsAdapter<Auction>(
-        RowSqlTypes.builder()
-            .withBigIntField("id")
-            .withVarcharField("itemName")
-            .withVarcharField("description")
-            .withBigIntField("initialBid")
-            .withBigIntField("reserve")
-            .withTimestampField("dateTime")
-            .withTimestampField("expires")
-            .withBigIntField("seller")
-            .withBigIntField("category")
-            .withVarcharField("extra")
+        Schema.builder()
+            .addInt64Field("id")
+            .addStringField("itemName")
+            .addStringField("description")
+            .addInt64Field("initialBid")
+            .addInt64Field("reserve")
+            .addField("dateTime", CalciteUtils.TIMESTAMP)
+            .addField("expires", CalciteUtils.TIMESTAMP)
+            .addInt64Field("seller")
+            .addInt64Field("category")
+            .addStringField("extra")
             .build()) {
       @Override
       public List<Object> getFieldsValues(Auction a) {
@@ -148,6 +144,7 @@ public class ModelAdaptersMapping {
                 a.category,
                 a.extra));
       }
+
       @Override
       public Auction getRowModel(Row row) {
         return new Auction(
@@ -167,65 +164,47 @@ public class ModelAdaptersMapping {
 
   private static ModelFieldsAdapter<AuctionCount> auctionCountAdapter() {
     return new ModelFieldsAdapter<AuctionCount>(
-        RowSqlTypes.builder()
-            .withBigIntField("auction")
-            .withBigIntField("num")
-            .build()) {
+        Schema.builder().addInt64Field("auction").addInt64Field("num").build()) {
       @Override
       public List<Object> getFieldsValues(AuctionCount a) {
-        return Collections.unmodifiableList(
-            Arrays.asList(
-                a.auction,
-                a.num));
+        return Collections.unmodifiableList(Arrays.asList(a.auction, a.num));
       }
+
       @Override
       public AuctionCount getRowModel(Row row) {
-        return new AuctionCount(
-            row.getInt64("auction"),
-            row.getInt64("num"));
+        return new AuctionCount(row.getInt64("auction"), row.getInt64("num"));
       }
     };
   }
 
   private static ModelFieldsAdapter<AuctionPrice> auctionPriceAdapter() {
     return new ModelFieldsAdapter<AuctionPrice>(
-        RowSqlTypes.builder()
-            .withBigIntField("auction")
-            .withBigIntField("price")
-            .build()) {
+        Schema.builder().addInt64Field("auction").addInt64Field("price").build()) {
       @Override
       public List<Object> getFieldsValues(AuctionPrice a) {
-        return Collections.unmodifiableList(
-            Arrays.asList(
-                a.auction,
-                a.price));
+        return Collections.unmodifiableList(Arrays.asList(a.auction, a.price));
       }
+
       @Override
       public AuctionPrice getRowModel(Row row) {
-        return new AuctionPrice(
-            row.getInt64("auction"),
-            row.getInt64("price"));
+        return new AuctionPrice(row.getInt64("auction"), row.getInt64("price"));
       }
     };
   }
 
   private static ModelFieldsAdapter<NameCityStateId> nameCityStateIdAdapter() {
     return new ModelFieldsAdapter<NameCityStateId>(
-        RowSqlTypes.builder()
-            .withVarcharField("name")
-            .withVarcharField("city")
-            .withVarcharField("state")
-            .withBigIntField("id")
+        Schema.builder()
+            .addStringField("name")
+            .addStringField("city")
+            .addStringField("state")
+            .addInt64Field("id")
             .build()) {
       @Override
       public List<Object> getFieldsValues(NameCityStateId a) {
-        return Collections.unmodifiableList(
-            Arrays.asList(
-                a.name,
-                a.city,
-                a.state,
-                a.id));
+        return Collections.unmodifiableList(Arrays.asList(a.name, a.city, a.state, a.id));
       }
+
       @Override
       public NameCityStateId getRowModel(Row row) {
         return new NameCityStateId(

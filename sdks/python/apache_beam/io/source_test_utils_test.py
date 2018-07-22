@@ -15,9 +15,12 @@
 # limitations under the License.
 #
 
+from __future__ import absolute_import
+
 import logging
 import tempfile
 import unittest
+from builtins import range
 
 import apache_beam.io.source_test_utils as source_test_utils
 from apache_beam.io.filebasedsource_test import LineSource
@@ -58,7 +61,7 @@ class SourceTestUtilsTest(unittest.TestCase):
     if len(sources_info) < 2:
       raise ValueError('Test is too trivial since splitting only generated %d'
                        'bundles. Please adjust the test so that at least '
-                       'two splits get generated.', len(sources_info))
+                       'two splits get generated.' % len(sources_info))
 
     source_test_utils.assert_sources_equal_reference_source(
         (reference_source, None, None), sources_info)

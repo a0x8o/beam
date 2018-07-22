@@ -20,6 +20,7 @@ from __future__ import absolute_import
 
 import os
 import shutil
+from builtins import zip
 
 from apache_beam.io.filesystem import BeamIOError
 from apache_beam.io.filesystem import CompressedFile
@@ -80,6 +81,17 @@ class LocalFileSystem(FileSystem):
   def has_dirs(self):
     """Whether this FileSystem supports directories."""
     return True
+
+  def _url_dirname(self, url_or_path):
+    """Pass through to os.path.dirname.
+
+    This version uses os.path instead of posixpath to be compatible with the
+    host OS.
+
+    Args:
+      url_or_path: A string in the form of /some/path.
+    """
+    return os.path.dirname(url_or_path)
 
   def _list(self, dir_or_prefix):
     """List files in a location.

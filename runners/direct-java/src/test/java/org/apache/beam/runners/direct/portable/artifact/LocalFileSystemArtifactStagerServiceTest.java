@@ -18,15 +18,11 @@
 
 package org.apache.beam.runners.direct.portable.artifact;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.hamcrest.Matchers.is;
 import static org.junit.Assert.assertThat;
 
 import com.google.common.util.concurrent.Uninterruptibles;
-import com.google.protobuf.ByteString;
-import io.grpc.inprocess.InProcessChannelBuilder;
-import io.grpc.inprocess.InProcessServerBuilder;
-import io.grpc.internal.ServerImpl;
-import io.grpc.stub.StreamObserver;
 import java.io.File;
 import java.io.FileInputStream;
 import java.nio.ByteBuffer;
@@ -36,6 +32,11 @@ import java.util.concurrent.TimeUnit;
 import javax.annotation.Nullable;
 import org.apache.beam.model.jobmanagement.v1.ArtifactApi;
 import org.apache.beam.model.jobmanagement.v1.ArtifactStagingServiceGrpc;
+import org.apache.beam.vendor.grpc.v1.io.grpc.Server;
+import org.apache.beam.vendor.grpc.v1.io.grpc.inprocess.InProcessChannelBuilder;
+import org.apache.beam.vendor.grpc.v1.io.grpc.inprocess.InProcessServerBuilder;
+import org.apache.beam.vendor.grpc.v1.io.grpc.stub.StreamObserver;
+import org.apache.beam.vendor.protobuf.v3.com.google.protobuf.ByteString;
 import org.hamcrest.Matchers;
 import org.junit.After;
 import org.junit.Assert;
@@ -54,7 +55,7 @@ public class LocalFileSystemArtifactStagerServiceTest {
   private ArtifactStagingServiceGrpc.ArtifactStagingServiceStub stub;
 
   private LocalFileSystemArtifactStagerService stager;
-  private ServerImpl server;
+  private Server server;
 
   @Before
   public void setup() throws Exception {
@@ -69,7 +70,7 @@ public class LocalFileSystemArtifactStagerServiceTest {
 
     stub =
         ArtifactStagingServiceGrpc.newStub(
-            InProcessChannelBuilder.forName("fs_stager").usePlaintext(true).build());
+            InProcessChannelBuilder.forName("fs_stager").usePlaintext().build());
   }
 
   @After
@@ -79,7 +80,7 @@ public class LocalFileSystemArtifactStagerServiceTest {
 
   @Test
   public void singleDataPutArtifactSucceeds() throws Exception {
-    byte[] data = "foo-bar-baz".getBytes();
+    byte[] data = "foo-bar-baz".getBytes(UTF_8);
     RecordingStreamObserver<ArtifactApi.PutArtifactResponse> responseObserver =
         new RecordingStreamObserver<>();
     StreamObserver<ArtifactApi.PutArtifactRequest> requestObserver =
@@ -88,7 +89,11 @@ public class LocalFileSystemArtifactStagerServiceTest {
     String name = "my-artifact";
     requestObserver.onNext(
         ArtifactApi.PutArtifactRequest.newBuilder()
-            .setMetadata(ArtifactApi.ArtifactMetadata.newBuilder().setName(name).build())
+            .setMetadata(
+                ArtifactApi.PutArtifactMetadata.newBuilder()
+                    .setMetadata(ArtifactApi.ArtifactMetadata.newBuilder().setName(name).build())
+                    .setStagingSessionToken("token")
+                    .build())
             .build());
     requestObserver.onNext(
         ArtifactApi.PutArtifactRequest.newBuilder()
@@ -108,9 +113,9 @@ public class LocalFileSystemArtifactStagerServiceTest {
 
   @Test
   public void multiPartPutArtifactSucceeds() throws Exception {
-    byte[] partOne = "foo-".getBytes();
-    byte[] partTwo = "bar-".getBytes();
-    byte[] partThree = "baz".getBytes();
+    byte[] partOne = "foo-".getBytes(UTF_8);
+    byte[] partTwo = "bar-".getBytes(UTF_8);
+    byte[] partThree = "baz".getBytes(UTF_8);
     RecordingStreamObserver<ArtifactApi.PutArtifactResponse> responseObserver =
         new RecordingStreamObserver<>();
     StreamObserver<ArtifactApi.PutArtifactRequest> requestObserver =
@@ -119,7 +124,11 @@ public class LocalFileSystemArtifactStagerServiceTest {
     String name = "my-artifact";
     requestObserver.onNext(
         ArtifactApi.PutArtifactRequest.newBuilder()
-            .setMetadata(ArtifactApi.ArtifactMetadata.newBuilder().setName(name).build())
+            .setMetadata(
+                ArtifactApi.PutArtifactMetadata.newBuilder()
+                    .setMetadata(ArtifactApi.ArtifactMetadata.newBuilder().setName(name).build())
+                    .setStagingSessionToken("token")
+                    .build())
             .build());
     requestObserver.onNext(
         ArtifactApi.PutArtifactRequest.newBuilder()
@@ -150,12 +159,12 @@ public class LocalFileSystemArtifactStagerServiceTest {
     assertThat(staged.exists(), is(true));
     ByteBuffer buf = ByteBuffer.allocate("foo-bar-baz".length());
     new FileInputStream(staged).getChannel().read(buf);
-    Assert.assertArrayEquals("foo-bar-baz".getBytes(), buf.array());
+    Assert.assertArrayEquals("foo-bar-baz".getBytes(UTF_8), buf.array());
   }
 
   @Test
   public void putArtifactBeforeNameFails() {
-    byte[] data = "foo-".getBytes();
+    byte[] data = "foo-".getBytes(UTF_8);
     RecordingStreamObserver<ArtifactApi.PutArtifactResponse> responseObserver =
         new RecordingStreamObserver<>();
     StreamObserver<ArtifactApi.PutArtifactRequest> requestObserver =
@@ -192,9 +201,9 @@ public class LocalFileSystemArtifactStagerServiceTest {
   @Test
   public void commitManifestWithAllArtifactsSucceeds() {
     ArtifactApi.ArtifactMetadata firstArtifact =
-        stageBytes("first-artifact", "foo, bar, baz, quux".getBytes());
+        stageBytes("first-artifact", "foo, bar, baz, quux".getBytes(UTF_8));
     ArtifactApi.ArtifactMetadata secondArtifact =
-        stageBytes("second-artifact", "spam, ham, eggs".getBytes());
+        stageBytes("second-artifact", "spam, ham, eggs".getBytes(UTF_8));
 
     ArtifactApi.Manifest manifest =
         ArtifactApi.Manifest.newBuilder()
@@ -213,13 +222,13 @@ public class LocalFileSystemArtifactStagerServiceTest {
     assertThat(commitResponseObserver.completed, is(true));
     assertThat(commitResponseObserver.responses, Matchers.hasSize(1));
     ArtifactApi.CommitManifestResponse commitResponse = commitResponseObserver.responses.get(0);
-    assertThat(commitResponse.getStagingToken(), Matchers.not(Matchers.nullValue()));
+    assertThat(commitResponse.getRetrievalToken(), Matchers.not(Matchers.nullValue()));
   }
 
   @Test
   public void commitManifestWithMissingArtifactFails() {
     ArtifactApi.ArtifactMetadata firstArtifact =
-        stageBytes("first-artifact", "foo, bar, baz, quux".getBytes());
+        stageBytes("first-artifact", "foo, bar, baz, quux".getBytes(UTF_8));
     ArtifactApi.ArtifactMetadata absentArtifact =
         ArtifactApi.ArtifactMetadata.newBuilder().setName("absent").build();
 
@@ -245,7 +254,11 @@ public class LocalFileSystemArtifactStagerServiceTest {
         stub.putArtifact(new RecordingStreamObserver<>());
     requests.onNext(
         ArtifactApi.PutArtifactRequest.newBuilder()
-            .setMetadata(ArtifactApi.ArtifactMetadata.newBuilder().setName(name).build())
+            .setMetadata(
+                ArtifactApi.PutArtifactMetadata.newBuilder()
+                    .setMetadata(ArtifactApi.ArtifactMetadata.newBuilder().setName(name).build())
+                    .setStagingSessionToken("token")
+                    .build())
             .build());
     requests.onNext(
         ArtifactApi.PutArtifactRequest.newBuilder()

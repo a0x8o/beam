@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"github.com/apache/beam/sdks/go/pkg/beam"
+	"github.com/apache/beam/sdks/go/pkg/beam/core/graph"
 	"github.com/apache/beam/sdks/go/pkg/beam/core/runtime/graphx"
 	// Importing to get the side effect of the remote execution hook. See init().
 	_ "github.com/apache/beam/sdks/go/pkg/beam/core/runtime/harness/init"
@@ -60,7 +61,6 @@ var (
 	network         = flag.String("network", "", "GCP network (optional)")
 	tempLocation    = flag.String("temp_location", "", "Temp location (optional)")
 	machineType     = flag.String("worker_machine_type", "", "GCE machine type (optional)")
-	streaming       = flag.Bool("streaming", false, "Streaming job")
 
 	dryRun         = flag.Bool("dry_run", false, "Dry run. Just print the job, but don't submit it.")
 	teardownPolicy = flag.String("teardown_policy", "", "Job teardown policy (internal only).")
@@ -103,7 +103,7 @@ func Execute(ctx context.Context, p *beam.Pipeline) error {
 	}
 	jobName := jobopts.GetJobName()
 
-	edges, _, err := p.Build()
+	edges, nodes, err := p.Build()
 	if err != nil {
 		return err
 	}
@@ -129,13 +129,20 @@ func Execute(ctx context.Context, p *beam.Pipeline) error {
 
 	bin := *jobopts.WorkerBinary
 	if bin == "" {
-		worker, err := runnerlib.BuildTempWorkerBinary(ctx)
-		if err != nil {
-			return err
-		}
-		defer os.Remove(worker)
+		if self, ok := runnerlib.IsWorkerCompatibleBinary(); ok {
+			bin = self
+			log.Infof(ctx, "Using running binary as worker binary: '%v'", bin)
+		} else {
+			// Cross-compile as last resort.
 
-		bin = worker
+			worker, err := runnerlib.BuildTempWorkerBinary(ctx)
+			if err != nil {
+				return err
+			}
+			defer os.Remove(worker)
+
+			bin = worker
+		}
 	} else {
 		log.Infof(ctx, "Using specified worker binary: '%v'", bin)
 	}
@@ -169,7 +176,9 @@ func Execute(ctx context.Context, p *beam.Pipeline) error {
 
 	jobType := "JOB_TYPE_BATCH"
 	apiJobType := "FNAPI_BATCH"
-	if *streaming {
+
+	streaming := !graph.Bounded(nodes)
+	if streaming {
 		jobType = "JOB_TYPE_STREAMING"
 		apiJobType = "FNAPI_STREAMING"
 	}
@@ -223,7 +232,7 @@ func Execute(ctx context.Context, p *beam.Pipeline) error {
 	if *tempLocation != "" {
 		job.Environment.TempStoragePrefix = *tempLocation
 	}
-	if *streaming {
+	if streaming {
 		// Add separate data disk for streaming jobs
 		job.Environment.WorkerPools[0].DataDisks = []*df.Disk{{}}
 	}
@@ -328,7 +337,6 @@ func stageWorker(ctx context.Context, project, location, worker string) (string,
 		return "", fmt.Errorf("failed to open worker binary %s: %v", worker, err)
 	}
 	defer fd.Close()
-	defer os.Remove(worker)
 
 	return gcsx.Upload(client, project, bucket, obj, fd)
 }

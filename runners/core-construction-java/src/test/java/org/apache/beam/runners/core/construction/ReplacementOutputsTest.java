@@ -42,9 +42,7 @@ import org.junit.rules.ExpectedException;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
 
-/**
- * Tests for {@link ReplacementOutputs}.
- */
+/** Tests for {@link ReplacementOutputs}. */
 @RunWith(JUnit4.class)
 public class ReplacementOutputsTest {
   @Rule public ExpectedException thrown = ExpectedException.none();
@@ -79,9 +77,9 @@ public class ReplacementOutputsTest {
 
     ReplacementOutput replacement = replacements.get(replacementInts);
     Map.Entry<TupleTag<?>, PValue> taggedInts = Iterables.getOnlyElement(ints.expand().entrySet());
-    assertThat(replacement.getOriginal().getTag(), Matchers.equalTo(taggedInts.getKey()));
+    assertThat(replacement.getOriginal().getTag(), equalTo(taggedInts.getKey()));
     assertThat(replacement.getOriginal().getValue(), equalTo(taggedInts.getValue()));
-    assertThat(replacement.getReplacement().getValue(), Matchers.equalTo(replacementInts));
+    assertThat(replacement.getReplacement().getValue(), equalTo(replacementInts));
   }
 
   @Test

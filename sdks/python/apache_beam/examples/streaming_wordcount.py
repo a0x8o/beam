@@ -23,7 +23,7 @@ from __future__ import absolute_import
 import argparse
 import logging
 
-import six
+from past.builtins import unicode
 
 import apache_beam as beam
 import apache_beam.transforms.window as window
@@ -72,7 +72,7 @@ def run(argv=None):
 
   counts = (lines
             | 'split' >> (beam.ParDo(WordExtractingDoFn())
-                          .with_output_types(six.text_type))
+                          .with_output_types(unicode))
             | 'pair_with_one' >> beam.Map(lambda x: (x, 1))
             | beam.WindowInto(window.FixedWindows(15, 0))
             | 'group' >> beam.GroupByKey()

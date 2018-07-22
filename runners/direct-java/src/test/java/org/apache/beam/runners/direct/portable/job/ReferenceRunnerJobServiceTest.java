@@ -17,12 +17,11 @@
 
 package org.apache.beam.runners.direct.portable.job;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.hamcrest.Matchers.hasItems;
 import static org.junit.Assert.assertThat;
 
 import com.google.common.collect.ImmutableList;
-import com.google.protobuf.Struct;
-import io.grpc.inprocess.InProcessChannelBuilder;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.nio.ByteBuffer;
@@ -42,6 +41,8 @@ import org.apache.beam.runners.core.construction.ArtifactServiceStager;
 import org.apache.beam.runners.core.construction.ArtifactServiceStager.StagedFile;
 import org.apache.beam.runners.fnexecution.GrpcFnServer;
 import org.apache.beam.runners.fnexecution.InProcessServerFactory;
+import org.apache.beam.vendor.grpc.v1.io.grpc.inprocess.InProcessChannelBuilder;
+import org.apache.beam.vendor.protobuf.v3.com.google.protobuf.Struct;
 import org.hamcrest.Description;
 import org.hamcrest.Matcher;
 import org.hamcrest.TypeSafeMatcher;
@@ -53,9 +54,7 @@ import org.junit.rules.TemporaryFolder;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
 
-/**
- * Tests for {@link ReferenceRunnerJobService}.
- */
+/** Tests for {@link ReferenceRunnerJobService}. */
 @RunWith(JUnit4.class)
 public class ReferenceRunnerJobServiceTest {
   @Rule public TemporaryFolder runnerTemp = new TemporaryFolder();
@@ -96,9 +95,11 @@ public class ReferenceRunnerJobServiceTest {
     ArtifactServiceStager stager =
         ArtifactServiceStager.overChannel(
             InProcessChannelBuilder.forName(stagingEndpoint.getUrl()).build());
-    File foo = writeTempFile("foo", "foo, bar, baz".getBytes());
-    File bar = writeTempFile("spam", "spam, ham, eggs".getBytes());
+    String stagingSessionToken = "token";
+    File foo = writeTempFile("foo", "foo, bar, baz".getBytes(UTF_8));
+    File bar = writeTempFile("spam", "spam, ham, eggs".getBytes(UTF_8));
     stager.stage(
+        stagingSessionToken,
         ImmutableList.of(StagedFile.of(foo, foo.getName()), StagedFile.of(bar, bar.getName())));
     List<byte[]> tempDirFiles = readFlattenedFiles(runnerTemp.getRoot());
     assertThat(

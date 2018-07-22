@@ -404,8 +404,8 @@ public final class ApproximateDistinct {
       try {
         coder.verifyDeterministic();
       } catch (Coder.NonDeterministicException e) {
-        throw new IllegalArgumentException("Coder must be deterministic to perform this sketch."
-                + e.getMessage(), e);
+        throw new IllegalArgumentException(
+            "Coder must be deterministic to perform this sketch." + e.getMessage(), e);
       }
       return new ApproximateDistinctFn<>(12, 0, coder);
     }
@@ -428,8 +428,8 @@ public final class ApproximateDistinct {
     }
 
     /**
-     * Returns an {@link ApproximateDistinctFn} combiner with a new
-     * sparse representation's precision {@code sp}.
+     * Returns an {@link ApproximateDistinctFn} combiner with a new sparse representation's
+     * precision {@code sp}.
      *
      * <p>Values above 32 are not yet supported by the AddThis version of HyperLogLog+.
      *
@@ -534,9 +534,8 @@ public final class ApproximateDistinct {
    * Utility class that provides {@link DoFn}s to retrieve the cardinality from a {@link
    * HyperLogLogPlus} structure in a global or perKey context.
    */
-  public static class RetrieveCardinality {
-
-    public static <K> DoFn<KV<K, HyperLogLogPlus>, KV<K, Long>> perKey() {
+  private static class RetrieveCardinality {
+    private static <K> DoFn<KV<K, HyperLogLogPlus>, KV<K, Long>> perKey() {
       return new DoFn<KV<K, HyperLogLogPlus>, KV<K, Long>>() {
         @ProcessElement
         public void processElement(ProcessContext c) {
@@ -546,7 +545,7 @@ public final class ApproximateDistinct {
       };
     }
 
-    public static DoFn<HyperLogLogPlus, Long> globally() {
+    private static DoFn<HyperLogLogPlus, Long> globally() {
       return new DoFn<HyperLogLogPlus, Long>() {
         @ProcessElement
         public void apply(ProcessContext c) {

@@ -20,12 +20,10 @@ package org.apache.beam.runners.flink;
 import static com.google.common.base.Preconditions.checkArgument;
 
 import com.google.common.collect.BiMap;
-import com.google.common.collect.ImmutableBiMap;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
-import com.google.protobuf.InvalidProtocolBufferException;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -56,6 +54,7 @@ import org.apache.beam.runners.flink.translation.functions.FlinkPartialReduceFun
 import org.apache.beam.runners.flink.translation.functions.FlinkReduceFunction;
 import org.apache.beam.runners.flink.translation.types.CoderTypeInformation;
 import org.apache.beam.runners.flink.translation.types.KvKeySelector;
+import org.apache.beam.runners.flink.translation.utils.FlinkPipelineTranslatorUtils;
 import org.apache.beam.runners.flink.translation.wrappers.ImpulseInputFormat;
 import org.apache.beam.runners.fnexecution.provisioning.JobInfo;
 import org.apache.beam.runners.fnexecution.wire.WireCoders;
@@ -78,6 +77,7 @@ import org.apache.beam.sdk.util.WindowedValue.WindowedValueCoder;
 import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.WindowingStrategy;
+import org.apache.beam.vendor.protobuf.v3.com.google.protobuf.InvalidProtocolBufferException;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.java.DataSet;
 import org.apache.flink.api.java.ExecutionEnvironment;
@@ -98,7 +98,7 @@ import org.apache.flink.api.java.operators.MapPartitionOperator;
  *   FlinkBatchPortablePipelineTranslator translator =
  *       FlinkBatchPortablePipelineTranslator.createTranslator();
  *   BatchTranslationContext context =
- *       FlinkBatchPortablePipelineTranslator.createTranslationContext(options);
+ *       FlinkBatchPortablePipelineTranslator.createTranslationContext(jobInfo);
  *   translator.translate(context, pipeline);
  *   ExecutionEnvironment executionEnvironment = context.getExecutionEnvironment();
  *   // Do something with executionEnvironment...
@@ -115,7 +115,8 @@ public class FlinkBatchPortablePipelineTranslator
    * Creates a batch translation context. The resulting Flink execution dag will live in a new
    * {@link ExecutionEnvironment}.
    */
-  public static BatchTranslationContext createTranslationContext(JobInfo jobInfo) {
+  public static BatchTranslationContext createTranslationContext(
+      JobInfo jobInfo, List<String> filesToStage) {
     PipelineOptions pipelineOptions;
     try {
       pipelineOptions = PipelineOptionsTranslation.fromProto(jobInfo.pipelineOptions());
@@ -124,14 +125,13 @@ public class FlinkBatchPortablePipelineTranslator
     }
     ExecutionEnvironment executionEnvironment =
         FlinkExecutionEnvironments.createBatchExecutionEnvironment(
-            pipelineOptions.as(FlinkPipelineOptions.class));
+            pipelineOptions.as(FlinkPipelineOptions.class), filesToStage);
     return new BatchTranslationContext(jobInfo, executionEnvironment);
   }
 
   /** Creates a batch translator. */
   public static FlinkBatchPortablePipelineTranslator createTranslator() {
-    ImmutableMap.Builder<String, PTransformTranslator> translatorMap =
-        ImmutableMap.builder();
+    ImmutableMap.Builder<String, PTransformTranslator> translatorMap = ImmutableMap.builder();
     translatorMap.put(
         PTransformTranslation.FLATTEN_TRANSFORM_URN,
         FlinkBatchPortablePipelineTranslator::translateFlatten);
@@ -319,7 +319,8 @@ public class FlinkBatchPortablePipelineTranslator
     RunnerApi.Components components = pipeline.getComponents();
     Map<String, String> outputs = transform.getTransform().getOutputsMap();
     // Mapping from PCollection id to coder tag id.
-    BiMap<String, Integer> outputMap = createOutputMap(outputs.values());
+    BiMap<String, Integer> outputMap =
+        FlinkPipelineTranslatorUtils.createOutputMap(outputs.values());
     // Collect all output Coders and create a UnionCoder for our tagged outputs.
     List<Coder<?>> unionCoders = Lists.newArrayList();
     // Enforce tuple tag sorting by union tag index.
@@ -613,16 +614,5 @@ public class FlinkBatchPortablePipelineTranslator
             pruningFunction,
             String.format("%s/out.%d", transformName, unionTag));
     context.addDataSet(collectionId, pruningOperator);
-  }
-
-  /**  Creates a mapping from PCollection id to output tag integer. */
-  private static BiMap<String, Integer> createOutputMap(Iterable<String> localOutputs) {
-    ImmutableBiMap.Builder<String, Integer> builder = ImmutableBiMap.builder();
-    int outputIndex = 0;
-    for (String tag : localOutputs) {
-      builder.put(tag, outputIndex);
-      outputIndex++;
-    }
-    return builder.build();
   }
 }

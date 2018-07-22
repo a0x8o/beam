@@ -17,11 +17,6 @@
  */
 package org.apache.beam.runners.fnexecution.jobsubmission;
 
-import com.google.protobuf.Struct;
-import io.grpc.Status;
-import io.grpc.StatusException;
-import io.grpc.StatusRuntimeException;
-import io.grpc.stub.StreamObserver;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -41,14 +36,20 @@ import org.apache.beam.model.jobmanagement.v1.JobApi.RunJobRequest;
 import org.apache.beam.model.jobmanagement.v1.JobApi.RunJobResponse;
 import org.apache.beam.model.jobmanagement.v1.JobServiceGrpc;
 import org.apache.beam.model.pipeline.v1.Endpoints;
+import org.apache.beam.runners.core.construction.graph.PipelineValidator;
 import org.apache.beam.runners.fnexecution.FnService;
 import org.apache.beam.sdk.fn.stream.SynchronizedStreamObserver;
+import org.apache.beam.vendor.grpc.v1.io.grpc.Status;
+import org.apache.beam.vendor.grpc.v1.io.grpc.StatusException;
+import org.apache.beam.vendor.grpc.v1.io.grpc.StatusRuntimeException;
+import org.apache.beam.vendor.grpc.v1.io.grpc.stub.StreamObserver;
+import org.apache.beam.vendor.protobuf.v3.com.google.protobuf.Struct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * A InMemoryJobService that prepares and runs jobs on behalf of a client using a
- * {@link JobInvoker}.
+ * A InMemoryJobService that prepares and runs jobs on behalf of a client using a {@link
+ * JobInvoker}.
  *
  * <p>Job management is handled in-memory rather than any persistent storage, running the risk of
  * leaking jobs if the InMemoryJobService crashes.
@@ -58,19 +59,33 @@ import org.slf4j.LoggerFactory;
 public class InMemoryJobService extends JobServiceGrpc.JobServiceImplBase implements FnService {
   private static final Logger LOG = LoggerFactory.getLogger(InMemoryJobService.class);
 
+  /**
+   * Creates an InMemoryJobService.
+   *
+   * @param stagingServiceDescriptor Endpoint for the staging service.
+   * @param stagingServiceTokenProvider Function mapping a preparationId to a staging service token.
+   * @param invoker A JobInvoker that will actually create the jobs.
+   * @return A new InMemoryJobService.
+   */
   public static InMemoryJobService create(
-      Endpoints.ApiServiceDescriptor stagingServiceDescriptor, JobInvoker invoker) {
-    return new InMemoryJobService(stagingServiceDescriptor, invoker);
+      Endpoints.ApiServiceDescriptor stagingServiceDescriptor,
+      Function<String, String> stagingServiceTokenProvider,
+      JobInvoker invoker) {
+    return new InMemoryJobService(stagingServiceDescriptor, stagingServiceTokenProvider, invoker);
   }
 
   private final ConcurrentMap<String, JobPreparation> preparations;
   private final ConcurrentMap<String, JobInvocation> invocations;
   private final Endpoints.ApiServiceDescriptor stagingServiceDescriptor;
+  private final Function<String, String> stagingServiceTokenProvider;
   private final JobInvoker invoker;
 
   private InMemoryJobService(
-      Endpoints.ApiServiceDescriptor stagingServiceDescriptor, JobInvoker invoker) {
+      Endpoints.ApiServiceDescriptor stagingServiceDescriptor,
+      Function<String, String> stagingServiceTokenProvider,
+      JobInvoker invoker) {
     this.stagingServiceDescriptor = stagingServiceDescriptor;
+    this.stagingServiceTokenProvider = stagingServiceTokenProvider;
     this.invoker = invoker;
 
     this.preparations = new ConcurrentHashMap<>();
@@ -79,8 +94,7 @@ public class InMemoryJobService extends JobServiceGrpc.JobServiceImplBase implem
 
   @Override
   public void prepare(
-      PrepareJobRequest request,
-      StreamObserver<PrepareJobResponse> responseObserver) {
+      PrepareJobRequest request, StreamObserver<PrepareJobResponse> responseObserver) {
     try {
       LOG.trace("{} {}", PrepareJobRequest.class.getSimpleName(), request);
       // insert preparation
@@ -92,8 +106,7 @@ public class InMemoryJobService extends JobServiceGrpc.JobServiceImplBase implem
       }
       LOG.trace("PIPELINE OPTIONS {} {}", pipelineOptions.getClass(), pipelineOptions);
       JobPreparation preparation =
-          JobPreparation
-              .builder()
+          JobPreparation.builder()
               .setId(preparationId)
               .setPipeline(request.getPipeline())
               .setOptions(pipelineOptions)
@@ -110,10 +123,10 @@ public class InMemoryJobService extends JobServiceGrpc.JobServiceImplBase implem
 
       // send response
       PrepareJobResponse response =
-          PrepareJobResponse
-              .newBuilder()
+          PrepareJobResponse.newBuilder()
               .setPreparationId(preparationId)
               .setArtifactStagingEndpoint(stagingServiceDescriptor)
+              .setStagingSessionToken(stagingServiceTokenProvider.apply(preparationId))
               .build();
       responseObserver.onNext(response);
       responseObserver.onCompleted();
@@ -124,8 +137,7 @@ public class InMemoryJobService extends JobServiceGrpc.JobServiceImplBase implem
   }
 
   @Override
-  public void run(
-      RunJobRequest request, StreamObserver<RunJobResponse> responseObserver) {
+  public void run(RunJobRequest request, StreamObserver<RunJobResponse> responseObserver) {
     LOG.trace("{} {}", RunJobRequest.class.getSimpleName(), request);
 
     String preparationId = request.getPreparationId();
@@ -138,15 +150,20 @@ public class InMemoryJobService extends JobServiceGrpc.JobServiceImplBase implem
         responseObserver.onError(exception);
         return;
       }
+      try {
+        PipelineValidator.validate(preparation.pipeline());
+      } catch (Exception e) {
+        responseObserver.onError(new StatusRuntimeException(Status.INVALID_ARGUMENT.withCause(e)));
+      }
 
       // create new invocation
       JobInvocation invocation =
-          invoker.invoke(preparation.pipeline(), preparation.options(), request.getStagingToken());
+          invoker.invoke(
+              preparation.pipeline(), preparation.options(), request.getRetrievalToken());
       String invocationId = invocation.getId();
       invocation.start();
       invocations.put(invocationId, invocation);
-      RunJobResponse response =
-          RunJobResponse.newBuilder().setJobId(invocationId).build();
+      RunJobResponse response = RunJobResponse.newBuilder().setJobId(invocationId).build();
       responseObserver.onNext(response);
       responseObserver.onCompleted();
     } catch (StatusRuntimeException e) {
@@ -200,8 +217,7 @@ public class InMemoryJobService extends JobServiceGrpc.JobServiceImplBase implem
 
   @Override
   public void getStateStream(
-      GetJobStateRequest request,
-      StreamObserver<GetJobStateResponse> responseObserver) {
+      GetJobStateRequest request, StreamObserver<GetJobStateResponse> responseObserver) {
     LOG.trace("{} {}", GetJobStateRequest.class.getSimpleName(), request);
     String invocationId = request.getJobId();
     try {
@@ -221,8 +237,7 @@ public class InMemoryJobService extends JobServiceGrpc.JobServiceImplBase implem
 
   @Override
   public void getMessageStream(
-      JobMessagesRequest request,
-      StreamObserver<JobMessagesResponse> responseObserver) {
+      JobMessagesRequest request, StreamObserver<JobMessagesResponse> responseObserver) {
     String invocationId = request.getJobId();
     try {
       JobInvocation invocation = getInvocation(invocationId);
@@ -231,13 +246,15 @@ public class InMemoryJobService extends JobServiceGrpc.JobServiceImplBase implem
       StreamObserver<JobMessagesResponse> syncResponseObserver =
           SynchronizedStreamObserver.wrapping(responseObserver);
       Consumer<JobState.Enum> stateListener =
-          state -> syncResponseObserver.onNext(
-              JobMessagesResponse.newBuilder().setStateResponse(
-                  GetJobStateResponse.newBuilder().setState(state).build()
-              ).build());
+          state ->
+              syncResponseObserver.onNext(
+                  JobMessagesResponse.newBuilder()
+                      .setStateResponse(GetJobStateResponse.newBuilder().setState(state).build())
+                      .build());
       Consumer<JobMessage> messageListener =
-          message -> syncResponseObserver.onNext(
-              JobMessagesResponse.newBuilder().setMessageResponse(message).build());
+          message ->
+              syncResponseObserver.onNext(
+                  JobMessagesResponse.newBuilder().setMessageResponse(message).build());
 
       invocation.addStateListener(stateListener);
       invocation.addMessageListener(messageListener);

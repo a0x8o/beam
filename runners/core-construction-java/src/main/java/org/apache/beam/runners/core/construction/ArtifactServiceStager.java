@@ -22,9 +22,6 @@ import com.google.auto.value.AutoValue;
 import com.google.common.io.BaseEncoding;
 import com.google.common.util.concurrent.ListeningExecutorService;
 import com.google.common.util.concurrent.MoreExecutors;
-import com.google.protobuf.ByteString;
-import io.grpc.Channel;
-import io.grpc.stub.StreamObserver;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -49,6 +46,7 @@ import org.apache.beam.model.jobmanagement.v1.ArtifactApi.ArtifactMetadata;
 import org.apache.beam.model.jobmanagement.v1.ArtifactApi.CommitManifestRequest;
 import org.apache.beam.model.jobmanagement.v1.ArtifactApi.CommitManifestResponse;
 import org.apache.beam.model.jobmanagement.v1.ArtifactApi.Manifest;
+import org.apache.beam.model.jobmanagement.v1.ArtifactApi.PutArtifactMetadata;
 import org.apache.beam.model.jobmanagement.v1.ArtifactApi.PutArtifactRequest;
 import org.apache.beam.model.jobmanagement.v1.ArtifactApi.PutArtifactResponse;
 import org.apache.beam.model.jobmanagement.v1.ArtifactStagingServiceGrpc;
@@ -56,6 +54,9 @@ import org.apache.beam.model.jobmanagement.v1.ArtifactStagingServiceGrpc.Artifac
 import org.apache.beam.model.jobmanagement.v1.ArtifactStagingServiceGrpc.ArtifactStagingServiceStub;
 import org.apache.beam.sdk.util.MoreFutures;
 import org.apache.beam.sdk.util.ThrowingSupplier;
+import org.apache.beam.vendor.grpc.v1.io.grpc.Channel;
+import org.apache.beam.vendor.grpc.v1.io.grpc.stub.StreamObserver;
+import org.apache.beam.vendor.protobuf.v3.com.google.protobuf.ByteString;
 
 /** A client to stage files on an {@link ArtifactStagingServiceGrpc ArtifactService}. */
 public class ArtifactServiceStager {
@@ -93,18 +94,22 @@ public class ArtifactServiceStager {
    *
    * @return The artifact staging token returned by the service
    */
-  public String stage(Iterable<StagedFile> files) throws IOException, InterruptedException {
+  public String stage(String stagingSessionToken, Iterable<StagedFile> files)
+      throws IOException, InterruptedException {
     final Map<StagedFile, CompletionStage<ArtifactMetadata>> futures = new HashMap<>();
     for (StagedFile file : files) {
-      futures.put(file, MoreFutures.supplyAsync(new StagingCallable(file), executorService));
+      futures.put(
+          file,
+          MoreFutures.supplyAsync(new StagingCallable(stagingSessionToken, file), executorService));
     }
     CompletionStage<StagingResult> stagingResult =
         MoreFutures.allAsList(futures.values())
             .thenApply(ignored -> new ExtractStagingResultsCallable(futures).call());
-    return stageManifest(stagingResult);
+    return stageManifest(stagingSessionToken, stagingResult);
   }
 
-  private String stageManifest(CompletionStage<StagingResult> stagingFuture)
+  private String stageManifest(
+      String stagingSessionToken, CompletionStage<StagingResult> stagingFuture)
       throws InterruptedException {
     try {
       StagingResult stagingResult = MoreFutures.get(stagingFuture);
@@ -113,8 +118,11 @@ public class ArtifactServiceStager {
             Manifest.newBuilder().addAllArtifact(stagingResult.getMetadata()).build();
         CommitManifestResponse response =
             blockingStub.commitManifest(
-                CommitManifestRequest.newBuilder().setManifest(manifest).build());
-        return response.getStagingToken();
+                CommitManifestRequest.newBuilder()
+                    .setStagingSessionToken(stagingSessionToken)
+                    .setManifest(manifest)
+                    .build());
+        return response.getRetrievalToken();
       } else {
         RuntimeException failure =
             new RuntimeException(
@@ -132,9 +140,11 @@ public class ArtifactServiceStager {
   }
 
   private class StagingCallable implements ThrowingSupplier<ArtifactMetadata> {
+    private final String stagingSessionToken;
     private final StagedFile file;
 
-    private StagingCallable(StagedFile file) {
+    private StagingCallable(String stagingSessionToken, StagedFile file) {
+      this.stagingSessionToken = stagingSessionToken;
       this.file = file;
     }
 
@@ -145,7 +155,12 @@ public class ArtifactServiceStager {
       StreamObserver<PutArtifactRequest> requestObserver = stub.putArtifact(responseObserver);
       ArtifactMetadata metadata =
           ArtifactMetadata.newBuilder().setName(file.getStagingName()).build();
-      requestObserver.onNext(PutArtifactRequest.newBuilder().setMetadata(metadata).build());
+      PutArtifactMetadata putMetadata =
+          PutArtifactMetadata.newBuilder()
+              .setMetadata(metadata)
+              .setStagingSessionToken(stagingSessionToken)
+              .build();
+      requestObserver.onNext(PutArtifactRequest.newBuilder().setMetadata(putMetadata).build());
 
       MessageDigest md5Digest = MessageDigest.getInstance("MD5");
       FileChannel channel = new FileInputStream(file.getFile()).getChannel();
@@ -252,8 +267,7 @@ public class ArtifactServiceStager {
     }
 
     static StagingResult failure(Map<StagedFile, Throwable> failures) {
-      return new AutoValue_ArtifactServiceStager_StagingResult(
-          null, failures);
+      return new AutoValue_ArtifactServiceStager_StagingResult(null, failures);
     }
 
     boolean isSuccess() {
@@ -265,5 +279,4 @@ public class ArtifactServiceStager {
 
     abstract Map<StagedFile, Throwable> getFailures();
   }
-
 }

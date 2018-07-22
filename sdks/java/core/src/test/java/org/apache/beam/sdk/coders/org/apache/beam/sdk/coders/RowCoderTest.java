@@ -27,17 +27,13 @@ import java.io.IOException;
 import java.math.BigDecimal;
 import org.apache.beam.sdk.coders.RowCoder;
 import org.apache.beam.sdk.schemas.Schema;
-import org.apache.beam.sdk.schemas.Schema.Field;
 import org.apache.beam.sdk.schemas.Schema.FieldType;
-import org.apache.beam.sdk.schemas.Schema.TypeName;
 import org.apache.beam.sdk.values.Row;
 import org.joda.time.DateTime;
 import org.joda.time.DateTimeZone;
 import org.junit.Test;
 
-/**
- * Unit tests for {@link RowCoder}.
- */
+/** Unit tests for {@link RowCoder}. */
 public class RowCoderTest {
 
   void checkEncodeDecode(Row row) throws IOException {
@@ -49,38 +45,35 @@ public class RowCoderTest {
 
   @Test
   public void testPrimitiveTypes() throws Exception {
-    Schema schema = Schema.builder()
-        .addByteField("f_byte", false)
-        .addInt16Field("f_int16", false)
-        .addInt32Field("f_int32", false)
-        .addInt64Field("f_int64", false)
-        .addDecimalField("f_decimal", false)
-        .addFloatField("f_float", false)
-        .addDoubleField("f_double", false)
-        .addStringField("f_string", false)
-        .addDateTimeField("f_datetime", false)
-        .addBooleanField("f_boolean", false).build();
+    Schema schema =
+        Schema.builder()
+            .addByteField("f_byte")
+            .addInt16Field("f_int16")
+            .addInt32Field("f_int32")
+            .addInt64Field("f_int64")
+            .addDecimalField("f_decimal")
+            .addFloatField("f_float")
+            .addDoubleField("f_double")
+            .addStringField("f_string")
+            .addDateTimeField("f_datetime")
+            .addBooleanField("f_boolean")
+            .build();
 
-    DateTime dateTime = new DateTime().withDate(1979, 03, 14)
-        .withTime(1, 2, 3, 4)
-        .withZone(DateTimeZone.UTC);
+    DateTime dateTime =
+        new DateTime().withDate(1979, 03, 14).withTime(1, 2, 3, 4).withZone(DateTimeZone.UTC);
     Row row =
-        Row
-            .withSchema(schema)
-            .addValues((byte) 0, (short) 1, 2, 3L, new BigDecimal(2.3), 1.2f, 3.0d, "str",
-                dateTime, false)
+        Row.withSchema(schema)
+            .addValues(
+                (byte) 0, (short) 1, 2, 3L, new BigDecimal(2.3), 1.2f, 3.0d, "str", dateTime, false)
             .build();
     checkEncodeDecode(row);
   }
 
   @Test
   public void testNestedTypes() throws Exception {
-    Schema nestedSchema = Schema.builder()
-        .addInt32Field("f1_int", false)
-        .addStringField("f1_str", false).build();
-    Schema schema = Schema.builder()
-        .addInt32Field("f_int", false)
-        .addRowField("nested", nestedSchema, false).build();
+    Schema nestedSchema = Schema.builder().addInt32Field("f1_int").addStringField("f1_str").build();
+    Schema schema =
+        Schema.builder().addInt32Field("f_int").addRowField("nested", nestedSchema).build();
 
     Row nestedRow = Row.withSchema(nestedSchema).addValues(18, "foobar").build();
     Row row = Row.withSchema(schema).addValues(42, nestedRow).build();
@@ -89,38 +82,37 @@ public class RowCoderTest {
 
   @Test
   public void testArrays() throws Exception {
-    Schema schema = Schema.builder()
-        .addArrayField("f_array", TypeName.STRING.type())
-        .build();
+    Schema schema = Schema.builder().addArrayField("f_array", FieldType.STRING).build();
     Row row = Row.withSchema(schema).addArray("one", "two", "three", "four").build();
     checkEncodeDecode(row);
   }
 
   @Test
   public void testArrayOfRow() throws Exception {
-    Schema nestedSchema = Schema.builder()
-        .addInt32Field("f1_int", false)
-        .addStringField("f1_str", false).build();
-    FieldType collectionElementType = TypeName.ROW.type().withRowSchema(nestedSchema);
+    Schema nestedSchema = Schema.builder().addInt32Field("f1_int").addStringField("f1_str").build();
+    FieldType collectionElementType = FieldType.row(nestedSchema);
     Schema schema = Schema.builder().addArrayField("f_array", collectionElementType).build();
-    Row row = Row.withSchema(schema).addArray(
-        Row.withSchema(nestedSchema).addValues(1, "one").build(),
-        Row.withSchema(nestedSchema).addValues(2, "two").build(),
-        Row.withSchema(nestedSchema).addValues(3, "three").build())
-        .build();
+    Row row =
+        Row.withSchema(schema)
+            .addArray(
+                Row.withSchema(nestedSchema).addValues(1, "one").build(),
+                Row.withSchema(nestedSchema).addValues(2, "two").build(),
+                Row.withSchema(nestedSchema).addValues(3, "three").build())
+            .build();
     checkEncodeDecode(row);
   }
 
   @Test
   public void testArrayOfArray() throws Exception {
-    FieldType arrayType = TypeName.ARRAY.type()
-        .withCollectionElementType(TypeName.ARRAY.type()
-            .withCollectionElementType(TypeName.INT32.type()));
-    Schema schema = Schema.builder().addField(Field.of("f_array", arrayType)).build();
-    Row row = Row.withSchema(schema).addArray(
-        Lists.newArrayList(1, 2, 3, 4),
-        Lists.newArrayList(5, 6, 7, 8),
-        Lists.newArrayList(9, 10, 11, 12)).build();
+    FieldType arrayType = FieldType.array(FieldType.array(FieldType.INT32));
+    Schema schema = Schema.builder().addField("f_array", arrayType).build();
+    Row row =
+        Row.withSchema(schema)
+            .addArray(
+                Lists.newArrayList(1, 2, 3, 4),
+                Lists.newArrayList(5, 6, 7, 8),
+                Lists.newArrayList(9, 10, 11, 12))
+            .build();
     checkEncodeDecode(row);
   }
 }

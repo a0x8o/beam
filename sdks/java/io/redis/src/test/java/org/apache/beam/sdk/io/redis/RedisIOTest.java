@@ -27,14 +27,13 @@ import org.apache.beam.sdk.transforms.Create;
 import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollection;
 import org.junit.After;
+import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import redis.embedded.RedisServer;
 
-/**
- * Test on the Redis IO.
- */
+/** Test on the Redis IO. */
 public class RedisIOTest {
 
   @Rule public TestPipeline writePipeline = TestPipeline.create();
@@ -64,22 +63,40 @@ public class RedisIOTest {
 
     writePipeline.run();
 
-    PCollection<KV<String, String>> read = readPipeline.apply("Read",
-        RedisIO.read().withEndpoint("::1", embeddedRedis.getPort())
-            .withKeyPattern("key*"));
+    PCollection<KV<String, String>> read =
+        readPipeline.apply(
+            "Read",
+            RedisIO.read().withEndpoint("::1", embeddedRedis.getPort()).withKeyPattern("key*"));
     PAssert.that(read).containsInAnyOrder(data);
 
-    PCollection<KV<String,  String>> readNotMatch = readPipeline.apply("ReadNotMatch",
-        RedisIO.read().withEndpoint("::1", embeddedRedis.getPort())
-            .withKeyPattern("foobar*"));
+    PCollection<KV<String, String>> readNotMatch =
+        readPipeline.apply(
+            "ReadNotMatch",
+            RedisIO.read().withEndpoint("::1", embeddedRedis.getPort()).withKeyPattern("foobar*"));
     PAssert.thatSingleton(readNotMatch.apply(Count.globally())).isEqualTo(0L);
 
     readPipeline.run();
   }
 
-  /**
-   * Simple embedded Redis instance wrapper to control Redis server.
-   */
+  @Test
+  public void testReadBuildsCorrectly() {
+    RedisIO.Read read = RedisIO.read().withEndpoint("test", 111).withAuth("pass").withTimeout(5);
+    Assert.assertEquals("test", read.connectionConfiguration().host());
+    Assert.assertEquals(111, read.connectionConfiguration().port());
+    Assert.assertEquals("pass", read.connectionConfiguration().auth());
+    Assert.assertEquals(5, read.connectionConfiguration().timeout());
+  }
+
+  @Test
+  public void testWriteBuildsCorrectly() {
+    RedisIO.Write write = RedisIO.write().withEndpoint("test", 111).withAuth("pass").withTimeout(5);
+    Assert.assertEquals("test", write.connectionConfiguration().host());
+    Assert.assertEquals(111, write.connectionConfiguration().port());
+    Assert.assertEquals("pass", write.connectionConfiguration().auth());
+    Assert.assertEquals(5, write.connectionConfiguration().timeout());
+  }
+
+  /** Simple embedded Redis instance wrapper to control Redis server. */
   private static class EmbeddedRedis implements AutoCloseable {
 
     private final int port;
@@ -101,7 +118,5 @@ public class RedisIOTest {
     public void close() {
       redisServer.stop();
     }
-
   }
-
 }

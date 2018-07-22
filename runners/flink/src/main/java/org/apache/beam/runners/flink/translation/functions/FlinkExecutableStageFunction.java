@@ -24,14 +24,15 @@ import java.util.Map;
 import javax.annotation.concurrent.GuardedBy;
 import org.apache.beam.model.pipeline.v1.RunnerApi;
 import org.apache.beam.runners.core.construction.graph.ExecutableStage;
-import org.apache.beam.runners.flink.ArtifactSourcePool;
-import org.apache.beam.runners.fnexecution.artifact.ArtifactSource;
+import org.apache.beam.runners.fnexecution.control.BundleProgressHandler;
 import org.apache.beam.runners.fnexecution.control.OutputReceiverFactory;
 import org.apache.beam.runners.fnexecution.control.RemoteBundle;
 import org.apache.beam.runners.fnexecution.control.StageBundleFactory;
 import org.apache.beam.runners.fnexecution.provisioning.JobInfo;
 import org.apache.beam.runners.fnexecution.state.StateRequestHandler;
 import org.apache.beam.sdk.fn.data.FnDataReceiver;
+import org.apache.beam.sdk.io.FileSystems;
+import org.apache.beam.sdk.options.PipelineOptionsFactory;
 import org.apache.beam.sdk.transforms.join.RawUnionValue;
 import org.apache.beam.sdk.util.WindowedValue;
 import org.apache.flink.api.common.functions.RichMapPartitionFunction;
@@ -39,7 +40,6 @@ import org.apache.flink.api.common.functions.RuntimeContext;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.util.Collector;
 
-// TODO: https://issues.apache.org/jira/browse/BEAM-2597 Implement this executable stage operator.
 /**
  * Flink operator that passes its input DataSet through an SDK-executed {@link
  * org.apache.beam.runners.core.construction.graph.ExecutableStage}.
@@ -64,9 +64,10 @@ public class FlinkExecutableStageFunction<InputT>
 
   // Worker-local fields. These should only be constructed and consumed on Flink TaskManagers.
   private transient RuntimeContext runtimeContext;
+  private transient FlinkExecutableStageContext stageContext;
   private transient StateRequestHandler stateRequestHandler;
-  private transient StageBundleFactory stageBundleFactory;
-  private transient AutoCloseable distributedCacheCloser;
+  private transient StageBundleFactory<InputT> stageBundleFactory;
+  private transient BundleProgressHandler progressHandler;
 
   public FlinkExecutableStageFunction(
       RunnerApi.ExecutableStagePayload stagePayload,
@@ -81,22 +82,19 @@ public class FlinkExecutableStageFunction<InputT>
 
   @Override
   public void open(Configuration parameters) throws Exception {
+    // Register standard file systems.
+    // TODO Use actual pipeline options.
+    FileSystems.setDefaultPipelineOptions(PipelineOptionsFactory.create());
     ExecutableStage executableStage = ExecutableStage.fromPayload(stagePayload);
     runtimeContext = getRuntimeContext();
     // TODO: Wire this into the distributed cache and make it pluggable.
-    ArtifactSource artifactSource = null;
-    // TODO: Do we really want this layer of indirection when accessing the stage bundle factory?
-    // It's a little strange because this operator is responsible for the lifetime of the stage
-    // bundle "factory" (manager?) but not the job or Flink bundle factories. How do we make
-    // ownership of the higher level "factories" explicit? Do we care?
-    FlinkExecutableStageContext stageContext = contextFactory.get(jobInfo);
-    ArtifactSourcePool cachePool = stageContext.getArtifactSourcePool();
-    distributedCacheCloser = cachePool.addToPool(artifactSource);
+    stageContext = contextFactory.get(jobInfo);
     // NOTE: It's safe to reuse the state handler between partitions because each partition uses the
     // same backing runtime context and broadcast variables. We use checkState below to catch errors
     // in backward-incompatible Flink changes.
     stateRequestHandler = stageContext.getStateRequestHandler(executableStage, runtimeContext);
     stageBundleFactory = stageContext.getStageBundleFactory(executableStage);
+    progressHandler = BundleProgressHandler.unsupported();
   }
 
   @Override
@@ -113,7 +111,7 @@ public class FlinkExecutableStageFunction<InputT>
 
     try (RemoteBundle<InputT> bundle =
         stageBundleFactory.getBundle(
-            new ReceiverFactory(collector, outputMap), stateRequestHandler)) {
+            new ReceiverFactory(collector, outputMap), stateRequestHandler, progressHandler)) {
       FnDataReceiver<WindowedValue<InputT>> receiver = bundle.getInputReceiver();
       for (WindowedValue<InputT> input : iterable) {
         receiver.accept(input);
@@ -125,8 +123,9 @@ public class FlinkExecutableStageFunction<InputT>
 
   @Override
   public void close() throws Exception {
-    try (AutoCloseable cacheCloser = distributedCacheCloser;
-        AutoCloseable bundleFactoryCloser = stageBundleFactory) {}
+    try (AutoCloseable bundleFactoryCloser = stageBundleFactory) {}
+    // Remove the reference to stageContext and make stageContext available for garbage collection.
+    stageContext = null;
   }
 
   /**

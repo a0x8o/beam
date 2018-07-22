@@ -43,11 +43,10 @@ import org.junit.runners.JUnit4;
 @RunWith(JUnit4.class)
 public class SortValuesTest {
 
-  @Rule
-  public final transient TestPipeline p = TestPipeline.create();
+  @Rule public final transient TestPipeline p = TestPipeline.create();
 
   @Test
-  public void testSecondaryKeySorting() throws Exception {
+  public void testSecondaryKeySorting() {
     // Create a PCollection of <Key, <SecondaryKey, Value>> pairs.
     PCollection<KV<String, KV<String, Integer>>> input =
         p.apply(
@@ -97,15 +96,15 @@ public class SortValuesTest {
   }
 
   /** Matcher for KVs. Forked from Beam's org/apache/beam/sdk/TestUtils.java */
-  public static class KvMatcher<K, V> extends TypeSafeMatcher<KV<? extends K, ? extends V>> {
+  static class KvMatcher<K, V> extends TypeSafeMatcher<KV<? extends K, ? extends V>> {
     final Matcher<? super K> keyMatcher;
     final Matcher<? super V> valueMatcher;
 
-    public static <K, V> KvMatcher<K, V> isKv(Matcher<K> keyMatcher, Matcher<V> valueMatcher) {
+    static <K, V> KvMatcher<K, V> isKv(Matcher<K> keyMatcher, Matcher<V> valueMatcher) {
       return new KvMatcher<>(keyMatcher, valueMatcher);
     }
 
-    public KvMatcher(Matcher<? super K> keyMatcher, Matcher<? super V> valueMatcher) {
+    KvMatcher(Matcher<? super K> keyMatcher, Matcher<? super V> valueMatcher) {
       this.keyMatcher = keyMatcher;
       this.valueMatcher = valueMatcher;
     }

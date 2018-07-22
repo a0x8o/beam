@@ -26,7 +26,7 @@ from __future__ import absolute_import
 import argparse
 import logging
 
-import six
+from past.builtins import unicode
 
 import apache_beam as beam
 import apache_beam.transforms.window as window
@@ -77,7 +77,7 @@ def run(argv=None):
 
     transformed = (lines
                    | 'Split' >> (beam.FlatMap(find_words)
-                                 .with_output_types(six.text_type))
+                                 .with_output_types(unicode))
                    | 'PairWithOne' >> beam.Map(lambda x: (x, 1))
                    | beam.WindowInto(window.FixedWindows(2*60, 0))
                    | 'Group' >> beam.GroupByKey()

@@ -21,7 +21,7 @@ import static org.apache.beam.sdk.nexmark.model.sql.adapter.ModelAdaptersMapping
 import static org.apache.beam.sdk.nexmark.queries.NexmarkQuery.IS_BID;
 
 import org.apache.beam.sdk.coders.RowCoder;
-import org.apache.beam.sdk.extensions.sql.BeamSql;
+import org.apache.beam.sdk.extensions.sql.SqlTransform;
 import org.apache.beam.sdk.nexmark.model.Bid;
 import org.apache.beam.sdk.nexmark.model.Event;
 import org.apache.beam.sdk.nexmark.model.sql.ToRow;
@@ -34,26 +34,24 @@ import org.apache.beam.sdk.values.PInput;
 import org.apache.beam.sdk.values.Row;
 
 /**
- * Query 1, 'Currency Conversion'. Convert each bid value from dollars to euros.
- * In CQL syntax:
+ * Query 1, 'Currency Conversion'. Convert each bid value from dollars to euros. In CQL syntax:
  *
  * <pre>
  * SELECT Istream(auction, DOLTOEUR(price), bidder, datetime)
  * FROM bid [ROWS UNBOUNDED];
  * </pre>
  *
- * <p>To make things more interesting, allow the 'currency conversion' to be arbitrarily
- * slowed down.
+ * <p>To make things more interesting, allow the 'currency conversion' to be arbitrarily slowed
+ * down.
  */
 public class SqlQuery1 extends PTransform<PCollection<Event>, PCollection<Bid>> {
 
-  private static final PTransform<PInput, PCollection<Row>> QUERY = BeamSql
-      .query("SELECT auction, bidder, DolToEur(price) as price, dateTime, extra FROM PCOLLECTION")
-      .registerUdf("DolToEur", new DolToEur());
+  private static final PTransform<PInput, PCollection<Row>> QUERY =
+      SqlTransform.query(
+              "SELECT auction, bidder, DolToEur(price) as price, dateTime, extra FROM PCOLLECTION")
+          .registerUdf("DolToEur", new DolToEur());
 
-  /**
-   * Dollar to Euro conversion.
-   */
+  /** Dollar to Euro conversion. */
   public static class DolToEur implements SerializableFunction<Long, Long> {
     @Override
     public Long apply(Long price) {
@@ -69,16 +67,15 @@ public class SqlQuery1 extends PTransform<PCollection<Event>, PCollection<Bid>> 
   public PCollection<Bid> expand(PCollection<Event> allEvents) {
     RowCoder bidRecordCoder = getBidRowCoder();
 
-    PCollection<Row> bidEventsRows = allEvents
-        .apply(Filter.by(IS_BID))
-        .apply(getName() + ".ToRow", ToRow.parDo())
-        .setCoder(bidRecordCoder);
+    PCollection<Row> bidEventsRows =
+        allEvents
+            .apply(Filter.by(IS_BID))
+            .apply(getName() + ".ToRow", ToRow.parDo())
+            .setCoder(bidRecordCoder);
 
     PCollection<Row> queryResultsRows = bidEventsRows.apply(QUERY);
 
-    return queryResultsRows
-        .apply(bidParDo())
-        .setCoder(Bid.CODER);
+    return queryResultsRows.apply(bidParDo()).setCoder(Bid.CODER);
   }
 
   private RowCoder getBidRowCoder() {

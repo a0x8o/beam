@@ -18,24 +18,36 @@
 
 package org.apache.beam.sdk.extensions.sql.impl.rel;
 
+import static com.google.common.base.Preconditions.checkArgument;
+
 import java.io.Serializable;
-import java.lang.reflect.Type;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import org.apache.beam.sdk.coders.Coder;
+import org.apache.beam.sdk.coders.KvCoder;
 import org.apache.beam.sdk.coders.ListCoder;
+import org.apache.beam.sdk.coders.StringUtf8Coder;
+import org.apache.beam.sdk.coders.VarIntCoder;
 import org.apache.beam.sdk.extensions.sql.impl.utils.CalciteUtils;
 import org.apache.beam.sdk.schemas.Schema.FieldType;
+import org.apache.beam.sdk.state.StateSpec;
+import org.apache.beam.sdk.state.StateSpecs;
+import org.apache.beam.sdk.state.ValueState;
 import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.Flatten;
 import org.apache.beam.sdk.transforms.PTransform;
 import org.apache.beam.sdk.transforms.ParDo;
 import org.apache.beam.sdk.transforms.Top;
-import org.apache.beam.sdk.transforms.windowing.GlobalWindow;
+import org.apache.beam.sdk.transforms.WithKeys;
+import org.apache.beam.sdk.transforms.windowing.GlobalWindows;
+import org.apache.beam.sdk.transforms.windowing.Window;
+import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollection;
-import org.apache.beam.sdk.values.PCollectionTuple;
+import org.apache.beam.sdk.values.PCollectionList;
 import org.apache.beam.sdk.values.Row;
+import org.apache.beam.sdk.values.WindowingStrategy;
 import org.apache.calcite.plan.RelOptCluster;
 import org.apache.calcite.plan.RelTraitSet;
 import org.apache.calcite.rel.RelCollation;
@@ -120,48 +132,108 @@ public class BeamSortRel extends Sort implements BeamRelNode {
     }
   }
 
+  public boolean isLimitOnly() {
+    return fieldIndices.size() == 0;
+  }
+
+  public int getCount() {
+    return count;
+  }
+
   @Override
-  public PTransform<PCollectionTuple, PCollection<Row>> toPTransform() {
+  public PTransform<PCollectionList<Row>, PCollection<Row>> buildPTransform() {
     return new Transform();
   }
 
-  private class Transform extends PTransform<PCollectionTuple, PCollection<Row>> {
+  private class Transform extends PTransform<PCollectionList<Row>, PCollection<Row>> {
 
     @Override
-    public PCollection<Row> expand(PCollectionTuple inputPCollections) {
-      RelNode input = getInput();
-      PCollection<Row> upstream =
-          inputPCollections.apply(BeamSqlRelUtils.getBeamRelInput(input).toPTransform());
-      Type windowType =
-          upstream.getWindowingStrategy().getWindowFn().getWindowTypeDescriptor().getType();
-      if (!windowType.equals(GlobalWindow.class)) {
-        throw new UnsupportedOperationException(
-            "`ORDER BY` is only supported for GlobalWindow, actual window: " + windowType);
-      }
+    public PCollection<Row> expand(PCollectionList<Row> pinput) {
+      checkArgument(
+          pinput.size() == 1,
+          "Wrong number of inputs for %s: %s",
+          BeamIOSinkRel.class.getSimpleName(),
+          pinput);
+      PCollection<Row> upstream = pinput.get(0);
 
-      BeamSqlRowComparator comparator =
-          new BeamSqlRowComparator(fieldIndices, orientation, nullsFirst);
-      // first find the top (offset + count)
-      PCollection<List<Row>> rawStream =
-          upstream
-              .apply(
-                  "extractTopOffsetAndFetch",
-                  Top.of(startIndex + count, comparator).withoutDefaults())
-              .setCoder(ListCoder.of(upstream.getCoder()));
+      // There is a need to separate ORDER BY LIMIT and LIMIT:
+      //  - GroupByKey (used in Top) is not allowed on unbounded data in global window so ORDER BY ... LIMIT
+      //    works only on bounded data.
+      //  - Just LIMIT operates on unbounded data, but across windows.
+      if (fieldIndices.size() == 0) {
+        // TODO(https://issues.apache.org/jira/projects/BEAM/issues/BEAM-4702)
+        // Figure out which operations are per-window and which are not.
+        return upstream
+            .apply(Window.into(new GlobalWindows()))
+            .apply(new LimitTransform<>())
+            .setCoder(CalciteUtils.toBeamSchema(getRowType()).getRowCoder());
+      } else {
 
-      // strip the `leading offset`
-      if (startIndex > 0) {
-        rawStream =
-            rawStream
+        WindowingStrategy<?, ?> windowingStrategy = upstream.getWindowingStrategy();
+        if (!(windowingStrategy.getWindowFn() instanceof GlobalWindows)) {
+          throw new UnsupportedOperationException(
+              String.format(
+                  "`ORDER BY` is only supported for %s, actual windowing strategy: %s",
+                  GlobalWindows.class.getSimpleName(), windowingStrategy));
+        }
+
+        BeamSqlRowComparator comparator =
+            new BeamSqlRowComparator(fieldIndices, orientation, nullsFirst);
+
+        // first find the top (offset + count)
+        PCollection<List<Row>> rawStream =
+            upstream
                 .apply(
-                    "stripLeadingOffset", ParDo.of(new SubListFn<>(startIndex, startIndex + count)))
+                    "extractTopOffsetAndFetch",
+                    Top.of(startIndex + count, comparator).withoutDefaults())
                 .setCoder(ListCoder.of(upstream.getCoder()));
+
+        // strip the `leading offset`
+        if (startIndex > 0) {
+          rawStream =
+              rawStream
+                  .apply(
+                      "stripLeadingOffset",
+                      ParDo.of(new SubListFn<>(startIndex, startIndex + count)))
+                  .setCoder(ListCoder.of(upstream.getCoder()));
+        }
+
+        return rawStream
+            .apply("flatten", Flatten.iterables())
+            .setCoder(CalciteUtils.toBeamSchema(getRowType()).getRowCoder());
       }
+    }
+  }
 
-      PCollection<Row> orderedStream = rawStream.apply("flatten", Flatten.iterables());
-      orderedStream.setCoder(CalciteUtils.toBeamSchema(getRowType()).getRowCoder());
+  private class LimitTransform<T> extends PTransform<PCollection<T>, PCollection<T>> {
+    @Override
+    public PCollection<T> expand(PCollection<T> input) {
+      Coder<T> coder = input.getCoder();
+      PCollection<KV<String, T>> keyedRow =
+          input.apply(WithKeys.of("DummyKey")).setCoder(KvCoder.of(StringUtf8Coder.of(), coder));
 
-      return orderedStream;
+      return keyedRow.apply(ParDo.of(new LimitFn<T>(getCount())));
+    }
+  }
+
+  private static class LimitFn<T> extends DoFn<KV<String, T>, T> {
+    private final Integer limitCount;
+
+    public LimitFn(int c) {
+      limitCount = c;
+    }
+
+    @StateId("counter")
+    private final StateSpec<ValueState<Integer>> counterState = StateSpecs.value(VarIntCoder.of());
+
+    @ProcessElement
+    public void processElement(
+        ProcessContext context, @StateId("counter") ValueState<Integer> counterState) {
+      int current = (counterState.read() != null ? counterState.read() : 0);
+      if (current < limitCount) {
+        context.output(context.element().getValue());
+        counterState.write(current + 1);
+      }
     }
   }
 

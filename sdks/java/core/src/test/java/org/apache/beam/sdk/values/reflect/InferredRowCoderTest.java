@@ -27,33 +27,25 @@ import org.apache.beam.sdk.schemas.Schema;
 import org.apache.beam.sdk.values.Row;
 import org.junit.Test;
 
-/**
- * Unit tests for {@link InferredRowCoder}.
- */
+/** Unit tests for {@link InferredRowCoder}. */
 public class InferredRowCoderTest {
-  private static final boolean NOT_NULLABLE = false;
-
   private static final Schema PERSON_ROW_TYPE =
-      Schema
-          .builder()
-          .addInt32Field("ageYears", NOT_NULLABLE)
-          .addStringField("name", NOT_NULLABLE)
-          .build();
+      Schema.builder().addInt32Field("ageYears").addStringField("name").build();
 
   private static final PersonPojo PERSON_FOO = new PersonPojo("Foo", 13);
   private static final PersonPojo PERSON_BAR = new PersonPojo("Bar", 1);
 
-  private static final Row ROW_FOO = Row.withSchema(PERSON_ROW_TYPE)
-                                        .addValues(PERSON_FOO.getAgeYears(), PERSON_BAR.getName())
-                                        .build();
+  private static final Row ROW_FOO =
+      Row.withSchema(PERSON_ROW_TYPE)
+          .addValues(PERSON_FOO.getAgeYears(), PERSON_BAR.getName())
+          .build();
 
-  private static final Row ROW_BAR = Row.withSchema(PERSON_ROW_TYPE)
-                                        .addValues(PERSON_BAR.getAgeYears(), PERSON_BAR.getName())
-                                        .build();
+  private static final Row ROW_BAR =
+      Row.withSchema(PERSON_ROW_TYPE)
+          .addValues(PERSON_BAR.getAgeYears(), PERSON_BAR.getName())
+          .build();
 
-  /**
-   * Person POJO.
-   */
+  /** Person POJO. */
   public static class PersonPojo implements Serializable {
     private Integer ageYears;
     private String name;
@@ -73,13 +65,13 @@ public class InferredRowCoderTest {
   }
 
   @Test
-  public void testCreatesRowType() {
+  public void testCreatesSchema() {
     InferredRowCoder<PersonPojo> inferredCoder = InferredRowCoder.ofSerializable(PersonPojo.class);
-    Schema rowType = inferredCoder.rowType();
+    Schema schema = inferredCoder.schema();
 
-    assertEquals(2, rowType.getFieldCount());
+    assertEquals(2, schema.getFieldCount());
     assertThat(
-        rowType.getFields(),
+        schema.getFields(),
         containsInAnyOrder(PERSON_ROW_TYPE.getField(0), PERSON_ROW_TYPE.getField(1)));
   }
 

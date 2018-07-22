@@ -259,9 +259,7 @@ public class TikaIO {
           ParseContext context = new ParseContext();
           context.set(Parser.class, parser);
           Metadata tikaMetadata =
-              spec.getInputMetadata() != null
-                  ? spec.getInputMetadata()
-                  : new org.apache.tika.metadata.Metadata();
+              spec.getInputMetadata() != null ? spec.getInputMetadata() : new Metadata();
           if (spec.getContentTypeHint() != null) {
             tikaMetadata.set(Metadata.CONTENT_TYPE, spec.getContentTypeHint());
           }

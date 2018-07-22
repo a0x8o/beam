@@ -25,9 +25,7 @@ import java.util.List;
 import org.apache.beam.sdk.schemas.Schema;
 import org.junit.Test;
 
-/**
- * Unit tests for {@link RowTypeGetters}.
- */
+/** Unit tests for {@link SchemaGetters}. */
 public class SchemaGettersTest {
 
   @Test
@@ -35,9 +33,9 @@ public class SchemaGettersTest {
     Schema schema = Schema.builder().build();
     List<FieldValueGetter> fieldValueGetters = emptyList();
 
-    RowTypeGetters getters = new RowTypeGetters(schema, fieldValueGetters);
+    SchemaGetters getters = new SchemaGetters(schema, fieldValueGetters);
 
-    assertSame(schema, getters.rowType());
+    assertSame(schema, getters.schema());
     assertSame(fieldValueGetters, getters.valueGetters());
   }
 }

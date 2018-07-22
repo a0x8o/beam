@@ -23,6 +23,8 @@
 
 ## Status
 
+[![Maven Version](https://maven-badges.herokuapp.com/maven-central/org.apache.beam/beam-sdks-java-core/badge.svg)](http://search.maven.org/#search|gav|1|g:"org.apache.beam")
+[![PyPI version](https://badge.fury.io/py/apache-beam.svg)](https://badge.fury.io/py/apache-beam)
 [![Build Status](https://builds.apache.org/buildStatus/icon?job=beam_PostCommit_Java_GradleBuild)](https://builds.apache.org/job/beam_PostCommit_Java_GradleBuild)
 [![Coverage Status](https://coveralls.io/repos/github/apache/beam/badge.svg?branch=master)](https://coveralls.io/github/apache/beam?branch=master)
 
@@ -53,7 +55,7 @@ Beam supports multiple language specific SDKs for writing pipelines against the 
 
 Currently, this repository contains SDKs for Java, Python and Go.
 
-Have ideas for new SDKs or DSLs? See the [JIRA](https://issues.apache.org/jira/browse/BEAM/component/12328909/).
+Have ideas for new SDKs or DSLs? See the [JIRA](https://issues.apache.org/jira/issues/?jql=project%20%3D%20BEAM%20AND%20component%20%3D%20sdk-ideas).
 
 ### Runners
 
@@ -65,7 +67,7 @@ Beam supports executing programs on multiple distributed processing backends thr
 - The `FlinkRunner` runs the pipeline on an Apache Flink cluster. The code has been donated from [dataArtisans/flink-dataflow](https://github.com/dataArtisans/flink-dataflow) and is now part of Beam.
 - The `SparkRunner` runs the pipeline on an Apache Spark cluster. The code has been donated from [cloudera/spark-dataflow](https://github.com/cloudera/spark-dataflow) and is now part of Beam.
 
-Have ideas for new Runners? See the [JIRA](https://issues.apache.org/jira/browse/BEAM/component/12328916/).
+Have ideas for new Runners? See the [JIRA](https://issues.apache.org/jira/issues/?jql=project%20%3D%20BEAM%20AND%20component%20%3D%20runner-ideas).
 
 ## Getting Started
 
@@ -78,14 +80,11 @@ in your system. In a Debian-based distribution:
 sudo apt-get install \
     openjdk-8-jdk \
     python-setuptools \
-    python-pip
+    python-pip \
+    virtualenv
 ```
 
 Then please use the standard `./gradlew build` command.
-
-### Spark Runner
-
-See the Spark Runner [README](https://github.com/apache/beam/tree/master/runners/spark).
 
 ## Contact Us
 

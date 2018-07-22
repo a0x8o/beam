@@ -19,6 +19,7 @@ package org.apache.beam.sdk.nexmark.model;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.google.common.base.Objects;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -29,37 +30,39 @@ import org.apache.beam.sdk.coders.CustomCoder;
 import org.apache.beam.sdk.coders.VarLongCoder;
 import org.apache.beam.sdk.nexmark.NexmarkUtils;
 
-/**
- * Result of Query6.
- */
+/** Result of Query6. */
 public class SellerPrice implements KnownSize, Serializable {
   private static final Coder<Long> LONG_CODER = VarLongCoder.of();
 
-  public static final Coder<SellerPrice> CODER = new CustomCoder<SellerPrice>() {
-    @Override
-    public void encode(SellerPrice value, OutputStream outStream)
-        throws CoderException, IOException {
-      LONG_CODER.encode(value.seller, outStream);
-      LONG_CODER.encode(value.price, outStream);
-    }
+  public static final Coder<SellerPrice> CODER =
+      new CustomCoder<SellerPrice>() {
+        @Override
+        public void encode(SellerPrice value, OutputStream outStream)
+            throws CoderException, IOException {
+          LONG_CODER.encode(value.seller, outStream);
+          LONG_CODER.encode(value.price, outStream);
+        }
 
-    @Override
-    public SellerPrice decode(
-        InputStream inStream)
-        throws CoderException, IOException {
-      long seller = LONG_CODER.decode(inStream);
-      long price = LONG_CODER.decode(inStream);
-      return new SellerPrice(seller, price);
-    }
-    @Override public void verifyDeterministic() throws NonDeterministicException {}
-  };
+        @Override
+        public SellerPrice decode(InputStream inStream) throws CoderException, IOException {
+          long seller = LONG_CODER.decode(inStream);
+          long price = LONG_CODER.decode(inStream);
+          return new SellerPrice(seller, price);
+        }
 
-  @JsonProperty
-  public final long seller;
+        @Override
+        public void verifyDeterministic() throws NonDeterministicException {}
+
+        @Override
+        public Object structuralValue(SellerPrice v) {
+          return v;
+        }
+      };
+
+  @JsonProperty public final long seller;
 
   /** Price in cents. */
-  @JsonProperty
-  private final long price;
+  @JsonProperty private final long price;
 
   // For Avro only.
   @SuppressWarnings("unused")
@@ -85,5 +88,22 @@ public class SellerPrice implements KnownSize, Serializable {
     } catch (JsonProcessingException e) {
       throw new RuntimeException(e);
     }
+  }
+
+  @Override
+  public boolean equals(Object o) {
+    if (this == o) {
+      return true;
+    }
+    if (o == null || getClass() != o.getClass()) {
+      return false;
+    }
+    SellerPrice that = (SellerPrice) o;
+    return seller == that.seller && price == that.price;
+  }
+
+  @Override
+  public int hashCode() {
+    return Objects.hashCode(seller, price);
   }
 }
