@@ -26,21 +26,14 @@ from __future__ import print_function
 
 import collections
 import copy
-import glob
 import logging
-import os
-import shutil
-import tempfile
-import urllib
 
 import apache_beam as beam
-from apache_beam import coders
 from apache_beam import runners
-from apache_beam.io import filesystems
 from apache_beam.portability.api import beam_runner_api_pb2
 from apache_beam.runners.direct import direct_runner
+from apache_beam.runners.interactive import cache_manager as cache
 from apache_beam.runners.interactive import display_manager
-from apache_beam.transforms import combiners
 
 # size of PCollection samples cached.
 SAMPLE_SIZE = 8
@@ -56,7 +49,7 @@ class InteractiveRunner(runners.PipelineRunner):
     # TODO(qinyeli, BEAM-4755) remove explicitly overriding underlying runner
     # once interactive_runner works with FnAPI mode
     self._underlying_runner = underlying_runner
-    self._cache_manager = CacheManager()
+    self._cache_manager = cache.LocalFileCacheManager()
     self._in_session = False
 
   def start_session(self):
@@ -119,6 +112,11 @@ class InteractiveRunner(runners.PipelineRunner):
 
     def _producing_transforms(pcoll_id, leaf=False):
       """Returns PTransforms (and their names) that produces the given PColl."""
+      if pcoll_id in _producing_transforms.analyzed_pcoll_ids:
+        return
+      else:
+        _producing_transforms.analyzed_pcoll_ids.add(pcoll_id)
+
       derivation = pipeline_info.derivation(pcoll_id)
       if self._cache_manager.exists('full', derivation.cache_label()):
         # If the PCollection is cached, yield ReadCache PTransform that reads
@@ -127,7 +125,8 @@ class InteractiveRunner(runners.PipelineRunner):
           caches_used.add(pcoll_id)
 
           cache_label = pipeline_info.derivation(pcoll_id).cache_label()
-          dummy_pcoll = pipeline | ReadCache(self._cache_manager, cache_label)
+          dummy_pcoll = pipeline | 'Load%s' % cache_label >> cache.ReadCache(
+              self._cache_manager, cache_label)
 
           # Find the top level ReadCache composite PTransform.
           read_cache = dummy_pcoll.producer
@@ -160,6 +159,7 @@ class InteractiveRunner(runners.PipelineRunner):
 
     # TODO(qinyeli): Preserve composite structure.
     required_transforms = collections.OrderedDict()
+    _producing_transforms.analyzed_pcoll_ids = set()
     for pcoll_id in desired_pcollections:
       # TODO(qinyeli): Collections consumed by no-output transforms.
       required_transforms.update(_producing_transforms(pcoll_id, True))
@@ -184,24 +184,24 @@ class InteractiveRunner(runners.PipelineRunner):
         self._underlying_runner,
         pipeline._options,  # pylint: disable=protected-access
         return_context=True)
-    pcolls_to_write = {}
-    pcolls_to_sample = {}
 
+    # TODO(qinyeli): cache only top-level pcollections.
     for pcoll_id in pipeline_info.all_pcollections():
       if pcoll_id not in referenced_pcollections:
         continue
       cache_label = pipeline_info.derivation(pcoll_id).cache_label()
-      if pcoll_id in desired_pcollections:
-        pcolls_to_write[cache_label] = context.pcollections.get_by_id(pcoll_id)
-      if pcoll_id in referenced_pcollections:
-        pcolls_to_sample[cache_label] = context.pcollections.get_by_id(pcoll_id)
+      pcoll = context.pcollections.get_by_id(pcoll_id)
 
-    # pylint: disable=expression-not-assigned
-    if pcolls_to_write:
-      pcolls_to_write | WriteCache(self._cache_manager)
-    if pcolls_to_sample:
-      pcolls_to_sample | 'WriteSample' >> WriteCache(
-          self._cache_manager, sample=True)
+      if pcoll_id in desired_pcollections:
+        # pylint: disable=expression-not-assigned
+        pcoll | 'CacheFull%s' % cache_label >> cache.WriteCache(
+            self._cache_manager, cache_label)
+
+      if pcoll_id in referenced_pcollections:
+        # pylint: disable=expression-not-assigned
+        pcoll | 'CacheSample%s' % cache_label >> cache.WriteCache(
+            self._cache_manager, cache_label, sample=True,
+            sample_size=SAMPLE_SIZE)
 
     display = display_manager.DisplayManager(
         pipeline_info=pipeline_info,
@@ -301,71 +301,6 @@ class InteractiveRunner(runners.PipelineRunner):
     return referenced_pcollections
 
 
-class ReadCache(beam.PTransform):
-  """A PTransform that reads the PCollections from the cache."""
-
-  def __init__(self, cache_manager, label):
-    self._cache_manager = cache_manager
-    self._label = label
-
-  def expand(self, pbegin):
-    # pylint: disable=expression-not-assigned
-    return pbegin | 'Load%s' % self._label >> (
-        beam.io.Read(
-            beam.io.ReadFromText(
-                self._cache_manager.glob_path('full', self._label),
-                coder=SafeFastPrimitivesCoder())._source))
-
-
-class WriteCache(beam.PTransform):
-  """A PTransform that writes the PCollections to the cache."""
-  def __init__(self, cache_manager, sample=False):
-    self._cache_manager = cache_manager
-    self._sample = sample
-
-  def expand(self, pcolls_to_write):
-    for label, pcoll in pcolls_to_write.items():
-      prefix = 'sample' if self._sample else 'full'
-      if not self._cache_manager.exists(prefix, label):
-        if self._sample:
-          pcoll |= 'Sample%s' % label >> (
-              combiners.Sample.FixedSizeGlobally(SAMPLE_SIZE)
-              | beam.FlatMap(lambda sample: sample))
-        # pylint: disable=expression-not-assigned
-        pcoll | 'Cache%s' % label >> beam.io.WriteToText(
-            self._cache_manager.path(prefix, label),
-            coder=SafeFastPrimitivesCoder())
-
-
-class CacheManager(object):
-  """Maps PCollections to files for materialization."""
-
-  def __init__(self, temp_dir=None):
-    self._temp_dir = temp_dir or tempfile.mkdtemp(
-        prefix='interactive-temp-', dir=os.environ.get('TEST_TMPDIR', None))
-
-  def exists(self, *labels):
-    return bool(
-        filesystems.FileSystems.match([self.glob_path(*labels)],
-                                      limits=[1])[0].metadata_list)
-
-  def read(self, prefix, cache_label):
-    coder = SafeFastPrimitivesCoder()
-    for path in glob.glob(self.glob_path(prefix, cache_label)):
-      for line in open(path):
-        yield coder.decode(line.strip())
-
-  def glob_path(self, *labels):
-    return self.path(*labels) + '-*-of-*'
-
-  def path(self, *labels):
-    return filesystems.FileSystems.join(self._temp_dir, *labels)
-
-  def cleanup(self):
-    if os.path.exists(self._temp_dir):
-      shutil.rmtree(self._temp_dir)
-
-
 class PipelineInfo(object):
   """Provides access to pipeline metadata."""
 
@@ -421,6 +356,8 @@ class Derivation(object):
     """
     self._inputs = inputs
     self._transform_info = {
+        # TODO(qinyeli): remove name field when collision is resolved.
+        'name': transform_proto.unique_name,
         'urn': transform_proto.spec.urn,
         'payload': transform_proto.spec.payload.decode('latin1')
     }
@@ -435,8 +372,10 @@ class Derivation(object):
 
   def __hash__(self):
     if self._hash is None:
-      self._hash = hash(tuple(sorted(self._transform_info.items()))) + sum(
-          hash(tag) * hash(input) for tag, input in self._inputs.items())
+      self._hash = (hash(tuple(sorted(self._transform_info.items())))
+                    + sum(hash(tag) * hash(input)
+                          for tag, input in self._inputs.items())
+                    + hash(self._output_tag))
     return self._hash
 
   def cache_label(self):
@@ -452,16 +391,6 @@ class Derivation(object):
 
   def __repr__(self):
     return str(self.json())
-
-
-class SafeFastPrimitivesCoder(coders.Coder):
-  """This class add an quote/unquote step to escape special characters."""
-
-  def encode(self, value):
-    return urllib.quote(coders.coders.FastPrimitivesCoder().encode(value))
-
-  def decode(self, value):
-    return coders.coders.FastPrimitivesCoder().decode(urllib.unquote(value))
 
 
 # TODO(qinyeli) move to proto_utils
@@ -493,7 +422,8 @@ class PipelineResult(beam.runners.runner.PipelineResult):
   def get(self, pcoll):
     cache_label = self._cache_label(pcoll)
     if self._cache_manager.exists('full', cache_label):
-      return self._cache_manager.read('full', cache_label)
+      pcoll_list, _ = self._cache_manager.read('full', cache_label)
+      return pcoll_list
     else:
       self._runner._desired_cache_labels.add(cache_label)  # pylint: disable=protected-access
       raise ValueError('PCollection not available, please run the pipeline.')
