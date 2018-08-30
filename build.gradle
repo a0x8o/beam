@@ -110,6 +110,10 @@ if (isCIBuild) {
 apply plugin: "org.nosphere.apache.rat"
 
 rat {
+  // Set input directory to that of the root project instead of the CWD. This
+  // makes .gitignore rules (added below) work properly.
+  inputDir = project.rootDir
+
   def exclusions = [
     // Ignore files we track but do not distribute
     ".github/**/*",
@@ -147,6 +151,7 @@ rat {
 
     // Ignore ownership files
     "ownership/**/*",
+    "**/OWNERS",
   ]
 
   // Add .gitignore excludes to the Apache Rat exclusion list. We re-create the behavior
@@ -184,6 +189,7 @@ task javaPreCommit() {
   dependsOn ":beam-sdks-java-core:buildDependents"
   dependsOn ":beam-examples-java:preCommit"
   dependsOn ":beam-sdks-java-extensions-sql-jdbc:preCommit"
+  dependsOn ":beam-sdks-java-javadoc:allJavadoc"
 }
 
 task javaPostCommit() {

@@ -27,8 +27,7 @@ from __future__ import absolute_import
 import re
 from builtins import object
 
-import six
-from past.builtins import basestring
+from past.builtins import unicode
 
 from apache_beam import coders
 from apache_beam.io.iobase import Read
@@ -39,6 +38,7 @@ from apache_beam.transforms import PTransform
 from apache_beam.transforms.display import DisplayDataItem
 from apache_beam.utils.annotations import deprecated
 
+# The protobuf library is only used for running on Dataflow.
 try:
   from google.cloud.proto.pubsub.v1 import pubsub_pb2
 except ImportError:
@@ -57,7 +57,7 @@ class PubsubMessage(object):
   This interface is experimental. No backwards compatibility guarantees.
 
   Attributes:
-    data: (six.binary_type) Message data. May be None.
+    data: (bytes) Message data. May be None.
     attributes: (dict) Key-value map of str to str, containing both user-defined
       and service generated attributes (such as id_label and
       timestamp_attribute). May be None.
@@ -150,7 +150,7 @@ class ReadFromPubSub(PTransform):
         case, deduplication of the stream will be strictly best effort.
       with_attributes:
         True - output elements will be :class:`~PubsubMessage` objects.
-        False - output elements will be of type ``six.binary_type`` (message
+        False - output elements will be of type ``bytes`` (message
         data only).
       timestamp_attribute: Message value to use as element timestamp. If None,
         uses message publishing time as the timestamp.
@@ -175,7 +175,7 @@ class ReadFromPubSub(PTransform):
 
   def expand(self, pvalue):
     pcoll = pvalue.pipeline | Read(self._source)
-    pcoll.element_type = six.binary_type
+    pcoll.element_type = bytes
     if self.with_attributes:
       pcoll = pcoll | Map(PubsubMessage._from_proto_str)
       pcoll.element_type = PubsubMessage
@@ -206,7 +206,7 @@ class _ReadStringsFromPubSub(PTransform):
          | ReadFromPubSub(self.topic, self.subscription, self.id_label,
                           with_attributes=False)
          | 'DecodeString' >> Map(lambda b: b.decode('utf-8')))
-    p.element_type = basestring
+    p.element_type = unicode
     return p
 
 
@@ -246,7 +246,7 @@ class WriteToPubSub(PTransform):
       topic: Cloud Pub/Sub topic in the form "/topics/<project>/<topic>".
       with_attributes:
         True - input elements will be :class:`~PubsubMessage` objects.
-        False - input elements will be of type ``six.binary_type`` (message
+        False - input elements will be of type ``bytes`` (message
         data only).
       id_label: If set, will set an attribute for each Cloud Pub/Sub message
         with the given name and a unique value. This attribute can then be used
@@ -275,7 +275,7 @@ class WriteToPubSub(PTransform):
     # Without attributes, message data is written as-is. With attributes,
     # message data + attributes are passed as a serialized protobuf string (see
     # ``PubsubMessage._to_proto_str`` for exact protobuf message type).
-    pcoll.element_type = six.binary_type
+    pcoll.element_type = bytes
     return pcoll | Write(self._sink)
 
   def to_runner_api_parameter(self, context):
