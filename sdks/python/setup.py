@@ -17,6 +17,7 @@
 
 """Apache Beam SDK for Python setup file."""
 
+from __future__ import absolute_import
 from __future__ import print_function
 
 import os
@@ -104,7 +105,7 @@ REQUIRED_PACKAGES = [
     'avro>=1.8.1,<2.0.0',
     'crcmod>=1.7,<2.0',
     'dill>=0.2.6,<=0.2.8.2',
-    'fastavro==0.19.7',
+    'fastavro==0.21.4',
     'grpcio>=1.8,<2',
     'hdfs>=2.1.0,<3.0.0',
     'httplib2>=0.8,<=0.11.3',
@@ -116,7 +117,6 @@ REQUIRED_PACKAGES = [
     'pytz>=2018.3,<=2018.4',
     'pyyaml>=3.12,<4.0.0',
     'pyvcf>=0.6.8,<0.7.0',
-    'six>=1.9,<1.12',
     'typing>=3.6.0,<3.7.0',
     'futures>=3.1.1,<4.0.0',
     'future>=0.16.0,<1.0.0',
