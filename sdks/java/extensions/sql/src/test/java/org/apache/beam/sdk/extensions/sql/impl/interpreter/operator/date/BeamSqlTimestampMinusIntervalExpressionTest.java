@@ -18,18 +18,17 @@
 
 package org.apache.beam.sdk.extensions.sql.impl.interpreter.operator.date;
 
-import static org.apache.beam.sdk.extensions.sql.impl.interpreter.operator.date.BeamSqlDatetimeMinusExpression.INTERVALS_DURATIONS_TYPES;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 
-import com.google.common.collect.ImmutableMap;
 import java.math.BigDecimal;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
+import org.apache.beam.sdk.extensions.sql.impl.interpreter.BeamSqlExpressionEnvironments;
 import org.apache.beam.sdk.extensions.sql.impl.interpreter.operator.BeamSqlExpression;
 import org.apache.beam.sdk.extensions.sql.impl.interpreter.operator.BeamSqlPrimitive;
 import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
@@ -127,7 +126,7 @@ public class BeamSqlTimestampMinusIntervalExpressionTest {
   @Test
   public void testDoesNotAcceptWrongSecondOperand() {
     Set<SqlTypeName> unsupportedTypes = new HashSet<>(SqlTypeName.ALL_TYPES);
-    unsupportedTypes.removeAll(INTERVALS_DURATIONS_TYPES.keySet());
+    unsupportedTypes.removeAll(TimeUnitUtils.INTERVALS_DURATIONS_TYPES.keySet());
 
     for (SqlTypeName unsupportedType : unsupportedTypes) {
       BeamSqlPrimitive unsupportedOperand = mock(BeamSqlPrimitive.class);
@@ -142,7 +141,7 @@ public class BeamSqlTimestampMinusIntervalExpressionTest {
 
   @Test
   public void testAcceptsAllSupportedIntervalTypes() {
-    for (SqlTypeName unsupportedType : INTERVALS_DURATIONS_TYPES.keySet()) {
+    for (SqlTypeName unsupportedType : TimeUnitUtils.INTERVALS_DURATIONS_TYPES.keySet()) {
       BeamSqlPrimitive unsupportedOperand = mock(BeamSqlPrimitive.class);
       doReturn(unsupportedType).when(unsupportedOperand).getOutputType();
 
@@ -159,7 +158,7 @@ public class BeamSqlTimestampMinusIntervalExpressionTest {
         minusExpression(SqlTypeName.TIMESTAMP, TIMESTAMP, INTERVAL_2_SEC);
 
     BeamSqlPrimitive subtractionResult =
-        minusExpression.evaluate(NULL_ROW, NULL_WINDOW, ImmutableMap.of());
+        minusExpression.evaluate(NULL_ROW, NULL_WINDOW, BeamSqlExpressionEnvironments.empty());
 
     assertEquals(SqlTypeName.TIMESTAMP, subtractionResult.getOutputType());
     assertEquals(DATE_MINUS_2_SEC, subtractionResult.getDate());

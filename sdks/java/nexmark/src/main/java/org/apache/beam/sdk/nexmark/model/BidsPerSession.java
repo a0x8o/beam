@@ -19,6 +19,7 @@ package org.apache.beam.sdk.nexmark.model;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.google.common.base.Objects;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -29,36 +30,38 @@ import org.apache.beam.sdk.coders.CustomCoder;
 import org.apache.beam.sdk.coders.VarLongCoder;
 import org.apache.beam.sdk.nexmark.NexmarkUtils;
 
-/**
- * Result of query 11.
- */
+/** Result of query 11. */
 public class BidsPerSession implements KnownSize, Serializable {
   private static final Coder<Long> LONG_CODER = VarLongCoder.of();
 
-  public static final Coder<BidsPerSession> CODER = new CustomCoder<BidsPerSession>() {
-    @Override
-    public void encode(BidsPerSession value, OutputStream outStream)
-        throws CoderException, IOException {
-      LONG_CODER.encode(value.personId, outStream);
-      LONG_CODER.encode(value.bidsPerSession, outStream);
-    }
+  public static final Coder<BidsPerSession> CODER =
+      new CustomCoder<BidsPerSession>() {
+        @Override
+        public void encode(BidsPerSession value, OutputStream outStream)
+            throws CoderException, IOException {
+          LONG_CODER.encode(value.personId, outStream);
+          LONG_CODER.encode(value.bidsPerSession, outStream);
+        }
 
-    @Override
-    public BidsPerSession decode(
-        InputStream inStream)
-        throws CoderException, IOException {
-      long personId = LONG_CODER.decode(inStream);
-      long bidsPerSession = LONG_CODER.decode(inStream);
-      return new BidsPerSession(personId, bidsPerSession);
-    }
-    @Override public void verifyDeterministic() throws NonDeterministicException {}
-  };
+        @Override
+        public BidsPerSession decode(InputStream inStream) throws CoderException, IOException {
+          long personId = LONG_CODER.decode(inStream);
+          long bidsPerSession = LONG_CODER.decode(inStream);
+          return new BidsPerSession(personId, bidsPerSession);
+        }
 
-  @JsonProperty
-  private final long personId;
+        @Override
+        public void verifyDeterministic() throws NonDeterministicException {}
 
-  @JsonProperty
-  private final long bidsPerSession;
+        @Override
+        public Object structuralValue(BidsPerSession v) {
+          return v;
+        }
+      };
+
+  @JsonProperty private final long personId;
+
+  @JsonProperty private final long bidsPerSession;
 
   public BidsPerSession() {
     personId = 0;
@@ -83,5 +86,22 @@ public class BidsPerSession implements KnownSize, Serializable {
     } catch (JsonProcessingException e) {
       throw new RuntimeException(e);
     }
+  }
+
+  @Override
+  public boolean equals(Object o) {
+    if (this == o) {
+      return true;
+    }
+    if (o == null || getClass() != o.getClass()) {
+      return false;
+    }
+    BidsPerSession that = (BidsPerSession) o;
+    return personId == that.personId && bidsPerSession == that.bidsPerSession;
+  }
+
+  @Override
+  public int hashCode() {
+    return Objects.hashCode(personId, bidsPerSession);
   }
 }

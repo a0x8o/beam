@@ -14,18 +14,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
+from __future__ import absolute_import
+
 import functools
 import logging
 import os
-import Queue as queue
+import queue as queue
 import subprocess
 import threading
 import time
 import traceback
 import uuid
+from builtins import object
 from concurrent import futures
 
 import grpc
+from future import standard_library
 from google.protobuf import text_format
 
 from apache_beam.portability.api import beam_fn_api_pb2_grpc
@@ -33,6 +37,8 @@ from apache_beam.portability.api import beam_job_api_pb2
 from apache_beam.portability.api import beam_job_api_pb2_grpc
 from apache_beam.portability.api import endpoints_pb2
 from apache_beam.runners.portability import fn_api_runner
+
+standard_library.install_aliases()
 
 TERMINAL_STATES = [
     beam_job_api_pb2.JobState.DONE,
@@ -87,7 +93,10 @@ class LocalJobServicer(beam_job_api_pb2_grpc.JobServiceServicer):
         use_grpc=self._use_grpc,
         sdk_harness_factory=sdk_harness_factory)
     logging.debug("Prepared job '%s' as '%s'", request.job_name, preparation_id)
-    return beam_job_api_pb2.PrepareJobResponse(preparation_id=preparation_id)
+    # TODO(angoenka): Pass an appropriate staging_session_token. The token can
+    # be obtained in PutArtifactResponse from JobService
+    return beam_job_api_pb2.PrepareJobResponse(
+        preparation_id=preparation_id, staging_session_token='token')
 
   def Run(self, request, context=None):
     job_id = request.preparation_id

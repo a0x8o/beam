@@ -17,6 +17,7 @@
  */
 package org.apache.beam.sdk.nexmark.model;
 
+import com.google.common.base.Objects;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -25,21 +26,44 @@ import javax.annotation.Nullable;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.coders.CustomCoder;
 import org.apache.beam.sdk.coders.VarIntCoder;
+import org.apache.beam.sdk.schemas.DefaultSchema;
+import org.apache.beam.sdk.schemas.JavaFieldSchema;
 
 /**
  * An event in the auction system, either a (new) {@link Person}, a (new) {@link Auction}, or a
  * {@link Bid}.
  */
+@DefaultSchema(JavaFieldSchema.class)
 public class Event implements KnownSize, Serializable {
 
-  private enum Tag {
+  @Override
+  public boolean equals(Object o) {
+    if (this == o) {
+      return true;
+    }
+    if (o == null || getClass() != o.getClass()) {
+      return false;
+    }
+    Event event = (Event) o;
+    return Objects.equal(newPerson, event.newPerson)
+        && Objects.equal(newAuction, event.newAuction)
+        && Objects.equal(bid, event.bid);
+  }
+
+  @Override
+  public int hashCode() {
+    return Objects.hashCode(newPerson, newAuction, bid);
+  }
+
+  /** The type of object stored in this event. * */
+  public enum Type {
     PERSON(0),
     AUCTION(1),
     BID(2);
 
-    private int value = -1;
+    private final int value;
 
-    Tag(int value) {
+    Type(int value) {
       this.value = value;
     }
   }
@@ -51,13 +75,13 @@ public class Event implements KnownSize, Serializable {
         @Override
         public void encode(Event value, OutputStream outStream) throws IOException {
           if (value.newPerson != null) {
-            INT_CODER.encode(Tag.PERSON.value, outStream);
+            INT_CODER.encode(Type.PERSON.value, outStream);
             Person.CODER.encode(value.newPerson, outStream);
           } else if (value.newAuction != null) {
-            INT_CODER.encode(Tag.AUCTION.value, outStream);
+            INT_CODER.encode(Type.AUCTION.value, outStream);
             Auction.CODER.encode(value.newAuction, outStream);
           } else if (value.bid != null) {
-            INT_CODER.encode(Tag.BID.value, outStream);
+            INT_CODER.encode(Type.BID.value, outStream);
             Bid.CODER.encode(value.bid, outStream);
           } else {
             throw new RuntimeException("invalid event");
@@ -67,13 +91,13 @@ public class Event implements KnownSize, Serializable {
         @Override
         public Event decode(InputStream inStream) throws IOException {
           int tag = INT_CODER.decode(inStream);
-          if (tag == Tag.PERSON.value) {
+          if (tag == Type.PERSON.value) {
             Person person = Person.CODER.decode(inStream);
             return new Event(person);
-          } else if (tag == Tag.AUCTION.value) {
+          } else if (tag == Type.AUCTION.value) {
             Auction auction = Auction.CODER.decode(inStream);
             return new Event(auction);
-          } else if (tag == Tag.BID.value) {
+          } else if (tag == Type.BID.value) {
             Bid bid = Bid.CODER.decode(inStream);
             return new Event(bid);
           } else {
@@ -83,23 +107,21 @@ public class Event implements KnownSize, Serializable {
 
         @Override
         public void verifyDeterministic() throws NonDeterministicException {}
+
+        @Override
+        public Object structuralValue(Event v) {
+          return v;
+        }
       };
 
-  @Nullable
-  @org.apache.avro.reflect.Nullable
-  public final Person newPerson;
+  @Nullable @org.apache.avro.reflect.Nullable public Person newPerson;
 
-  @Nullable
-  @org.apache.avro.reflect.Nullable
-  public final Auction newAuction;
+  @Nullable @org.apache.avro.reflect.Nullable public Auction newAuction;
 
-  @Nullable
-  @org.apache.avro.reflect.Nullable
-  public final Bid bid;
+  @Nullable @org.apache.avro.reflect.Nullable public Bid bid;
 
-  // For Avro only.
   @SuppressWarnings("unused")
-  private Event() {
+  public Event() {
     newPerson = null;
     newAuction = null;
     bid = null;

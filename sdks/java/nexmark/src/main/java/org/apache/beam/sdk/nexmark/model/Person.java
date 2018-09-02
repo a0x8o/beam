@@ -19,6 +19,7 @@ package org.apache.beam.sdk.nexmark.model;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.google.common.base.Objects;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -26,88 +27,98 @@ import java.io.Serializable;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.coders.CoderException;
 import org.apache.beam.sdk.coders.CustomCoder;
+import org.apache.beam.sdk.coders.InstantCoder;
 import org.apache.beam.sdk.coders.StringUtf8Coder;
 import org.apache.beam.sdk.coders.VarLongCoder;
 import org.apache.beam.sdk.nexmark.NexmarkUtils;
+import org.apache.beam.sdk.schemas.DefaultSchema;
+import org.apache.beam.sdk.schemas.JavaFieldSchema;
+import org.joda.time.Instant;
 
-/**
- * A person either creating an auction or making a bid.
- */
+/** A person either creating an auction or making a bid. */
+@DefaultSchema(JavaFieldSchema.class)
 public class Person implements KnownSize, Serializable {
+  private static final Coder<Instant> INSTANT_CODER = InstantCoder.of();
   private static final Coder<Long> LONG_CODER = VarLongCoder.of();
   private static final Coder<String> STRING_CODER = StringUtf8Coder.of();
-  public static final Coder<Person> CODER = new CustomCoder<Person>() {
-    @Override
-    public void encode(Person value, OutputStream outStream)
-        throws CoderException, IOException {
-      LONG_CODER.encode(value.id, outStream);
-      STRING_CODER.encode(value.name, outStream);
-      STRING_CODER.encode(value.emailAddress, outStream);
-      STRING_CODER.encode(value.creditCard, outStream);
-      STRING_CODER.encode(value.city, outStream);
-      STRING_CODER.encode(value.state, outStream);
-      LONG_CODER.encode(value.dateTime, outStream);
-      STRING_CODER.encode(value.extra, outStream);
-    }
+  public static final Coder<Person> CODER =
+      new CustomCoder<Person>() {
+        @Override
+        public void encode(Person value, OutputStream outStream)
+            throws CoderException, IOException {
+          LONG_CODER.encode(value.id, outStream);
+          STRING_CODER.encode(value.name, outStream);
+          STRING_CODER.encode(value.emailAddress, outStream);
+          STRING_CODER.encode(value.creditCard, outStream);
+          STRING_CODER.encode(value.city, outStream);
+          STRING_CODER.encode(value.state, outStream);
+          INSTANT_CODER.encode(value.dateTime, outStream);
+          STRING_CODER.encode(value.extra, outStream);
+        }
 
-    @Override
-    public Person decode(InputStream inStream)
-        throws CoderException, IOException {
-      long id = LONG_CODER.decode(inStream);
-      String name = STRING_CODER.decode(inStream);
-      String emailAddress = STRING_CODER.decode(inStream);
-      String creditCard = STRING_CODER.decode(inStream);
-      String city = STRING_CODER.decode(inStream);
-      String state = STRING_CODER.decode(inStream);
-      long dateTime = LONG_CODER.decode(inStream);
-      String extra = STRING_CODER.decode(inStream);
-      return new Person(id, name, emailAddress, creditCard, city, state, dateTime, extra);
-    }
-    @Override public void verifyDeterministic() throws NonDeterministicException {}
-  };
+        @Override
+        public Person decode(InputStream inStream) throws CoderException, IOException {
+          long id = LONG_CODER.decode(inStream);
+          String name = STRING_CODER.decode(inStream);
+          String emailAddress = STRING_CODER.decode(inStream);
+          String creditCard = STRING_CODER.decode(inStream);
+          String city = STRING_CODER.decode(inStream);
+          String state = STRING_CODER.decode(inStream);
+          Instant dateTime = INSTANT_CODER.decode(inStream);
+          String extra = STRING_CODER.decode(inStream);
+          return new Person(id, name, emailAddress, creditCard, city, state, dateTime, extra);
+        }
+
+        @Override
+        public void verifyDeterministic() throws NonDeterministicException {}
+
+        @Override
+        public Object structuralValue(Person v) {
+          return v;
+        }
+      };
 
   /** Id of person. */
-  @JsonProperty
-  public final long id; // primary key
+  @JsonProperty public long id; // primary key
 
   /** Extra person properties. */
-  @JsonProperty
-  public final String name;
+  @JsonProperty public String name;
 
-  @JsonProperty
-  public final String emailAddress;
+  @JsonProperty public String emailAddress;
 
-  @JsonProperty
-  public final String creditCard;
+  @JsonProperty public String creditCard;
 
-  @JsonProperty
-  public final String city;
+  @JsonProperty public String city;
 
-  @JsonProperty
-  public final String state;
+  @JsonProperty public String state;
 
-  @JsonProperty
-  public final long dateTime;
+  @JsonProperty public Instant dateTime;
 
   /** Additional arbitrary payload for performance testing. */
-  @JsonProperty
-  public final String extra;
+  @JsonProperty public String extra;
 
   // For Avro only.
   @SuppressWarnings("unused")
-  private Person() {
+  public Person() {
     id = 0;
     name = null;
     emailAddress = null;
     creditCard = null;
     city = null;
     state = null;
-    dateTime = 0;
+    dateTime = null;
     extra = null;
   }
 
-  public Person(long id, String name, String emailAddress, String creditCard, String city,
-      String state, long dateTime, String extra) {
+  public Person(
+      long id,
+      String name,
+      String emailAddress,
+      String creditCard,
+      String city,
+      String state,
+      Instant dateTime,
+      String extra) {
     this.id = id;
     this.name = name;
     this.emailAddress = emailAddress;
@@ -118,28 +129,28 @@ public class Person implements KnownSize, Serializable {
     this.extra = extra;
   }
 
-  /**
-   * Return a copy of person which capture the given annotation.
-   * (Used for debugging).
-   */
+  /** Return a copy of person which capture the given annotation. (Used for debugging). */
   public Person withAnnotation(String annotation) {
-    return new Person(id, name, emailAddress, creditCard, city, state, dateTime,
-        annotation + ": " + extra);
+    return new Person(
+        id, name, emailAddress, creditCard, city, state, dateTime, annotation + ": " + extra);
   }
 
-  /**
-   * Does person have {@code annotation}? (Used for debugging.)
-   */
+  /** Does person have {@code annotation}? (Used for debugging.) */
   public boolean hasAnnotation(String annotation) {
     return extra.startsWith(annotation + ": ");
   }
 
-  /**
-   * Remove {@code annotation} from person. (Used for debugging.)
-   */
+  /** Remove {@code annotation} from person. (Used for debugging.) */
   public Person withoutAnnotation(String annotation) {
     if (hasAnnotation(annotation)) {
-      return new Person(id, name, emailAddress, creditCard, city, state, dateTime,
+      return new Person(
+          id,
+          name,
+          emailAddress,
+          creditCard,
+          city,
+          state,
+          dateTime,
           extra.substring(annotation.length() + 2));
     } else {
       return this;
@@ -148,8 +159,20 @@ public class Person implements KnownSize, Serializable {
 
   @Override
   public long sizeInBytes() {
-    return 8L + name.length() + 1L + emailAddress.length() + 1L + creditCard.length() + 1L
-        + city.length() + 1L + state.length() + 8L + 1L + extra.length() + 1L;
+    return 8L
+        + name.length()
+        + 1L
+        + emailAddress.length()
+        + 1L
+        + creditCard.length()
+        + 1L
+        + city.length()
+        + 1L
+        + state.length()
+        + 8L
+        + 1L
+        + extra.length()
+        + 1L;
   }
 
   @Override
@@ -159,5 +182,29 @@ public class Person implements KnownSize, Serializable {
     } catch (JsonProcessingException e) {
       throw new RuntimeException(e);
     }
+  }
+
+  @Override
+  public boolean equals(Object o) {
+    if (this == o) {
+      return true;
+    }
+    if (o == null || getClass() != o.getClass()) {
+      return false;
+    }
+    Person person = (Person) o;
+    return id == person.id
+        && Objects.equal(dateTime, person.dateTime)
+        && Objects.equal(name, person.name)
+        && Objects.equal(emailAddress, person.emailAddress)
+        && Objects.equal(creditCard, person.creditCard)
+        && Objects.equal(city, person.city)
+        && Objects.equal(state, person.state)
+        && Objects.equal(extra, person.extra);
+  }
+
+  @Override
+  public int hashCode() {
+    return Objects.hashCode(id, name, emailAddress, creditCard, city, state, dateTime, extra);
   }
 }

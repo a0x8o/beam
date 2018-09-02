@@ -30,11 +30,13 @@ import org.apache.beam.runners.core.construction.graph.PipelineNode.PTransformNo
 /** An {@link ExecutableStage} which is constructed with all of its initial state. */
 @AutoValue
 public abstract class ImmutableExecutableStage implements ExecutableStage {
-  static ImmutableExecutableStage ofFullComponents(
+  public static ImmutableExecutableStage ofFullComponents(
       Components components,
       Environment environment,
       PCollectionNode input,
       Collection<SideInputReference> sideInputs,
+      Collection<UserStateReference> userStates,
+      Collection<TimerReference> timers,
       Collection<PTransformNode> transforms,
       Collection<PCollectionNode> outputs) {
     Components prunedComponents =
@@ -46,14 +48,17 @@ public abstract class ImmutableExecutableStage implements ExecutableStage {
                     .stream()
                     .collect(Collectors.toMap(PTransformNode::getId, PTransformNode::getTransform)))
             .build();
-    return of(prunedComponents, environment, input, sideInputs, transforms, outputs);
+    return of(
+        prunedComponents, environment, input, sideInputs, userStates, timers, transforms, outputs);
   }
 
-  static ImmutableExecutableStage of(
+  public static ImmutableExecutableStage of(
       Components components,
       Environment environment,
       PCollectionNode input,
       Collection<SideInputReference> sideInputs,
+      Collection<UserStateReference> userStates,
+      Collection<TimerReference> timers,
       Collection<PTransformNode> transforms,
       Collection<PCollectionNode> outputs) {
     return new AutoValue_ImmutableExecutableStage(
@@ -61,6 +66,8 @@ public abstract class ImmutableExecutableStage implements ExecutableStage {
         environment,
         input,
         ImmutableSet.copyOf(sideInputs),
+        ImmutableSet.copyOf(userStates),
+        ImmutableSet.copyOf(timers),
         ImmutableSet.copyOf(transforms),
         ImmutableSet.copyOf(outputs));
   }
@@ -77,6 +84,12 @@ public abstract class ImmutableExecutableStage implements ExecutableStage {
 
   @Override
   public abstract Collection<SideInputReference> getSideInputs();
+
+  @Override
+  public abstract Collection<UserStateReference> getUserStates();
+
+  @Override
+  public abstract Collection<TimerReference> getTimers();
 
   @Override
   public abstract Collection<PTransformNode> getTransforms();

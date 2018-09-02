@@ -60,16 +60,16 @@ class InMemorySorter implements Sorter {
    * and values.
    *
    * <ul>
-   *   <li> Object reference within {@link ArrayList} (1 word),
-   *   <li> A {@link KV} (2 words),
-   *   <li> Two byte arrays (2 words for array lengths),
-   *   <li> Per-object overhead (JVM-specific, guessing 2 words * 3 objects)
+   *   <li>Object reference within {@link ArrayList} (1 word),
+   *   <li>A {@link KV} (2 words),
+   *   <li>Two byte arrays (2 words for array lengths),
+   *   <li>Per-object overhead (JVM-specific, guessing 2 words * 3 objects)
    * </ul>
    */
   private static final long RECORD_MEMORY_OVERHEAD_ESTIMATE = 11 * NUM_BYTES_PER_WORD;
 
   /** Maximum size of the buffer in bytes. */
-  private long maxBufferSize;
+  private final long maxBufferSize;
 
   /** Current number of stored bytes. Including estimated overhead bytes. */
   private long numBytes;
@@ -78,7 +78,7 @@ class InMemorySorter implements Sorter {
   private boolean sortCalled;
 
   /** The stored records to be sorted. */
-  private ArrayList<KV<byte[], byte[]>> records = new ArrayList<>();
+  private final ArrayList<KV<byte[], byte[]>> records = new ArrayList<>();
 
   /** Private constructor. */
   private InMemorySorter(Options options) {

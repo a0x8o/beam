@@ -25,14 +25,13 @@ import org.apache.beam.sdk.options.DefaultValueFactory;
 import org.apache.beam.sdk.options.Description;
 import org.apache.beam.sdk.options.PipelineOptions;
 
-/**
- * Options used to configure Amazon Web Services S3.
- */
+/** Options used to configure Amazon Web Services S3. */
 public interface S3Options extends AwsOptions {
 
   @Description("AWS S3 storage class used for creating S3 objects")
   @Default.String("STANDARD")
   String getS3StorageClass();
+
   void setS3StorageClass(String value);
 
   @Description(
@@ -46,21 +45,31 @@ public interface S3Options extends AwsOptions {
   @Description("Thread pool size, limiting max concurrent S3 operations")
   @Default.Integer(50)
   int getS3ThreadPoolSize();
+
   void setS3ThreadPoolSize(int value);
 
   @Description("Algorithm for SSE-S3 encryption, e.g. AES256.")
   @Nullable
   String getSSEAlgorithm();
+
   void setSSEAlgorithm(String value);
 
-  @Description("SSE key for SSE-C encryption, e.g. a base64 encoded key and the algorithm.")
+  @Description(
+      "SSE key for SSE-C encryption, e.g. a base64 encoded key and the algorithm."
+          + "To specify on the command-line, represent the value as a JSON object. For example:"
+          + " --SSECustomerKey={\"key\": \"86glyTlCN...\", \"algorithm\": \"AES256\"}")
   @Nullable
   SSECustomerKey getSSECustomerKey();
+
   void setSSECustomerKey(SSECustomerKey value);
 
-  @Description("KMS key id for SSE-KMS encryption, e.g. \"arn:aws:kms:...\".")
+  @Description(
+      "KMS key id for SSE-KMS encryption, e.g. \"arn:aws:kms:...\"."
+          + "To specify on the command-line, represent the value as a JSON object. For example:"
+          + " --SSEAwsKeyManagementParams={\"awsKmsKeyId\": \"arn:aws:kms:...\"}")
   @Nullable
   SSEAwsKeyManagementParams getSSEAwsKeyManagementParams();
+
   void setSSEAwsKeyManagementParams(SSEAwsKeyManagementParams value);
 
   /**

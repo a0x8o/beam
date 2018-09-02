@@ -17,6 +17,7 @@
  */
 package org.apache.beam.runners.flink;
 
+import com.google.common.base.Splitter;
 import java.util.List;
 import org.apache.flink.api.java.CollectionEnvironment;
 import org.apache.flink.api.java.ExecutionEnvironment;
@@ -36,7 +37,8 @@ public class FlinkExecutionEnvironments {
    * If the submitted job is a batch processing job, this method creates the adequate Flink {@link
    * org.apache.flink.api.java.ExecutionEnvironment} depending on the user-specified options.
    */
-  public static ExecutionEnvironment createBatchExecutionEnvironment(FlinkPipelineOptions options) {
+  public static ExecutionEnvironment createBatchExecutionEnvironment(
+      FlinkPipelineOptions options, List<String> filesToStage) {
 
     LOG.info("Creating a Batch Execution Environment.");
 
@@ -51,13 +53,12 @@ public class FlinkExecutionEnvironments {
     } else if ("[auto]".equals(masterUrl)) {
       flinkBatchEnv = ExecutionEnvironment.getExecutionEnvironment();
     } else if (masterUrl.matches(".*:\\d*")) {
-      String[] parts = masterUrl.split(":");
-      List<String> stagingFiles = options.getFilesToStage();
+      List<String> parts = Splitter.on(':').splitToList(masterUrl);
       flinkBatchEnv =
           ExecutionEnvironment.createRemoteEnvironment(
-              parts[0],
-              Integer.parseInt(parts[1]),
-              stagingFiles.toArray(new String[stagingFiles.size()]));
+              parts.get(0),
+              Integer.parseInt(parts.get(1)),
+              filesToStage.toArray(new String[filesToStage.size()]));
     } else {
       LOG.warn("Unrecognized Flink Master URL {}. Defaulting to [auto].", masterUrl);
       flinkBatchEnv = ExecutionEnvironment.getExecutionEnvironment();
@@ -86,7 +87,7 @@ public class FlinkExecutionEnvironments {
    * user-specified options.
    */
   public static StreamExecutionEnvironment createStreamExecutionEnvironment(
-      FlinkPipelineOptions options) {
+      FlinkPipelineOptions options, List<String> filesToStage) {
 
     LOG.info("Creating a Streaming Environment.");
 
@@ -99,13 +100,12 @@ public class FlinkExecutionEnvironments {
     } else if ("[auto]".equals(masterUrl)) {
       flinkStreamEnv = StreamExecutionEnvironment.getExecutionEnvironment();
     } else if (masterUrl.matches(".*:\\d*")) {
-      String[] parts = masterUrl.split(":");
-      List<String> stagingFiles = options.getFilesToStage();
+      List<String> parts = Splitter.on(':').splitToList(masterUrl);
       flinkStreamEnv =
           StreamExecutionEnvironment.createRemoteEnvironment(
-              parts[0],
-              Integer.parseInt(parts[1]),
-              stagingFiles.toArray(new String[stagingFiles.size()]));
+              parts.get(0),
+              Integer.parseInt(parts.get(1)),
+              filesToStage.toArray(new String[filesToStage.size()]));
     } else {
       LOG.warn("Unrecognized Flink Master URL {}. Defaulting to [auto].", masterUrl);
       flinkStreamEnv = StreamExecutionEnvironment.getExecutionEnvironment();

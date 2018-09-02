@@ -52,6 +52,7 @@ public class PipelineOptionsTest {
     @Description("Bla bla bla")
     @Default.String("Hello")
     String getTestOption();
+
     void setTestOption(String value);
   }
 
@@ -66,6 +67,8 @@ public class PipelineOptionsTest {
         new TestDoFn(),
         "stepName",
         coder,
+        null,
+        Collections.emptyMap(),
         mainTag,
         Collections.emptyList(),
         new DoFnOperator.MultiOutputOutputManagerFactory<>(mainTag, coder),
@@ -73,12 +76,11 @@ public class PipelineOptionsTest {
         new HashMap<>(),
         Collections.emptyList(),
         null,
-        null);
+        null, /* key coder */
+        null /* key selector */);
   }
 
-  /**
-   * Tests that PipelineOptions are present after serialization.
-   */
+  /** Tests that PipelineOptions are present after serialization. */
   @Test
   public void parDoBaseClassPipelineOptionsSerializationTest() throws Exception {
 
@@ -90,6 +92,8 @@ public class PipelineOptionsTest {
             new TestDoFn(),
             "stepName",
             coder,
+            null,
+            Collections.emptyMap(),
             mainTag,
             Collections.emptyList(),
             new DoFnOperator.MultiOutputOutputManagerFactory<>(mainTag, coder),
@@ -97,31 +101,29 @@ public class PipelineOptionsTest {
             new HashMap<>(),
             Collections.emptyList(),
             options,
-            null);
+            null, /* key coder */
+            null /* key selector */);
 
     final byte[] serialized = SerializationUtils.serialize(doFnOperator);
 
     @SuppressWarnings("unchecked")
     DoFnOperator<Object, Object> deserialized = SerializationUtils.deserialize(serialized);
 
-    TypeInformation<WindowedValue<Object>> typeInformation = TypeInformation.of(
-        new TypeHint<WindowedValue<Object>>() {});
+    TypeInformation<WindowedValue<Object>> typeInformation =
+        TypeInformation.of(new TypeHint<WindowedValue<Object>>() {});
 
     OneInputStreamOperatorTestHarness<WindowedValue<Object>, WindowedValue<Object>> testHarness =
-        new OneInputStreamOperatorTestHarness<>(deserialized,
-            typeInformation.createSerializer(new ExecutionConfig()));
+        new OneInputStreamOperatorTestHarness<>(
+            deserialized, typeInformation.createSerializer(new ExecutionConfig()));
     testHarness.open();
 
     // execute once to access options
-    testHarness.processElement(new StreamRecord<>(
-        WindowedValue.of(
-            new Object(),
-            Instant.now(),
-            GlobalWindow.INSTANCE,
-            PaneInfo.NO_FIRING)));
+    testHarness.processElement(
+        new StreamRecord<>(
+            WindowedValue.of(
+                new Object(), Instant.now(), GlobalWindow.INSTANCE, PaneInfo.NO_FIRING)));
 
     testHarness.close();
-
   }
 
   private static class TestDoFn extends DoFn<String, String> {
@@ -129,8 +131,7 @@ public class PipelineOptionsTest {
     public void processElement(ProcessContext c) throws Exception {
       Assert.assertNotNull(c.getPipelineOptions());
       Assert.assertEquals(
-          options.getTestOption(),
-          c.getPipelineOptions().as(MyOptions.class).getTestOption());
+          options.getTestOption(), c.getPipelineOptions().as(MyOptions.class).getTestOption());
     }
   }
 }

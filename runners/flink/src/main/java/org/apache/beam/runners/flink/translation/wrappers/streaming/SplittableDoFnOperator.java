@@ -48,13 +48,15 @@ import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollectionView;
 import org.apache.beam.sdk.values.TupleTag;
 import org.apache.beam.sdk.values.WindowingStrategy;
+import org.apache.flink.api.java.functions.KeySelector;
+import org.apache.flink.runtime.state.StateInitializationContext;
 import org.apache.flink.streaming.api.operators.InternalTimer;
 import org.joda.time.Duration;
 import org.joda.time.Instant;
 
 /**
- * Flink operator for executing splittable {@link DoFn DoFns}. Specifically, for executing
- * the {@code @ProcessElement} method of a splittable {@link DoFn}.
+ * Flink operator for executing splittable {@link DoFn DoFns}. Specifically, for executing the
+ * {@code @ProcessElement} method of a splittable {@link DoFn}.
  */
 public class SplittableDoFnOperator<
         InputT, OutputT, RestrictionT, TrackerT extends RestrictionTracker<RestrictionT, ?>>
@@ -65,7 +67,9 @@ public class SplittableDoFnOperator<
   public SplittableDoFnOperator(
       DoFn<KeyedWorkItem<String, KV<InputT, RestrictionT>>, OutputT> doFn,
       String stepName,
-      Coder<WindowedValue<KeyedWorkItem<String, KV<InputT, RestrictionT>>>> inputCoder,
+      Coder<WindowedValue<KeyedWorkItem<String, KV<InputT, RestrictionT>>>> windowedInputCoder,
+      Coder<KeyedWorkItem<String, KV<InputT, RestrictionT>>> inputCoder,
+      Map<TupleTag<?>, Coder<?>> outputCoders,
       TupleTag<OutputT> mainOutputTag,
       List<TupleTag<?>> additionalOutputTags,
       OutputManagerFactory<OutputT> outputManagerFactory,
@@ -73,11 +77,14 @@ public class SplittableDoFnOperator<
       Map<Integer, PCollectionView<?>> sideInputTagMapping,
       Collection<PCollectionView<?>> sideInputs,
       PipelineOptions options,
-      Coder<?> keyCoder) {
+      Coder<?> keyCoder,
+      KeySelector<WindowedValue<KeyedWorkItem<String, KV<InputT, RestrictionT>>>, ?> keySelector) {
     super(
         doFn,
         stepName,
+        windowedInputCoder,
         inputCoder,
+        outputCoders,
         mainOutputTag,
         additionalOutputTags,
         outputManagerFactory,
@@ -85,12 +92,13 @@ public class SplittableDoFnOperator<
         sideInputTagMapping,
         sideInputs,
         options,
-        keyCoder);
+        keyCoder,
+        keySelector);
   }
 
   @Override
-  protected DoFnRunner<
-      KeyedWorkItem<String, KV<InputT, RestrictionT>>, OutputT> createWrappingDoFnRunner(
+  protected DoFnRunner<KeyedWorkItem<String, KV<InputT, RestrictionT>>, OutputT>
+      createWrappingDoFnRunner(
           DoFnRunner<KeyedWorkItem<String, KV<InputT, RestrictionT>>, OutputT> wrappedRunner) {
     // don't wrap in anything because we don't need state cleanup because ProcessFn does
     // all that
@@ -98,8 +106,8 @@ public class SplittableDoFnOperator<
   }
 
   @Override
-  public void open() throws Exception {
-    super.open();
+  public void initializeState(StateInitializationContext context) throws Exception {
+    super.initializeState(context);
 
     checkState(doFn instanceof ProcessFn);
 
@@ -109,43 +117,42 @@ public class SplittableDoFnOperator<
         key -> (StateInternals) keyedStateInternals;
 
     // this will implicitly be keyed like the StateInternalsFactory
-    TimerInternalsFactory<String> timerInternalsFactory =
-        key -> timerInternals;
+    TimerInternalsFactory<String> timerInternalsFactory = key -> timerInternals;
 
     executorService = Executors.newSingleThreadScheduledExecutor(Executors.defaultThreadFactory());
 
     ((ProcessFn) doFn).setStateInternalsFactory(stateInternalsFactory);
     ((ProcessFn) doFn).setTimerInternalsFactory(timerInternalsFactory);
-    ((ProcessFn) doFn).setProcessElementInvoker(
-        new OutputAndTimeBoundedSplittableProcessElementInvoker<>(
-            doFn,
-            serializedOptions.get(),
-            new OutputWindowedValue<OutputT>() {
-              @Override
-              public void outputWindowedValue(
-                  OutputT output,
-                  Instant timestamp,
-                  Collection<? extends BoundedWindow> windows,
-                  PaneInfo pane) {
-                outputManager.output(
-                    mainOutputTag,
-                    WindowedValue.of(output, timestamp, windows, pane));
-              }
+    ((ProcessFn) doFn)
+        .setProcessElementInvoker(
+            new OutputAndTimeBoundedSplittableProcessElementInvoker<>(
+                doFn,
+                serializedOptions.get(),
+                new OutputWindowedValue<OutputT>() {
+                  @Override
+                  public void outputWindowedValue(
+                      OutputT output,
+                      Instant timestamp,
+                      Collection<? extends BoundedWindow> windows,
+                      PaneInfo pane) {
+                    outputManager.output(
+                        mainOutputTag, WindowedValue.of(output, timestamp, windows, pane));
+                  }
 
-              @Override
-              public <AdditionalOutputT> void outputWindowedValue(
-                  TupleTag<AdditionalOutputT> tag,
-                  AdditionalOutputT output,
-                  Instant timestamp,
-                  Collection<? extends BoundedWindow> windows,
-                  PaneInfo pane) {
-                outputManager.output(tag, WindowedValue.of(output, timestamp, windows, pane));
-              }
-            },
-            sideInputReader,
-            executorService,
-            10000,
-            Duration.standardSeconds(10)));
+                  @Override
+                  public <AdditionalOutputT> void outputWindowedValue(
+                      TupleTag<AdditionalOutputT> tag,
+                      AdditionalOutputT output,
+                      Instant timestamp,
+                      Collection<? extends BoundedWindow> windows,
+                      PaneInfo pane) {
+                    outputManager.output(tag, WindowedValue.of(output, timestamp, windows, pane));
+                  }
+                },
+                sideInputReader,
+                executorService,
+                10000,
+                Duration.standardSeconds(10)));
   }
 
   @Override
@@ -171,8 +178,9 @@ public class SplittableDoFnOperator<
     long shutdownTimeout = Duration.standardSeconds(10).getMillis();
     try {
       if (!executorService.awaitTermination(shutdownTimeout, TimeUnit.MILLISECONDS)) {
-        LOG.debug("The scheduled executor service did not properly terminate. Shutting "
-            + "it down now.");
+        LOG.debug(
+            "The scheduled executor service did not properly terminate. Shutting "
+                + "it down now.");
         executorService.shutdownNow();
       }
     } catch (InterruptedException e) {
@@ -180,5 +188,4 @@ public class SplittableDoFnOperator<
       executorService.shutdownNow();
     }
   }
-
 }

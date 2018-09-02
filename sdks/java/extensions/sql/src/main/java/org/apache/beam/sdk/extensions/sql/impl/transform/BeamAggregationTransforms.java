@@ -21,7 +21,6 @@ import static org.apache.beam.sdk.schemas.Schema.toSchema;
 import static org.apache.beam.sdk.values.Row.toRow;
 
 import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
 import java.io.IOException;
 import java.io.InputStream;
@@ -40,6 +39,7 @@ import org.apache.beam.sdk.coders.CustomCoder;
 import org.apache.beam.sdk.coders.KvCoder;
 import org.apache.beam.sdk.coders.RowCoder;
 import org.apache.beam.sdk.coders.VarIntCoder;
+import org.apache.beam.sdk.extensions.sql.impl.interpreter.BeamSqlExpressionEnvironments;
 import org.apache.beam.sdk.extensions.sql.impl.interpreter.operator.BeamSqlInputRefExpression;
 import org.apache.beam.sdk.extensions.sql.impl.interpreter.operator.UdafImpl;
 import org.apache.beam.sdk.extensions.sql.impl.transform.agg.CovarianceFn;
@@ -59,6 +59,7 @@ import org.apache.beam.sdk.values.Row;
 import org.apache.calcite.rel.core.AggregateCall;
 import org.apache.calcite.sql.validate.SqlUserDefinedAggFunction;
 import org.apache.calcite.util.ImmutableBitSet;
+import org.apache.calcite.util.Pair;
 import org.joda.time.Instant;
 
 /** Collections of {@code PTransform} and {@code DoFn} used to perform GROUP-BY operation. */
@@ -66,16 +67,10 @@ public class BeamAggregationTransforms implements Serializable {
   /** Merge KV to single record. */
   public static class MergeAggregationRecord extends DoFn<KV<Row, Row>, Row> {
     private Schema outSchema;
-    private List<String> aggFieldNames;
     private int windowStartFieldIdx;
 
-    public MergeAggregationRecord(
-        Schema outSchema, List<AggregateCall> aggList, int windowStartFieldIdx) {
+    public MergeAggregationRecord(Schema outSchema, int windowStartFieldIdx) {
       this.outSchema = outSchema;
-      this.aggFieldNames = new ArrayList<>();
-      for (AggregateCall ac : aggList) {
-        aggFieldNames.add(ac.getName());
-      }
       this.windowStartFieldIdx = windowStartFieldIdx;
     }
 
@@ -139,15 +134,19 @@ public class BeamAggregationTransforms implements Serializable {
     private Schema sourceSchema;
     private Schema finalSchema;
 
-    public AggregationAdaptor(List<AggregateCall> aggregationCalls, Schema sourceSchema) {
+    public AggregationAdaptor(
+        List<Pair<AggregateCall, String>> aggregationCalls, Schema sourceSchema) {
       this.aggregators = new ArrayList<>();
       this.sourceFieldExps = new ArrayList<>();
       this.sourceSchema = sourceSchema;
       ImmutableList.Builder<Schema.Field> fields = ImmutableList.builder();
 
-      for (AggregateCall call : aggregationCalls) {
+      for (Pair<AggregateCall, String> aggCall : aggregationCalls) {
+        AggregateCall call = aggCall.left;
+        String aggName = aggCall.right;
+
         if (call.getArgList().size() == 2) {
-          /**
+          /*
            * handle the case of aggregation function has two parameters and use KV pair to bundle
            * two corresponding expressions.
            */
@@ -172,8 +171,9 @@ public class BeamAggregationTransforms implements Serializable {
           sourceFieldExps.add(sourceExp);
         }
 
-        FieldType typeDescriptor = CalciteUtils.toFieldType(call.type);
-        fields.add(Schema.Field.of(call.name, typeDescriptor));
+        Schema.Field field = CalciteUtils.toField(aggName, call.type);
+        Schema.TypeName fieldTypeName = field.getType().getTypeName();
+        fields.add(field);
 
         switch (call.getAggregation().getName()) {
           case "COUNT":
@@ -186,6 +186,7 @@ public class BeamAggregationTransforms implements Serializable {
             aggregators.add(BeamBuiltinAggregations.createMin(call.type.getSqlTypeName()));
             break;
           case "SUM":
+          case "$SUM0":
             aggregators.add(BeamBuiltinAggregations.createSum(call.type.getSqlTypeName()));
             break;
           case "AVG":
@@ -193,22 +194,17 @@ public class BeamAggregationTransforms implements Serializable {
             break;
           case "VAR_POP":
             aggregators.add(
-                VarianceFn.newPopulation(
-                    BigDecimalConverter.forSqlType(typeDescriptor.getTypeName())));
+                VarianceFn.newPopulation(BigDecimalConverter.forSqlType(fieldTypeName)));
             break;
           case "VAR_SAMP":
-            aggregators.add(
-                VarianceFn.newSample(BigDecimalConverter.forSqlType(typeDescriptor.getTypeName())));
+            aggregators.add(VarianceFn.newSample(BigDecimalConverter.forSqlType(fieldTypeName)));
             break;
           case "COVAR_POP":
             aggregators.add(
-                CovarianceFn.newPopulation(
-                    BigDecimalConverter.forSqlType(typeDescriptor.getTypeName())));
+                CovarianceFn.newPopulation(BigDecimalConverter.forSqlType(fieldTypeName)));
             break;
           case "COVAR_SAMP":
-            aggregators.add(
-                CovarianceFn.newSample(
-                    BigDecimalConverter.forSqlType(typeDescriptor.getTypeName())));
+            aggregators.add(CovarianceFn.newSample(BigDecimalConverter.forSqlType(fieldTypeName)));
             break;
           default:
             if (call.getAggregation() instanceof SqlUserDefinedAggFunction) {
@@ -244,29 +240,43 @@ public class BeamAggregationTransforms implements Serializable {
     public AggregationAccumulator addInput(AggregationAccumulator accumulator, Row input) {
       AggregationAccumulator deltaAcc = new AggregationAccumulator();
       for (int idx = 0; idx < aggregators.size(); ++idx) {
+        CombineFn aggregator = aggregators.get(idx);
+        Object element = accumulator.accumulatorElements.get(idx);
+
         if (sourceFieldExps.get(idx) instanceof BeamSqlInputRefExpression) {
           BeamSqlInputRefExpression exp = (BeamSqlInputRefExpression) sourceFieldExps.get(idx);
-          deltaAcc.accumulatorElements.add(
-              aggregators
-                  .get(idx)
-                  .addInput(
-                      accumulator.accumulatorElements.get(idx),
-                      exp.evaluate(input, null, ImmutableMap.of()).getValue()));
+          Object value =
+              exp.evaluate(input, null, BeamSqlExpressionEnvironments.empty()).getValue();
+
+          // every aggregator ignores null values, e.g., COUNT(NULL) is always zero
+          if (value != null) {
+            Object delta = aggregator.addInput(element, value);
+            deltaAcc.accumulatorElements.add(delta);
+          } else {
+            deltaAcc.accumulatorElements.add(element);
+          }
         } else if (sourceFieldExps.get(idx) instanceof KV) {
-          /**
+          /*
            * If source expression is type of KV pair, we bundle the value of two expressions into KV
            * pair and pass it to aggregator's addInput method.
            */
           KV<BeamSqlInputRefExpression, BeamSqlInputRefExpression> exp =
               (KV<BeamSqlInputRefExpression, BeamSqlInputRefExpression>) sourceFieldExps.get(idx);
-          deltaAcc.accumulatorElements.add(
-              aggregators
-                  .get(idx)
-                  .addInput(
-                      accumulator.accumulatorElements.get(idx),
-                      KV.of(
-                          exp.getKey().evaluate(input, null, ImmutableMap.of()).getValue(),
-                          exp.getValue().evaluate(input, null, ImmutableMap.of()).getValue())));
+
+          Object key =
+              exp.getKey().evaluate(input, null, BeamSqlExpressionEnvironments.empty()).getValue();
+
+          Object value =
+              exp.getValue()
+                  .evaluate(input, null, BeamSqlExpressionEnvironments.empty())
+                  .getValue();
+
+          // ignore aggregator if either key or value is null, e.g., COVAR_SAMP(x, NULL) is null
+          if (key != null && value != null) {
+            deltaAcc.accumulatorElements.add(aggregator.addInput(element, KV.of(key, value)));
+          } else {
+            deltaAcc.accumulatorElements.add(element);
+          }
         }
       }
       return deltaAcc;

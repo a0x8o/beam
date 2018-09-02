@@ -34,9 +34,13 @@ import (
 	"github.com/golang/protobuf/ptypes"
 )
 
+// TODO(lostluck): 2018/05/28 Extract these from the canonical enums in beam_runner_api.proto
 const (
-	urnDataSource = "urn:org.apache.beam:source:runner:0.1"
-	urnDataSink   = "urn:org.apache.beam:sink:runner:0.1"
+	urnDataSource           = "urn:org.apache.beam:source:runner:0.1"
+	urnDataSink             = "urn:org.apache.beam:sink:runner:0.1"
+	urnPerKeyCombinePre     = "beam:transform:combine_per_key_precombine:v1"
+	urnPerKeyCombineMerge   = "beam:transform:combine_per_key_merge_accumulators:v1"
+	urnPerKeyCombineExtract = "beam:transform:combine_per_key_extract_outputs:v1"
 )
 
 // UnmarshalPlan converts a model bundle descriptor into an execution Plan.
@@ -58,10 +62,10 @@ func UnmarshalPlan(desc *fnpb.ProcessBundleDescriptor) (*Plan, error) {
 			return nil, err
 		}
 
-		u := &DataSource{UID: b.idgen.New(), Port: port}
+		u := &DataSource{UID: b.idgen.New()}
 
 		for key, pid := range transform.GetOutputs() {
-			u.Target = Target{ID: id, Name: key}
+			u.SID = StreamID{Target: Target{ID: id, Name: key}, Port: port}
 
 			u.Out, err = b.makePCollection(pid)
 			if err != nil {
@@ -331,22 +335,29 @@ func (b *builder) makeLink(from string, id linkID) (Node, error) {
 
 	var u Node
 	switch urn {
-	case graphx.URNParDo, graphx.URNJavaDoFn:
+	case graphx.URNParDo, graphx.URNJavaDoFn, urnPerKeyCombinePre, urnPerKeyCombineMerge, urnPerKeyCombineExtract:
 		var data string
-		if urn == graphx.URNParDo {
+		switch urn {
+		case graphx.URNParDo:
 			var pardo pb.ParDoPayload
 			if err := proto.Unmarshal(payload, &pardo); err != nil {
 				return nil, fmt.Errorf("invalid ParDo payload for %v: %v", transform, err)
 			}
 			data = string(pardo.GetDoFn().GetSpec().GetPayload())
-		} else {
+		case urnPerKeyCombinePre, urnPerKeyCombineMerge, urnPerKeyCombineExtract:
+			var cmb pb.CombinePayload
+			if err := proto.Unmarshal(payload, &cmb); err != nil {
+				return nil, fmt.Errorf("invalid CombinePayload payload for %v: %v", transform, err)
+			}
+			data = string(cmb.GetCombineFn().GetSpec().GetPayload())
+		default:
 			// TODO(herohde) 12/4/2017: we see DoFns directly with Dataflow. Handle that
 			// case here, for now, so that the harness can use this logic.
 
 			data = string(payload)
 		}
 
-		// TODO(herohde) 1/28/2018: Once we're fully off the old way,
+		// TODO(herohde) 1/28/2018: Once Dataflow's fully off the old way,
 		// we can simply switch on the ParDo DoFn URN directly.
 
 		var tp v1.TransformPayload
@@ -354,7 +365,7 @@ func (b *builder) makeLink(from string, id linkID) (Node, error) {
 			return nil, fmt.Errorf("invalid transform payload for %v: %v", transform, err)
 		}
 
-		switch tp.GetUrn() {
+		switch tpUrn := tp.GetUrn(); tpUrn {
 		case graphx.URNDoFn:
 			op, fn, _, in, _, err := graphx.DecodeMultiEdge(tp.GetEdge())
 			if err != nil {
@@ -370,26 +381,52 @@ func (b *builder) makeLink(from string, id linkID) (Node, error) {
 				}
 				// TODO(lostluck): 2018/03/22 Look into why transform.UniqueName isn't populated at this point, and switch n.PID to that instead.
 				n.PID = path.Base(n.Fn.Name())
-				if len(in) == 1 {
-					u = n
-					break
-				}
 
-				panic("NYI: side input")
+				input := unmarshalKeyedValues(transform.GetInputs())
+				for i := 1; i < len(input); i++ {
+					// TODO(herohde) 8/8/2018: handle different windows, view_fn and window_mapping_fn.
+					// For now, assume we don't need any information in the pardo payload.
+
+					ec, wc, err := b.makeCoderForPCollection(input[i])
+					if err != nil {
+						return nil, err
+					}
+
+					sid := StreamID{
+						Port: Port{URL: b.desc.GetStateApiServiceDescriptor().GetUrl()},
+						Target: Target{
+							ID:   id.to,                 // PTransformID
+							Name: fmt.Sprintf("i%v", i), // SideInputID (= local id, "iN")
+						},
+					}
+					side := NewSideInputAdapter(sid, coder.NewW(ec, wc))
+					n.Side = append(n.Side, side)
+				}
+				u = n
 
 			case graph.Combine:
-				n := &Combine{UID: b.idgen.New(), Out: out[0]}
-				n.Fn, err = graph.AsCombineFn(fn)
+				cn := &Combine{UID: b.idgen.New(), Out: out[0]}
+				cn.Fn, err = graph.AsCombineFn(fn)
 				if err != nil {
 					return nil, err
 				}
-				n.UsesKey = typex.IsKV(in[0].Type)
-
-				u = n
-
+				cn.UsesKey = typex.IsKV(in[0].Type)
+				switch urn {
+				case urnPerKeyCombinePre:
+					u = &LiftedCombine{Combine: cn}
+				case urnPerKeyCombineMerge:
+					u = &MergeAccumulators{Combine: cn}
+				case urnPerKeyCombineExtract:
+					u = &ExtractOutput{Combine: cn}
+				default: // For unlifted combines
+					u = cn
+				}
 			default:
 				panic(fmt.Sprintf("Opcode should be one of ParDo or Combine, but it is: %v", op))
 			}
+
+		case graphx.URNIterableSideInputKey:
+			u = &FixedKey{UID: b.idgen.New(), Key: []byte(iterableSideInputKey), Out: out[0]}
 
 		case graphx.URNInject:
 			c, _, err := b.makeCoderForPCollection(from)
@@ -435,16 +472,19 @@ func (b *builder) makeLink(from string, id linkID) (Node, error) {
 		}
 		u = &WindowInto{UID: b.idgen.New(), Fn: wfn, Out: out[0]}
 
+	case graphx.URNFlatten:
+		u = &Flatten{UID: b.idgen.New(), N: len(transform.Inputs), Out: out[0]}
+
 	case urnDataSink:
 		port, cid, err := unmarshalPort(payload)
 		if err != nil {
 			return nil, err
 		}
 
-		sink := &DataSink{UID: b.idgen.New(), Port: port}
+		sink := &DataSink{UID: b.idgen.New()}
 
 		for key, pid := range transform.GetInputs() {
-			sink.Target = Target{ID: id.to, Name: key}
+			sink.SID = StreamID{Target: Target{ID: id.to, Name: key}, Port: port}
 
 			if cid == "" {
 				c, wc, err := b.makeCoderForPCollection(pid)

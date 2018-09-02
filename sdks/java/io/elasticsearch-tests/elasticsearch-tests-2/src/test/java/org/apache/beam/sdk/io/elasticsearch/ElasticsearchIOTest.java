@@ -21,9 +21,9 @@ import static org.apache.beam.sdk.io.elasticsearch.ElasticsearchIO.BoundedElasti
 import static org.apache.beam.sdk.io.elasticsearch.ElasticsearchIO.ConnectionConfiguration;
 import static org.apache.beam.sdk.io.elasticsearch.ElasticsearchIO.Read;
 import static org.apache.beam.sdk.io.elasticsearch.ElasticsearchIOTestCommon.ACCEPTABLE_EMPTY_SPLITS_PERCENTAGE;
-import static org.apache.beam.sdk.io.elasticsearch.ElasticsearchIOTestCommon.ES_INDEX;
 import static org.apache.beam.sdk.io.elasticsearch.ElasticsearchIOTestCommon.ES_TYPE;
 import static org.apache.beam.sdk.io.elasticsearch.ElasticsearchIOTestCommon.NUM_DOCS_UTESTS;
+import static org.apache.beam.sdk.io.elasticsearch.ElasticsearchIOTestCommon.getEsIndex;
 import static org.apache.beam.sdk.testing.SourceTestUtils.readFromSource;
 import static org.hamcrest.Matchers.lessThan;
 import static org.junit.Assert.assertEquals;
@@ -55,13 +55,13 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /** Tests for {@link ElasticsearchIO} version 2.x. */
-
 @RunWith(JUnit4.class)
 public class ElasticsearchIOTest implements Serializable {
 
   private static final Logger LOG = LoggerFactory.getLogger(ElasticsearchIOTest.class);
 
   private static final String ES_IP = "127.0.0.1";
+  private static final int MAX_STARTUP_WAITING_TIME_MSEC = 5000;
 
   private static Node node;
   private static RestClient restClient;
@@ -69,11 +69,9 @@ public class ElasticsearchIOTest implements Serializable {
   //cannot use inheritance because ES5 test already extends ESIntegTestCase.
   private static ElasticsearchIOTestCommon elasticsearchIOTestCommon;
 
-  @ClassRule
-  public static final TemporaryFolder TEMPORARY_FOLDER = new TemporaryFolder();
+  @ClassRule public static final TemporaryFolder TEMPORARY_FOLDER = new TemporaryFolder();
 
-  @Rule
-  public TestPipeline pipeline = TestPipeline.create();
+  @Rule public TestPipeline pipeline = TestPipeline.create();
 
   @BeforeClass
   public static void beforeClass() throws IOException {
@@ -98,15 +96,31 @@ public class ElasticsearchIOTest implements Serializable {
     node = new Node(settingsBuilder.build());
     LOG.info("Elasticsearch node created");
     node.start();
-    connectionConfiguration = ConnectionConfiguration
-        .create(new String[] { "http://" + ES_IP + ":" + esHttpPort }, ES_INDEX, ES_TYPE);
+    connectionConfiguration =
+        ConnectionConfiguration.create(
+            new String[] {"http://" + ES_IP + ":" + esHttpPort}, getEsIndex(), ES_TYPE);
     restClient = connectionConfiguration.createClient();
-    elasticsearchIOTestCommon = new ElasticsearchIOTestCommon(connectionConfiguration, restClient,
-        false);
+    elasticsearchIOTestCommon =
+        new ElasticsearchIOTestCommon(connectionConfiguration, restClient, false);
+    int waitingTime = 0;
+    int healthCheckFrequency = 500;
+    while ((waitingTime < MAX_STARTUP_WAITING_TIME_MSEC)
+        && restClient.performRequest("HEAD", "/").getStatusLine().getStatusCode() != 200) {
+      try {
+        Thread.sleep(healthCheckFrequency);
+        waitingTime += healthCheckFrequency;
+      } catch (InterruptedException e) {
+        LOG.warn(
+            "Waiting thread was interrupted while waiting for connection to Elasticsearch to be available");
+      }
+    }
+    if (waitingTime >= MAX_STARTUP_WAITING_TIME_MSEC) {
+      throw new IOException("Max startup waiting for embedded Elasticsearch to start was exceeded");
+    }
   }
 
   @AfterClass
-  public static void afterClass() throws IOException{
+  public static void afterClass() throws IOException {
     restClient.close();
     node.close();
   }
@@ -139,8 +153,7 @@ public class ElasticsearchIOTest implements Serializable {
     elasticsearchIOTestCommon.testWrite();
   }
 
-  @Rule
-  public ExpectedException expectedException = ExpectedException.none();
+  @Rule public ExpectedException expectedException = ExpectedException.none();
 
   @Test
   public void testWriteWithErrors() throws Exception {
@@ -160,13 +173,12 @@ public class ElasticsearchIOTest implements Serializable {
 
   @Test
   public void testSplit() throws Exception {
-    ElasticSearchIOTestUtils
-        .insertTestDocuments(connectionConfiguration, NUM_DOCS_UTESTS, restClient);
+    ElasticSearchIOTestUtils.insertTestDocuments(
+        connectionConfiguration, NUM_DOCS_UTESTS, restClient);
     PipelineOptions options = PipelineOptionsFactory.create();
-    Read read =
-        ElasticsearchIO.read().withConnectionConfiguration(connectionConfiguration);
-    BoundedElasticsearchSource initialSource = new BoundedElasticsearchSource(read, null, null,
-        null);
+    Read read = ElasticsearchIO.read().withConnectionConfiguration(connectionConfiguration);
+    BoundedElasticsearchSource initialSource =
+        new BoundedElasticsearchSource(read, null, null, null);
     //desiredBundleSize is ignored because in ES 2.x there is no way to split shards. So we get
     // as many bundles as ES shards and bundle size is shard size
     int desiredBundleSizeBytes = 0;
@@ -211,5 +223,29 @@ public class ElasticsearchIOTest implements Serializable {
   public void testWriteFullAddressing() throws Exception {
     elasticsearchIOTestCommon.setPipeline(pipeline);
     elasticsearchIOTestCommon.testWriteWithFullAddressing();
+  }
+
+  @Test
+  public void testWritePartialUpdate() throws Exception {
+    elasticsearchIOTestCommon.setPipeline(pipeline);
+    elasticsearchIOTestCommon.testWritePartialUpdate();
+  }
+
+  @Test
+  public void testReadWithMetadata() throws Exception {
+    elasticsearchIOTestCommon.setPipeline(pipeline);
+    elasticsearchIOTestCommon.testReadWithMetadata();
+  }
+
+  @Test
+  public void testDefaultRetryPredicate() throws IOException {
+    elasticsearchIOTestCommon.testDefaultRetryPredicate(restClient);
+  }
+
+  @Test
+  public void testWriteRetry() throws Throwable {
+    elasticsearchIOTestCommon.setExpectedException(expectedException);
+    elasticsearchIOTestCommon.setPipeline(pipeline);
+    elasticsearchIOTestCommon.testWriteRetry();
   }
 }

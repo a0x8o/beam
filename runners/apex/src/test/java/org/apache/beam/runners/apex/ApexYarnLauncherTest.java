@@ -47,9 +47,7 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
-/**
- * Test for dependency resolution for pipeline execution on YARN.
- */
+/** Test for dependency resolution for pipeline execution on YARN. */
 public class ApexYarnLauncherTest {
   @Rule public TemporaryFolder tmpFolder = new TemporaryFolder();
 
@@ -81,11 +79,11 @@ public class ApexYarnLauncherTest {
     launcher.launchApp(new MockApexYarnLauncherParams(dag, launchAttributes, configProperties));
   }
 
-  private static class MockApexYarnLauncherParams extends  ApexYarnLauncher.LaunchParams {
+  private static class MockApexYarnLauncherParams extends ApexYarnLauncher.LaunchParams {
     private static final long serialVersionUID = 1L;
 
-    public MockApexYarnLauncherParams(DAG dag, AttributeMap launchAttributes,
-        Properties properties) {
+    public MockApexYarnLauncherParams(
+        DAG dag, AttributeMap launchAttributes, Properties properties) {
       super(dag, launchAttributes, properties);
     }
 
@@ -93,9 +91,11 @@ public class ApexYarnLauncherTest {
     protected Launcher<?> getApexLauncher() {
       return new Launcher<AppHandle>() {
         @Override
-        public AppHandle launchApp(StreamingApplication application,
-            Configuration configuration, AttributeMap launchParameters)
-            throws org.apache.apex.api.Launcher.LauncherException {
+        public AppHandle launchApp(
+            StreamingApplication application,
+            Configuration configuration,
+            AttributeMap launchParameters)
+            throws Launcher.LauncherException {
           EmbeddedAppLauncher<?> embeddedLauncher = Launcher.getLauncher(LaunchMode.EMBEDDED);
           DAG dag = embeddedLauncher.getDAG();
           application.populateDAG(dag, new Configuration(false));
@@ -106,14 +106,13 @@ public class ApexYarnLauncherTest {
             public boolean isFinished() {
               return true;
             }
+
             @Override
-            public void shutdown(org.apache.apex.api.Launcher.ShutdownMode arg0) {
-            }
+            public void shutdown(Launcher.ShutdownMode arg0) {}
           };
         }
       };
     }
-
   }
 
   @Test
@@ -128,7 +127,7 @@ public class ApexYarnLauncherTest {
     Assert.assertTrue("exists: " + jarFile, jarFile.exists());
     URI uri = URI.create("jar:" + jarFile.toURI());
     final Map<String, ?> env = Collections.singletonMap("create", "true");
-    try (final FileSystem zipfs = FileSystems.newFileSystem(uri, env);) {
+    try (final FileSystem zipfs = FileSystems.newFileSystem(uri, env)) {
       Assert.assertTrue("manifest", Files.isRegularFile(zipfs.getPath(JarFile.MANIFEST_NAME)));
       Assert.assertTrue("file1", Files.isRegularFile(zipfs.getPath(file1)));
     }

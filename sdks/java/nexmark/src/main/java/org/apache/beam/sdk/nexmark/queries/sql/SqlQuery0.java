@@ -24,15 +24,14 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import org.apache.beam.sdk.coders.Coder;
-import org.apache.beam.sdk.coders.CoderException;
-import org.apache.beam.sdk.coders.RowCoder;
-import org.apache.beam.sdk.extensions.sql.BeamSql;
+import org.apache.beam.sdk.extensions.sql.SqlTransform;
 import org.apache.beam.sdk.metrics.Counter;
 import org.apache.beam.sdk.metrics.Metrics;
 import org.apache.beam.sdk.nexmark.model.Bid;
 import org.apache.beam.sdk.nexmark.model.Event;
-import org.apache.beam.sdk.nexmark.model.sql.ToRow;
-import org.apache.beam.sdk.nexmark.model.sql.adapter.ModelAdaptersMapping;
+import org.apache.beam.sdk.nexmark.model.Event.Type;
+import org.apache.beam.sdk.nexmark.model.sql.SelectEvent;
+import org.apache.beam.sdk.schemas.transforms.Convert;
 import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.Filter;
 import org.apache.beam.sdk.transforms.PTransform;
@@ -44,16 +43,16 @@ import org.apache.beam.sdk.values.Row;
 /**
  * Query 0: Pass events through unchanged.
  *
- * <p>This measures the overhead of the Beam SQL implementation and test harness like
- * conversion from Java model classes to Beam records.
+ * <p>This measures the overhead of the Beam SQL implementation and test harness like conversion
+ * from Java model classes to Beam records.
  *
- * <p>{@link Bid} events are used here at the moment, ås they are most numerous
- * with default configuration.
+ * <p>{@link Bid} events are used here at the moment, ås they are most numerous with default
+ * configuration.
  */
 public class SqlQuery0 extends PTransform<PCollection<Event>, PCollection<Bid>> {
 
   private static final PTransform<PInput, PCollection<Row>> QUERY =
-      BeamSql.query("SELECT * FROM PCOLLECTION");
+      SqlTransform.query("SELECT * FROM PCOLLECTION");
 
   public SqlQuery0() {
     super("SqlQuery0");
@@ -61,48 +60,34 @@ public class SqlQuery0 extends PTransform<PCollection<Event>, PCollection<Bid>> 
 
   @Override
   public PCollection<Bid> expand(PCollection<Event> allEvents) {
+    PCollection<Row> rows =
+        allEvents
+            .apply(Filter.by(IS_BID))
+            .apply(getName() + ".SelectEvent", new SelectEvent(Type.BID));
 
-    RowCoder bidRowCoder = getBidRowCoder();
-
-    PCollection<Row> bidEventsRows = allEvents
-        .apply(Filter.by(IS_BID))
-        .apply(getName() + ".ToRow", ToRow.parDo())
-        .apply(getName() + ".Serialize", logBytesMetric(bidRowCoder))
-        .setCoder(bidRowCoder);
-
-    PCollection<Row> queryResultsRows = bidEventsRows
+    return rows.apply(getName() + ".Serialize", logBytesMetric(rows.getCoder()))
         .apply(QUERY)
-        .setCoder(bidRowCoder);
-
-    return queryResultsRows
-        .apply(bidParDo())
-        .setCoder(Bid.CODER);
+        .apply(Convert.fromRows(Bid.class));
   }
 
   private PTransform<? super PCollection<Row>, PCollection<Row>> logBytesMetric(
-      final RowCoder coder) {
+      final Coder<Row> coder) {
 
-    return ParDo.of(new DoFn<Row, Row>() {
-      private final Counter bytesMetric = Metrics.counter(name , "bytes");
+    return ParDo.of(
+        new DoFn<Row, Row>() {
+          private final Counter bytesMetric = Metrics.counter(name, "bytes");
 
-      @ProcessElement
-      public void processElement(ProcessContext c) throws CoderException, IOException {
-        ByteArrayOutputStream outStream = new ByteArrayOutputStream();
-        coder.encode(c.element(), outStream, Coder.Context.OUTER);
-        byte[] byteArray = outStream.toByteArray();
-        bytesMetric.inc((long) byteArray.length);
-        ByteArrayInputStream inStream = new ByteArrayInputStream(byteArray);
-        Row row = coder.decode(inStream, Coder.Context.OUTER);
-        c.output(row);
-      }
-    });
-  }
-
-  private RowCoder getBidRowCoder() {
-    return ModelAdaptersMapping.ADAPTERS.get(Bid.class).getSchema().getRowCoder();
-  }
-
-  private ParDo.SingleOutput<Row, Bid> bidParDo() {
-    return ModelAdaptersMapping.ADAPTERS.get(Bid.class).parDo();
+          @ProcessElement
+          public void processElement(@Element Row element, OutputReceiver<Row> o)
+              throws IOException {
+            ByteArrayOutputStream outStream = new ByteArrayOutputStream();
+            coder.encode(element, outStream, Coder.Context.OUTER);
+            byte[] byteArray = outStream.toByteArray();
+            bytesMetric.inc((long) byteArray.length);
+            ByteArrayInputStream inStream = new ByteArrayInputStream(byteArray);
+            Row row = coder.decode(inStream, Coder.Context.OUTER);
+            o.output(row);
+          }
+        });
   }
 }

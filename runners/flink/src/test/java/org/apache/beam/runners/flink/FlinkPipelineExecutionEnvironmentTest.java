@@ -31,9 +31,7 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
 
-/**
- * Tests for {@link FlinkPipelineExecutionEnvironment}.
- */
+/** Tests for {@link FlinkPipelineExecutionEnvironment}. */
 @RunWith(JUnit4.class)
 public class FlinkPipelineExecutionEnvironmentTest implements Serializable {
 
@@ -43,26 +41,24 @@ public class FlinkPipelineExecutionEnvironmentTest implements Serializable {
     options.setRunner(TestFlinkRunner.class);
     options.setFlinkMaster("[auto]");
 
-    FlinkRunner flinkRunner = FlinkRunner.fromOptions(options);
     FlinkPipelineExecutionEnvironment flinkEnv = new FlinkPipelineExecutionEnvironment(options);
     Pipeline pipeline = Pipeline.create();
 
     pipeline
         .apply(GenerateSequence.from(0).withRate(1, Duration.standardSeconds(1)))
-        .apply(ParDo.of(new DoFn<Long, String>() {
-          @ProcessElement
-          public void processElement(ProcessContext c) throws Exception {
-            c.output(Long.toString(c.element()));
-          }
-        }))
+        .apply(
+            ParDo.of(
+                new DoFn<Long, String>() {
+                  @ProcessElement
+                  public void processElement(ProcessContext c) throws Exception {
+                    c.output(Long.toString(c.element()));
+                  }
+                }))
         .apply(Window.into(FixedWindows.of(Duration.standardHours(1))))
         .apply(TextIO.write().withNumShards(1).withWindowedWrites().to("/dummy/path"));
 
-    flinkEnv.translate(flinkRunner, pipeline);
+    flinkEnv.translate(pipeline);
 
     // no exception should be thrown
   }
-
 }
-
-

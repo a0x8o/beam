@@ -23,6 +23,9 @@ import io
 import logging
 import posixpath
 import unittest
+from builtins import object
+
+from future.utils import itervalues
 
 from apache_beam.io import hadoopfilesystem as hdfs
 from apache_beam.io.filesystem import BeamIOError
@@ -32,6 +35,7 @@ from apache_beam.options.pipeline_options import PipelineOptions
 
 class FakeFile(io.BytesIO):
   """File object for FakeHdfs"""
+  __hash__ = None
 
   def __init__(self, path, mode='', type='FILE'):
     io.BytesIO.__init__(self)
@@ -121,10 +125,11 @@ class FakeHdfs(object):
     fs = self.status(path, strict=False)
     if (fs is not None and
         fs[hdfs._FILE_STATUS_TYPE] == hdfs._FILE_STATUS_TYPE_FILE):
-      raise ValueError('list must be called on a directory, got file: %s', path)
+      raise ValueError(
+          'list must be called on a directory, got file: %s' % path)
 
     result = []
-    for file in self.files.itervalues():
+    for file in itervalues(self.files):
       if file.stat['path'].startswith(path):
         fs = file.get_file_status()
         result.append((fs[hdfs._FILE_STATUS_PATH_SUFFIX], fs))

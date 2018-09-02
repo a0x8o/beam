@@ -24,6 +24,7 @@ import static org.junit.Assert.assertThat;
 
 import com.google.common.collect.ImmutableList;
 import org.apache.beam.model.pipeline.v1.RunnerApi;
+import org.apache.beam.model.pipeline.v1.RunnerApi.Environment;
 import org.apache.beam.model.pipeline.v1.RunnerApi.TestStreamPayload;
 import org.apache.beam.sdk.coders.StringUtf8Coder;
 import org.apache.beam.sdk.coders.VarIntCoder;
@@ -33,7 +34,6 @@ import org.apache.beam.sdk.testing.TestStream;
 import org.apache.beam.sdk.values.PBegin;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.TimestampedValue;
-import org.hamcrest.Matchers;
 import org.joda.time.Duration;
 import org.joda.time.Instant;
 import org.junit.Test;
@@ -68,6 +68,7 @@ public class TestStreamTranslationTest {
   @Test
   public void testEncodedProto() throws Exception {
     SdkComponents components = SdkComponents.create();
+    components.registerEnvironment(Environment.newBuilder().setUrl("java").build());
     RunnerApi.TestStreamPayload payload =
         TestStreamTranslation.payloadForTestStream(testStream, components);
 
@@ -83,6 +84,7 @@ public class TestStreamTranslationTest {
         AppliedPTransform.of("fakeName", PBegin.in(p).expand(), output.expand(), testStream, p);
 
     SdkComponents components = SdkComponents.create();
+    components.registerEnvironment(Environment.newBuilder().setUrl("java").build());
     RunnerApi.FunctionSpec spec =
         PTransformTranslation.toProto(appliedTestStream, components).getSpec();
 
@@ -101,9 +103,7 @@ public class TestStreamTranslationTest {
       throws Exception {
 
     // This reverse direction is only valid for Java-based coders
-    assertThat(
-        protoComponents.getCoder(payload.getCoderId()),
-        Matchers.equalTo(testStream.getValueCoder()));
+    assertThat(protoComponents.getCoder(payload.getCoderId()), equalTo(testStream.getValueCoder()));
 
     assertThat(payload.getEventsList().size(), equalTo(testStream.getEvents().size()));
 

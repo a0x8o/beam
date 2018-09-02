@@ -22,6 +22,9 @@ from __future__ import absolute_import
 import collections
 import random
 import time
+from builtins import object
+
+from future.utils import iteritems
 
 import apache_beam.io as io
 from apache_beam import coders
@@ -263,7 +266,7 @@ class _TransformEvaluator(object):
 
   def process_element(self, element):
     """Processes a new element as part of the current bundle."""
-    raise NotImplementedError('%s do not process elements.', type(self))
+    raise NotImplementedError('%s do not process elements.' % type(self))
 
   def finish_bundle(self):
     """Finishes the bundle and produces output."""
@@ -388,6 +391,9 @@ class _PubSubReadEvaluator(_TransformEvaluator):
         side_inputs)
 
     self.source = self._applied_ptransform.transform._source
+    if self.source.id_label:
+      raise NotImplementedError(
+          'DirectRunner: id_label is not supported for PubSub reads')
     self._subscription = _PubSubReadEvaluator.get_subscription(
         self._applied_ptransform, self.source.project, self.source.topic_name,
         self.source.subscription_name)
@@ -427,11 +433,9 @@ class _PubSubReadEvaluator(_TransformEvaluator):
         max_messages=10) as results:
       def _get_element(message):
         parsed_message = PubsubMessage._from_message(message)
-        if timestamp_attribute:
-          try:
-            rfc3339_or_milli = parsed_message.attributes[timestamp_attribute]
-          except KeyError as e:
-            raise KeyError('Timestamp attribute not found: %s' % e)
+        if (timestamp_attribute and
+            timestamp_attribute in parsed_message.attributes):
+          rfc3339_or_milli = parsed_message.attributes[timestamp_attribute]
           try:
             timestamp = Timestamp.from_rfc3339(rfc3339_or_milli)
           except ValueError:
@@ -445,7 +449,7 @@ class _PubSubReadEvaluator(_TransformEvaluator):
         return timestamp, parsed_message
 
       return [_get_element(message)
-              for unused_ack_id, message in results.items()]
+              for unused_ack_id, message in iteritems(results)]
 
   def finish_bundle(self):
     data = self._read_from_pubsub(self.source.timestamp_attribute)
@@ -457,7 +461,7 @@ class _PubSubReadEvaluator(_TransformEvaluator):
         if self.source.with_attributes:
           element = message
         else:
-          element = message.payload
+          element = message.data
         bundle.output(
             GlobalWindows.windowed_value(element, timestamp=timestamp))
       bundles = [bundle]
@@ -575,7 +579,7 @@ class _ParDoEvaluator(_TransformEvaluator):
 
   def finish_bundle(self):
     self.runner.finish()
-    bundles = self._tagged_receivers.values()
+    bundles = list(self._tagged_receivers.values())
     result_counters = self._counter_factory.get_counters()
     return TransformResult(
         self, bundles, [], result_counters, None)
@@ -716,7 +720,7 @@ class _StreamingGroupByKeyOnlyEvaluator(_TransformEvaluator):
   def finish_bundle(self):
     bundles = []
     bundle = None
-    for encoded_k, vs in self.gbk_items.iteritems():
+    for encoded_k, vs in iteritems(self.gbk_items):
       if not bundle:
         bundle = self._evaluation_context.create_bundle(
             self.output_pcollection)

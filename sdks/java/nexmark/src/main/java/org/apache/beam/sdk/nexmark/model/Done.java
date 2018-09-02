@@ -19,6 +19,7 @@ package org.apache.beam.sdk.nexmark.model;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.google.common.base.Objects;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -29,30 +30,33 @@ import org.apache.beam.sdk.coders.CustomCoder;
 import org.apache.beam.sdk.coders.StringUtf8Coder;
 import org.apache.beam.sdk.nexmark.NexmarkUtils;
 
-/**
- * Result of query 10.
- */
+/** Result of query 10. */
 public class Done implements KnownSize, Serializable {
   private static final Coder<String> STRING_CODER = StringUtf8Coder.of();
 
-  public static final Coder<Done> CODER = new CustomCoder<Done>() {
-    @Override
-    public void encode(Done value, OutputStream outStream)
-        throws CoderException, IOException {
-      STRING_CODER.encode(value.message, outStream);
-    }
+  public static final Coder<Done> CODER =
+      new CustomCoder<Done>() {
+        @Override
+        public void encode(Done value, OutputStream outStream) throws CoderException, IOException {
+          STRING_CODER.encode(value.message, outStream);
+        }
 
-    @Override
-    public Done decode(InputStream inStream)
-        throws CoderException, IOException {
-      String message = STRING_CODER.decode(inStream);
-      return new Done(message);
-    }
-    @Override public void verifyDeterministic() throws NonDeterministicException {}
-  };
+        @Override
+        public Done decode(InputStream inStream) throws CoderException, IOException {
+          String message = STRING_CODER.decode(inStream);
+          return new Done(message);
+        }
 
-  @JsonProperty
-  private final String message;
+        @Override
+        public void verifyDeterministic() throws NonDeterministicException {}
+
+        @Override
+        public Object structuralValue(Done v) {
+          return v;
+        }
+      };
+
+  @JsonProperty private final String message;
 
   // For Avro only.
   @SuppressWarnings("unused")
@@ -76,5 +80,22 @@ public class Done implements KnownSize, Serializable {
     } catch (JsonProcessingException e) {
       throw new RuntimeException(e);
     }
+  }
+
+  @Override
+  public boolean equals(Object o) {
+    if (this == o) {
+      return true;
+    }
+    if (o == null || getClass() != o.getClass()) {
+      return false;
+    }
+    Done done = (Done) o;
+    return Objects.equal(message, done.message);
+  }
+
+  @Override
+  public int hashCode() {
+    return Objects.hashCode(message);
   }
 }

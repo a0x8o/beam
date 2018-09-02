@@ -22,34 +22,25 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
-/**
- * A set of {@link NexmarkConfiguration}s.
- */
+/** A set of {@link NexmarkConfiguration}s. */
+@SuppressWarnings("ImmutableEnumChecker")
 public enum NexmarkSuite {
-  /**
-   * The default.
-   */
+  /** The default. */
   DEFAULT(defaultConf()),
 
   /**
-   * Sweep through all queries using the default configuration.
-   * 100k/10k events (depending on query).
+   * Sweep through all queries using the default configuration. 100k/10k events (depending on
+   * query).
    */
   SMOKE(smoke()),
 
-  /**
-   * As for SMOKE, but with 10m/1m events.
-   */
+  /** As for SMOKE, but with 10m/1m events. */
   STRESS(stress()),
 
-  /**
-   * As for SMOKE, but with 1b/100m events.
-   */
+  /** As for SMOKE, but with 1b/100m events. */
   FULL_THROTTLE(fullThrottle()),
 
-  /**
-   * Query 10, at high volume with no autoscaling.
-   */
+  /** Query 10, at high volume with no autoscaling. */
   LONG_RUNNING_LOGGER(longRunningLogger());
 
   private static List<NexmarkConfiguration> defaultConf() {
@@ -78,7 +69,7 @@ public enum NexmarkSuite {
     List<NexmarkConfiguration> configurations = smoke();
     for (NexmarkConfiguration configuration : configurations) {
       if (configuration.numEvents >= 0) {
-        configuration.numEvents *= 1000;
+        configuration.numEvents *= 100;
       }
     }
     return configurations;
@@ -88,7 +79,7 @@ public enum NexmarkSuite {
     List<NexmarkConfiguration> configurations = smoke();
     for (NexmarkConfiguration configuration : configurations) {
       if (configuration.numEvents >= 0) {
-        configuration.numEvents *= 1000;
+        configuration.numEvents *= 10000;
       }
     }
     return configurations;
@@ -125,11 +116,11 @@ public enum NexmarkSuite {
   }
 
   /**
-   * Return the configurations corresponding to this suite. We'll override each configuration
-   * with any set command line flags, except for --isStreaming which is only respected for
-   * the {@link #DEFAULT} suite.
+   * Return the configurations corresponding to this suite. We'll override each configuration with
+   * any set command line flags, except for --isStreaming which is only respected for the {@link
+   * #DEFAULT} suite.
    */
-  public Iterable<NexmarkConfiguration> getConfigurations(NexmarkOptions options) {
+  public Set<NexmarkConfiguration> getConfigurations(NexmarkOptions options) {
     Set<NexmarkConfiguration> results = new LinkedHashSet<>();
     for (NexmarkConfiguration configuration : configurations) {
       NexmarkConfiguration result = configuration.copy();

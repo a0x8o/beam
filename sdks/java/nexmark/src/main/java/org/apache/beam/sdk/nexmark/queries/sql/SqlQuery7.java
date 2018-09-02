@@ -17,18 +17,17 @@
  */
 package org.apache.beam.sdk.nexmark.queries.sql;
 
-import static org.apache.beam.sdk.nexmark.model.sql.adapter.ModelAdaptersMapping.ADAPTERS;
 import static org.apache.beam.sdk.nexmark.queries.NexmarkQuery.IS_BID;
 
-import org.apache.beam.sdk.coders.RowCoder;
-import org.apache.beam.sdk.extensions.sql.BeamSql;
+import org.apache.beam.sdk.extensions.sql.SqlTransform;
 import org.apache.beam.sdk.nexmark.NexmarkConfiguration;
 import org.apache.beam.sdk.nexmark.model.Bid;
 import org.apache.beam.sdk.nexmark.model.Event;
-import org.apache.beam.sdk.nexmark.model.sql.ToRow;
+import org.apache.beam.sdk.nexmark.model.Event.Type;
+import org.apache.beam.sdk.nexmark.model.sql.SelectEvent;
+import org.apache.beam.sdk.schemas.transforms.Convert;
 import org.apache.beam.sdk.transforms.Filter;
 import org.apache.beam.sdk.transforms.PTransform;
-import org.apache.beam.sdk.transforms.ParDo;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.PCollectionTuple;
 import org.apache.beam.sdk.values.PInput;
@@ -36,8 +35,8 @@ import org.apache.beam.sdk.values.Row;
 import org.apache.beam.sdk.values.TupleTag;
 
 /**
- * Query 7, 'Highest Bid'. Select the bids with the highest bid
- * price in the last minute. In CQL syntax:
+ * Query 7, 'Highest Bid'. Select the bids with the highest bid price in the last minute. In CQL
+ * syntax:
  *
  * <pre>
  * SELECT Rstream(B.auction, B.price, B.bidder)
@@ -46,56 +45,42 @@ import org.apache.beam.sdk.values.TupleTag;
  *                  FROM BID [RANGE 1 MINUTE SLIDE 1 MINUTE] B1);
  * </pre>
  *
- * <p>We will use a shorter window to help make testing easier.</p>
+ * <p>We will use a shorter window to help make testing easier.
  */
 public class SqlQuery7 extends PTransform<PCollection<Event>, PCollection<Bid>> {
 
-  private static final String QUERY_TEMPLATE = ""
-      + " SELECT B.auction, B.price, B.bidder, B.dateTime, B.extra "
-      + "    FROM (SELECT B.auction, B.price, B.bidder, B.dateTime, B.extra, "
-      + "       TUMBLE_START(B.dateTime, INTERVAL '%1$d' SECOND) AS starttime "
-      + "    FROM Bid B "
-      + "    GROUP BY B.auction, B.price, B.bidder, B.dateTime, B.extra, "
-      + "       TUMBLE(B.dateTime, INTERVAL '%1$d' SECOND)) B "
-      + " JOIN (SELECT MAX(B1.price) AS maxprice, "
-      + "       TUMBLE_START(B1.dateTime, INTERVAL '%1$d' SECOND) AS starttime "
-      + "    FROM Bid B1 "
-      + "    GROUP BY TUMBLE(B1.dateTime, INTERVAL '%1$d' SECOND)) B1 "
-      + " ON B.starttime = B1.starttime AND B.price = B1.maxprice ";
+  private static final String QUERY_TEMPLATE =
+      ""
+          + " SELECT B.auction, B.price, B.bidder, B.dateTime, B.extra "
+          + "    FROM (SELECT B.auction, B.price, B.bidder, B.dateTime, B.extra, "
+          + "       TUMBLE_START(B.dateTime, INTERVAL '%1$d' SECOND) AS starttime "
+          + "    FROM Bid B "
+          + "    GROUP BY B.auction, B.price, B.bidder, B.dateTime, B.extra, "
+          + "       TUMBLE(B.dateTime, INTERVAL '%1$d' SECOND)) B "
+          + " JOIN (SELECT MAX(B1.price) AS maxprice, "
+          + "       TUMBLE_START(B1.dateTime, INTERVAL '%1$d' SECOND) AS starttime "
+          + "    FROM Bid B1 "
+          + "    GROUP BY TUMBLE(B1.dateTime, INTERVAL '%1$d' SECOND)) B1 "
+          + " ON B.starttime = B1.starttime AND B.price = B1.maxprice ";
 
   private final PTransform<PInput, PCollection<Row>> query;
 
   public SqlQuery7(NexmarkConfiguration configuration) {
     super("SqlQuery7");
 
-    String queryString = String.format(QUERY_TEMPLATE,
-        configuration.windowSizeSec);
-    query = BeamSql.query(queryString);
+    String queryString = String.format(QUERY_TEMPLATE, configuration.windowSizeSec);
+    query = SqlTransform.query(queryString);
   }
 
   @Override
   public PCollection<Bid> expand(PCollection<Event> allEvents) {
-    RowCoder bidRecordCoder = getBidRowCoder();
+    PCollection<Row> bids =
+        allEvents
+            .apply(Filter.by(IS_BID))
+            .apply(getName() + ".SelectEvent", new SelectEvent(Type.BID));
 
-    PCollection<Row> bids = allEvents
-        .apply(Filter.by(IS_BID))
-        .apply(getName() + ".ToRow", ToRow.parDo())
-        .setCoder(bidRecordCoder);
-
-    PCollection<Row> queryResultsRows =
-        PCollectionTuple.of(new TupleTag<>("Bid"), bids)
-            .apply(query);
-
-    return queryResultsRows
-        .apply(bidParDo())
-        .setCoder(Bid.CODER);
-  }
-
-  private RowCoder getBidRowCoder() {
-    return ADAPTERS.get(Bid.class).getSchema().getRowCoder();
-  }
-
-  private ParDo.SingleOutput<Row, Bid> bidParDo() {
-    return ADAPTERS.get(Bid.class).parDo();
+    return PCollectionTuple.of(new TupleTag<>("Bid"), bids)
+        .apply(query)
+        .apply(Convert.fromRows(Bid.class));
   }
 }

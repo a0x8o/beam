@@ -41,7 +41,7 @@ import org.apache.beam.sdk.transforms.Create;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.WindowingStrategy;
 import org.apache.beam.sdk.values.WindowingStrategy.AccumulationMode;
-import org.hamcrest.Matchers;
+import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.ExpectedException;
@@ -51,12 +51,16 @@ import org.junit.runners.JUnit4;
 /** Tests for {@link SdkComponents}. */
 @RunWith(JUnit4.class)
 public class SdkComponentsTest {
-  @Rule
-  public TestPipeline pipeline = TestPipeline.create().enableAbandonedNodeEnforcement(false);
-  @Rule
-  public ExpectedException thrown = ExpectedException.none();
+  @Rule public TestPipeline pipeline = TestPipeline.create().enableAbandonedNodeEnforcement(false);
+  @Rule public ExpectedException thrown = ExpectedException.none();
 
-  private SdkComponents components = SdkComponents.create();
+  private SdkComponents components;
+
+  @Before
+  public void setUp() throws Exception {
+    components = SdkComponents.create();
+    components.registerEnvironment(Environments.JAVA_SDK_HARNESS_ENVIRONMENT);
+  }
 
   @Test
   public void registerCoder() throws IOException {
@@ -78,7 +82,7 @@ public class SdkComponentsTest {
         KvCoder.of(StringUtf8Coder.of(), IterableCoder.of(SetCoder.of(ByteArrayCoder.of())));
     Coder<?> otherCoder =
         KvCoder.of(StringUtf8Coder.of(), IterableCoder.of(SetCoder.of(ByteArrayCoder.of())));
-    assertThat(coder, Matchers.equalTo(otherCoder));
+    assertThat(coder, equalTo(otherCoder));
     String id = components.registerCoder(coder);
     String otherId = components.registerCoder(otherCoder);
     assertThat(otherId, not(equalTo(id)));
@@ -145,9 +149,7 @@ public class SdkComponentsTest {
     components.registerPTransform(transform, null);
   }
 
-  /**
-   * Tests that trying to register a transform which has unregistered children throws.
-   */
+  /** Tests that trying to register a transform which has unregistered children throws. */
   @Test
   public void registerTransformWithUnregisteredChildren() throws IOException {
     Create.Values<Long> create = Create.of(1L, 2L, 3L);

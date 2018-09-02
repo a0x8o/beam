@@ -21,11 +21,11 @@ package org.apache.beam.sdk.extensions.sql.mock;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.extensions.sql.TestUtils;
-import org.apache.beam.sdk.extensions.sql.impl.schema.BeamIOType;
 import org.apache.beam.sdk.schemas.Schema;
 import org.apache.beam.sdk.testing.TestStream;
+import org.apache.beam.sdk.transforms.SerializableFunctions;
+import org.apache.beam.sdk.values.PBegin;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.Row;
 import org.apache.beam.sdk.values.TimestampedValue;
@@ -58,7 +58,7 @@ public class MockedUnboundedTable extends MockedTable {
    * }</pre>
    */
   public static MockedUnboundedTable of(final Object... args) {
-    return new MockedUnboundedTable(TestUtils.buildBeamSqlRowType(args));
+    return new MockedUnboundedTable(TestUtils.buildBeamSqlSchema(args));
   }
 
   public MockedUnboundedTable timestampColumnIndex(int idx) {
@@ -88,13 +88,10 @@ public class MockedUnboundedTable extends MockedTable {
   }
 
   @Override
-  public BeamIOType getSourceType() {
-    return BeamIOType.UNBOUNDED;
-  }
-
-  @Override
-  public PCollection<Row> buildIOReader(Pipeline pipeline) {
-    TestStream.Builder<Row> values = TestStream.create(schema.getRowCoder());
+  public PCollection<Row> buildIOReader(PBegin begin) {
+    TestStream.Builder<Row> values =
+        TestStream.create(
+            schema, SerializableFunctions.identity(), SerializableFunctions.identity());
 
     for (Pair<Duration, List<Row>> pair : timestampedRows) {
       values = values.advanceWatermarkTo(new Instant(0).plus(pair.getKey()));
@@ -107,10 +104,10 @@ public class MockedUnboundedTable extends MockedTable {
       }
     }
 
-    return pipeline
-        .begin()
+    return begin
         .apply(
             "MockedUnboundedTable_" + COUNTER.incrementAndGet(),
-            values.advanceWatermarkToInfinity());
+            values.advanceWatermarkToInfinity())
+        .setRowSchema(getSchema());
   }
 }

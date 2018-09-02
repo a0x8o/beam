@@ -19,6 +19,7 @@ package org.apache.beam.sdk.nexmark.model;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.google.common.base.Objects;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -30,42 +31,44 @@ import org.apache.beam.sdk.coders.VarIntCoder;
 import org.apache.beam.sdk.coders.VarLongCoder;
 import org.apache.beam.sdk.nexmark.NexmarkUtils;
 
-/**
- * Result of Query4.
- */
+/** Result of Query4. */
 public class CategoryPrice implements KnownSize, Serializable {
   private static final Coder<Long> LONG_CODER = VarLongCoder.of();
   private static final Coder<Integer> INT_CODER = VarIntCoder.of();
 
-  public static final Coder<CategoryPrice> CODER = new CustomCoder<CategoryPrice>() {
-    @Override
-    public void encode(CategoryPrice value, OutputStream outStream)
-        throws CoderException, IOException {
-      LONG_CODER.encode(value.category, outStream);
-      LONG_CODER.encode(value.price, outStream);
-      INT_CODER.encode(value.isLast ? 1 : 0, outStream);
-    }
+  public static final Coder<CategoryPrice> CODER =
+      new CustomCoder<CategoryPrice>() {
+        @Override
+        public void encode(CategoryPrice value, OutputStream outStream)
+            throws CoderException, IOException {
+          LONG_CODER.encode(value.category, outStream);
+          LONG_CODER.encode(value.price, outStream);
+          INT_CODER.encode(value.isLast ? 1 : 0, outStream);
+        }
 
-    @Override
-    public CategoryPrice decode(InputStream inStream)
-        throws CoderException, IOException {
-      long category = LONG_CODER.decode(inStream);
-      long price = LONG_CODER.decode(inStream);
-      boolean isLast = INT_CODER.decode(inStream) != 0;
-      return new CategoryPrice(category, price, isLast);
-    }
-    @Override public void verifyDeterministic() throws NonDeterministicException {}
-  };
+        @Override
+        public CategoryPrice decode(InputStream inStream) throws CoderException, IOException {
+          long category = LONG_CODER.decode(inStream);
+          long price = LONG_CODER.decode(inStream);
+          boolean isLast = INT_CODER.decode(inStream) != 0;
+          return new CategoryPrice(category, price, isLast);
+        }
 
-  @JsonProperty
-  public final long category;
+        @Override
+        public void verifyDeterministic() throws NonDeterministicException {}
+
+        @Override
+        public Object structuralValue(CategoryPrice v) {
+          return v;
+        }
+      };
+
+  @JsonProperty public final long category;
 
   /** Price in cents. */
-  @JsonProperty
-  public final long price;
+  @JsonProperty public final long price;
 
-  @JsonProperty
-  public final boolean isLast;
+  @JsonProperty public final boolean isLast;
 
   // For Avro only.
   @SuppressWarnings("unused")
@@ -93,5 +96,22 @@ public class CategoryPrice implements KnownSize, Serializable {
     } catch (JsonProcessingException e) {
       throw new RuntimeException(e);
     }
+  }
+
+  @Override
+  public boolean equals(Object o) {
+    if (this == o) {
+      return true;
+    }
+    if (o == null || getClass() != o.getClass()) {
+      return false;
+    }
+    CategoryPrice that = (CategoryPrice) o;
+    return category == that.category && price == that.price && isLast == that.isLast;
+  }
+
+  @Override
+  public int hashCode() {
+    return Objects.hashCode(category, price, isLast);
   }
 }

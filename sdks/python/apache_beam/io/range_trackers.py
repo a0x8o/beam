@@ -17,12 +17,16 @@
 
 """iobase.RangeTracker implementations provided with Apache Beam.
 """
+from __future__ import absolute_import
+from __future__ import division
 
+import codecs
 import logging
 import math
 import threading
+from builtins import zip
 
-from six import integer_types
+from past.builtins import long
 
 from apache_beam.io import iobase
 
@@ -47,9 +51,9 @@ class OffsetRangeTracker(iobase.RangeTracker):
       raise ValueError('Start offset must not be \'None\'')
     if end is None:
       raise ValueError('End offset must not be \'None\'')
-    assert isinstance(start, integer_types)
+    assert isinstance(start, (int, long))
     if end != self.OFFSET_INFINITY:
-      assert isinstance(end, integer_types)
+      assert isinstance(end, (int, long))
 
     assert start <= end
 
@@ -123,7 +127,7 @@ class OffsetRangeTracker(iobase.RangeTracker):
       self._last_record_start = record_start
 
   def try_split(self, split_offset):
-    assert isinstance(split_offset, integer_types)
+    assert isinstance(split_offset, (int, long))
     with self._lock:
       if self._stop_offset == OffsetRangeTracker.OFFSET_INFINITY:
         logging.debug('refusing to split %r at %d: stop position unspecified',
@@ -400,7 +404,7 @@ class LexicographicKeyRangeTracker(OrderedPositionRangeTracker):
       s += '\0' * (prec - len(s))
     else:
       s = s[:prec]
-    return int(s.encode('hex'), 16)
+    return int(codecs.encode(s, 'hex'), 16)
 
   @staticmethod
   def _string_from_int(i, prec):
@@ -408,4 +412,4 @@ class LexicographicKeyRangeTracker(OrderedPositionRangeTracker):
     Inverse of _string_to_int.
     """
     h = '%x' % i
-    return ('0' * (2 * prec - len(h)) + h).decode('hex')
+    return codecs.decode('0' * (2 * prec - len(h)) + h, 'hex')

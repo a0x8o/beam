@@ -18,92 +18,76 @@
 
 package org.apache.beam.sdk.nexmark.queries.sql;
 
-import static org.apache.beam.sdk.nexmark.model.sql.adapter.ModelAdaptersMapping.ADAPTERS;
-
 import com.google.common.collect.ImmutableList;
 import java.util.List;
 import org.apache.beam.sdk.nexmark.model.AuctionPrice;
 import org.apache.beam.sdk.nexmark.model.Bid;
 import org.apache.beam.sdk.nexmark.model.Event;
-import org.apache.beam.sdk.nexmark.model.sql.adapter.ModelFieldsAdapter;
 import org.apache.beam.sdk.testing.PAssert;
 import org.apache.beam.sdk.testing.TestPipeline;
 import org.apache.beam.sdk.transforms.Create;
-import org.apache.beam.sdk.values.PBegin;
 import org.apache.beam.sdk.values.PCollection;
+import org.joda.time.Instant;
 import org.junit.Rule;
 import org.junit.Test;
 
-/**
- * Unit tests for {@link SqlQuery2}.
- */
+/** Unit tests for {@link SqlQuery2}. */
 public class SqlQuery2Test {
 
-  private static final ModelFieldsAdapter<Bid> BID_ADAPTER = ADAPTERS.get(Bid.class);
+  private static final List<Bid> BIDS =
+      ImmutableList.of(
+          newBid(1L),
+          newBid(2L),
+          newBid(3L),
+          newBid(4L),
+          newBid(5L),
+          newBid(6L),
+          newBid(7L),
+          newBid(8L));
 
-  private static final List<Bid> BIDS = ImmutableList.of(
-      newBid(1L),
-      newBid(2L),
-      newBid(3L),
-      newBid(4L),
-      newBid(5L),
-      newBid(6L),
-      newBid(7L),
-      newBid(8L));
+  private static final List<Event> BIDS_EVENTS =
+      ImmutableList.of(
+          new Event(BIDS.get(0)),
+          new Event(BIDS.get(1)),
+          new Event(BIDS.get(2)),
+          new Event(BIDS.get(3)),
+          new Event(BIDS.get(4)),
+          new Event(BIDS.get(5)),
+          new Event(BIDS.get(6)),
+          new Event(BIDS.get(7)));
 
-  private static final List<Event> BIDS_EVENTS = ImmutableList.of(
-      new Event(BIDS.get(0)),
-      new Event(BIDS.get(1)),
-      new Event(BIDS.get(2)),
-      new Event(BIDS.get(3)),
-      new Event(BIDS.get(4)),
-      new Event(BIDS.get(5)),
-      new Event(BIDS.get(6)),
-      new Event(BIDS.get(7)));
+  private static final List<AuctionPrice> BIDS_EVEN =
+      ImmutableList.of(
+          newAuctionPrice(BIDS.get(1)),
+          newAuctionPrice(BIDS.get(3)),
+          newAuctionPrice(BIDS.get(5)),
+          newAuctionPrice(BIDS.get(7)));
 
-  private static final List<AuctionPrice> BIDS_EVEN = ImmutableList.of(
-      newAuctionPrice(BIDS.get(1)),
-      newAuctionPrice(BIDS.get(3)),
-      newAuctionPrice(BIDS.get(5)),
-      newAuctionPrice(BIDS.get(7)));
-
-  private static final List<AuctionPrice> BIDS_EVERY_THIRD = ImmutableList.of(
-      newAuctionPrice(BIDS.get(2)),
-      newAuctionPrice(BIDS.get(5)));
-
+  private static final List<AuctionPrice> BIDS_EVERY_THIRD =
+      ImmutableList.of(newAuctionPrice(BIDS.get(2)), newAuctionPrice(BIDS.get(5)));
 
   @Rule public TestPipeline testPipeline = TestPipeline.create();
 
   @Test
   public void testSkipsEverySecondElement() throws Exception {
-    PCollection<Event> bids =
-        PBegin
-            .in(testPipeline)
-            .apply(Create.of(BIDS_EVENTS).withCoder(Event.CODER));
+    PCollection<Event> bids = testPipeline.apply(Create.of(BIDS_EVENTS));
 
-    PAssert
-        .that(bids.apply(new SqlQuery2(2)))
-        .containsInAnyOrder(BIDS_EVEN);
+    PAssert.that(bids.apply(new SqlQuery2(2))).containsInAnyOrder(BIDS_EVEN);
 
     testPipeline.run();
   }
 
   @Test
   public void testSkipsEveryThirdElement() throws Exception {
-    PCollection<Event> bids =
-        PBegin
-            .in(testPipeline)
-            .apply(Create.of(BIDS_EVENTS).withCoder(Event.CODER));
+    PCollection<Event> bids = testPipeline.apply(Create.of(BIDS_EVENTS));
 
-    PAssert
-        .that(bids.apply(new SqlQuery2(3)))
-        .containsInAnyOrder(BIDS_EVERY_THIRD);
+    PAssert.that(bids.apply(new SqlQuery2(3))).containsInAnyOrder(BIDS_EVERY_THIRD);
 
     testPipeline.run();
   }
 
   private static Bid newBid(long id) {
-    return new Bid(id, 3L, 100L, 432342L + id, "extra_" + id);
+    return new Bid(id, 3L, 100L, new Instant(432342L + id), "extra_" + id);
   }
 
   private static AuctionPrice newAuctionPrice(Bid bid) {

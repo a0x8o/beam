@@ -19,7 +19,6 @@ package org.apache.beam.sdk.transforms;
 
 import static org.apache.beam.sdk.transforms.Requirements.requiresSideInputs;
 import static org.apache.beam.sdk.transforms.Watch.Growth.afterTimeSinceNewOutput;
-import static org.apache.beam.sdk.transforms.Watch.Growth.afterTotalOf;
 import static org.apache.beam.sdk.transforms.Watch.Growth.allOf;
 import static org.apache.beam.sdk.transforms.Watch.Growth.eitherOf;
 import static org.apache.beam.sdk.transforms.Watch.Growth.never;
@@ -51,7 +50,7 @@ import org.apache.beam.sdk.coders.VarIntCoder;
 import org.apache.beam.sdk.testing.NeedsRunner;
 import org.apache.beam.sdk.testing.PAssert;
 import org.apache.beam.sdk.testing.TestPipeline;
-import org.apache.beam.sdk.testing.UsesSplittableParDo;
+import org.apache.beam.sdk.transforms.Watch.Growth;
 import org.apache.beam.sdk.transforms.Watch.Growth.PollFn;
 import org.apache.beam.sdk.transforms.Watch.Growth.PollResult;
 import org.apache.beam.sdk.transforms.Watch.GrowthState;
@@ -76,7 +75,7 @@ public class WatchTest implements Serializable {
   @Rule public transient TestPipeline p = TestPipeline.create();
 
   @Test
-  @Category({NeedsRunner.class, UsesSplittableParDo.class})
+  @Category(NeedsRunner.class)
   public void testSinglePollMultipleInputs() {
     PCollection<KV<String, String>> res =
         p.apply(Create.of("a", "b"))
@@ -102,7 +101,7 @@ public class WatchTest implements Serializable {
   }
 
   @Test
-  @Category({NeedsRunner.class, UsesSplittableParDo.class})
+  @Category(NeedsRunner.class)
   public void testSinglePollMultipleInputsWithSideInput() {
     final PCollectionView<String> moo =
         p.apply("moo", Create.of("moo")).apply("moo singleton", View.asSingleton());
@@ -132,13 +131,13 @@ public class WatchTest implements Serializable {
   }
 
   @Test
-  @Category({NeedsRunner.class, UsesSplittableParDo.class})
+  @Category(NeedsRunner.class)
   public void testMultiplePollsWithTerminationBecauseOutputIsFinal() {
     testMultiplePolls(false);
   }
 
   @Test
-  @Category({NeedsRunner.class, UsesSplittableParDo.class})
+  @Category(NeedsRunner.class)
   public void testMultiplePollsWithTerminationDueToTerminationCondition() {
     testMultiplePolls(true);
   }
@@ -156,7 +155,7 @@ public class WatchTest implements Serializable {
                             standardSeconds(3) /* timeToDeclareOutputFinal */,
                             standardSeconds(30) /* timeToFail */))
                     .withTerminationPerInput(
-                        Watch.Growth.afterTotalOf(
+                        Growth.afterTotalOf(
                             standardSeconds(
                                 // At 2 seconds, all output has been yielded, but not yet
                                 // declared final - so polling should terminate per termination
@@ -175,7 +174,7 @@ public class WatchTest implements Serializable {
   }
 
   @Test
-  @Category({NeedsRunner.class, UsesSplittableParDo.class})
+  @Category(NeedsRunner.class)
   public void testMultiplePollsWithKeyExtractor() {
     List<KV<Integer, String>> polls =
         Arrays.asList(
@@ -211,7 +210,7 @@ public class WatchTest implements Serializable {
                                 standardSeconds(30) /* timeToFail */),
                             Requirements.empty()),
                         KV::getKey)
-                    .withTerminationPerInput(Watch.Growth.afterTotalOf(standardSeconds(5)))
+                    .withTerminationPerInput(Growth.afterTotalOf(standardSeconds(5)))
                     .withPollInterval(Duration.millis(100))
                     .withOutputCoder(KvCoder.of(VarIntCoder.of(), StringUtf8Coder.of()))
                     .withOutputKeyCoder(VarIntCoder.of()))
@@ -223,9 +222,8 @@ public class WatchTest implements Serializable {
     p.run();
   }
 
-
   @Test
-  @Category({NeedsRunner.class, UsesSplittableParDo.class})
+  @Category(NeedsRunner.class)
   public void testMultiplePollsStopAfterTimeSinceNewOutput() {
     List<Integer> all = Arrays.asList(0, 1, 2, 3, 4, 5, 6, 7, 8, 9);
 
@@ -240,8 +238,7 @@ public class WatchTest implements Serializable {
                             standardSeconds(1000) /* timeToDeclareOutputFinal */,
                             standardSeconds(30) /* timeToFail */))
                     // Should terminate after 4 seconds - earlier than timeToFail
-                    .withTerminationPerInput(
-                        Watch.Growth.afterTimeSinceNewOutput(standardSeconds(3)))
+                    .withTerminationPerInput(afterTimeSinceNewOutput(standardSeconds(3)))
                     .withPollInterval(Duration.millis(300))
                     .withOutputCoder(VarIntCoder.of()))
             .apply("Drop input", Values.create());
@@ -252,7 +249,7 @@ public class WatchTest implements Serializable {
   }
 
   @Test
-  @Category({NeedsRunner.class, UsesSplittableParDo.class})
+  @Category(NeedsRunner.class)
   public void testSinglePollWithManyResults() {
     // More than the default 100 elements per checkpoint for direct runner.
     final long numResults = 3000;
@@ -272,7 +269,7 @@ public class WatchTest implements Serializable {
                             return PollResult.complete(Instant.now(), output);
                           }
                         })
-                    .withTerminationPerInput(Watch.Growth.afterTotalOf(standardSeconds(1)))
+                    .withTerminationPerInput(Growth.afterTotalOf(standardSeconds(1)))
                     .withPollInterval(Duration.millis(1))
                     .withOutputCoder(KvCoder.of(StringUtf8Coder.of(), VarIntCoder.of())))
             .apply("Drop input", Values.create());
@@ -298,7 +295,7 @@ public class WatchTest implements Serializable {
   }
 
   @Test
-  @Category({NeedsRunner.class, UsesSplittableParDo.class})
+  @Category(NeedsRunner.class)
   public void testMultiplePollsWithManyResults() {
     final long numResults = 3000;
     List<Integer> all = Lists.newArrayList();
@@ -427,7 +424,7 @@ public class WatchTest implements Serializable {
   @Test
   public void testTerminationConditionsAfterTotalOf() {
     Instant now = Instant.now();
-    Watch.Growth.AfterTotalOf<Object> c = afterTotalOf(standardSeconds(5));
+    Watch.Growth.AfterTotalOf<Object> c = Growth.afterTotalOf(standardSeconds(5));
     KV<Instant, ReadableDuration> state = c.forNewInput(now, null);
     assertFalse(c.canStopPolling(now, state));
     assertFalse(c.canStopPolling(now.plus(standardSeconds(3)), state));
@@ -458,8 +455,8 @@ public class WatchTest implements Serializable {
   @Test
   public void testTerminationConditionsEitherOf() {
     Instant now = Instant.now();
-    Watch.Growth.AfterTotalOf<Object> a = afterTotalOf(standardSeconds(5));
-    Watch.Growth.AfterTotalOf<Object> b = afterTotalOf(standardSeconds(10));
+    Watch.Growth.AfterTotalOf<Object> a = Growth.afterTotalOf(standardSeconds(5));
+    Watch.Growth.AfterTotalOf<Object> b = Growth.afterTotalOf(standardSeconds(10));
 
     Watch.Growth.BinaryCombined<
             Object, KV<Instant, ReadableDuration>, KV<Instant, ReadableDuration>>
@@ -474,8 +471,8 @@ public class WatchTest implements Serializable {
   @Test
   public void testTerminationConditionsAllOf() {
     Instant now = Instant.now();
-    Watch.Growth.AfterTotalOf<Object> a = afterTotalOf(standardSeconds(5));
-    Watch.Growth.AfterTotalOf<Object> b = afterTotalOf(standardSeconds(10));
+    Watch.Growth.AfterTotalOf<Object> a = Growth.afterTotalOf(standardSeconds(5));
+    Watch.Growth.AfterTotalOf<Object> b = Growth.afterTotalOf(standardSeconds(10));
 
     Watch.Growth.BinaryCombined<
             Object, KV<Instant, ReadableDuration>, KV<Instant, ReadableDuration>>

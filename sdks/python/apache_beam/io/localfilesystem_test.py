@@ -18,6 +18,8 @@
 
 """Unit tests for LocalFileSystem."""
 
+from __future__ import absolute_import
+
 import filecmp
 import logging
 import os
@@ -146,7 +148,7 @@ class LocalFileSystemTest(unittest.TestCase):
     with self.assertRaisesRegexp(BeamIOError,
                                  r'^Match operation failed') as error:
       self.fs.match([None])
-    self.assertEqual(error.exception.exception_details.keys(), [None])
+    self.assertEqual(list(error.exception.exception_details.keys()), [None])
 
   def test_match_glob(self):
     path1 = os.path.join(self.tmpdir, 'f1')
@@ -190,11 +192,12 @@ class LocalFileSystemTest(unittest.TestCase):
     with self.assertRaisesRegexp(BeamIOError,
                                  r'^Copy operation failed') as error:
       self.fs.copy([path1], [path2])
-    self.assertEqual(error.exception.exception_details.keys(), [(path1, path2)])
+    self.assertEqual(list(error.exception.exception_details.keys()),
+                     [(path1, path2)])
 
   def test_copy_directory(self):
-    path_t1 = os.path.join(self.tmpdir, 't1')
-    path_t2 = os.path.join(self.tmpdir, 't2')
+    path_t1 = os.path.join(self.tmpdir, 't1/11')
+    path_t2 = os.path.join(self.tmpdir, 't2/22')
     self.fs.mkdirs(path_t1)
     self.fs.mkdirs(path_t2)
 
@@ -205,6 +208,19 @@ class LocalFileSystemTest(unittest.TestCase):
 
     self.fs.copy([path_t1], [path_t2])
     self.assertTrue(filecmp.cmp(path1, path2))
+
+  def test_create_mkdirs_open(self):
+    path = os.path.join(self.tmpdir, 't1/t2/t3')
+    with self.fs.create(path) as f:
+      f.write("yay")
+
+    with self.fs.open(path) as f:
+      self.assertEqual(f.read(), "yay")
+
+  def test_open_error(self):
+    path = os.path.join(self.tmpdir, 't1')
+    with self.assertRaisesRegexp(IOError, r'No such file or directory'):
+      self.fs.open(path)
 
   def test_rename(self):
     path1 = os.path.join(self.tmpdir, 'f1')
@@ -222,11 +238,28 @@ class LocalFileSystemTest(unittest.TestCase):
     with self.assertRaisesRegexp(BeamIOError,
                                  r'^Rename operation failed') as error:
       self.fs.rename([path1], [path2])
-    self.assertEqual(error.exception.exception_details.keys(), [(path1, path2)])
+    self.assertEqual(list(error.exception.exception_details.keys()),
+                     [(path1, path2)])
 
   def test_rename_directory(self):
     path_t1 = os.path.join(self.tmpdir, 't1')
     path_t2 = os.path.join(self.tmpdir, 't2')
+    self.fs.mkdirs(path_t1)
+
+    path1 = os.path.join(path_t1, 'f1')
+    path2 = os.path.join(path_t2, 'f1')
+    with open(path1, 'a') as f:
+      f.write('Hello')
+
+    self.fs.rename([path_t1], [path_t2])
+    self.assertTrue(self.fs.exists(path_t2))
+    self.assertFalse(self.fs.exists(path_t1))
+    self.assertTrue(self.fs.exists(path2))
+    self.assertFalse(self.fs.exists(path1))
+
+  def test_rename_mkdirs(self):
+    path_t1 = os.path.join(self.tmpdir, 't1')
+    path_t2 = os.path.join(self.tmpdir, 't2/t3/t4')
     self.fs.mkdirs(path_t1)
 
     path1 = os.path.join(path_t1, 'f1')
@@ -273,7 +306,7 @@ class LocalFileSystemTest(unittest.TestCase):
     with self.assertRaisesRegexp(BeamIOError,
                                  r'^Delete operation failed') as error:
       self.fs.delete([path1])
-    self.assertEqual(error.exception.exception_details.keys(), [path1])
+    self.assertEqual(list(error.exception.exception_details.keys()), [path1])
 
 
 if __name__ == '__main__':

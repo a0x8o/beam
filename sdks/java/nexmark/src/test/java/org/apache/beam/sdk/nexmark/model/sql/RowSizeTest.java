@@ -24,12 +24,14 @@ import static org.junit.Assert.assertThat;
 
 import com.google.common.collect.Iterables;
 import java.math.BigDecimal;
-import org.apache.beam.sdk.extensions.sql.RowSqlTypes;
+import org.apache.beam.sdk.extensions.sql.impl.utils.CalciteUtils;
 import org.apache.beam.sdk.schemas.Schema;
+import org.apache.beam.sdk.schemas.SchemaCoder;
 import org.apache.beam.sdk.testing.PAssert;
 import org.apache.beam.sdk.testing.TestPipeline;
 import org.apache.beam.sdk.testing.TestStream;
 import org.apache.beam.sdk.transforms.SerializableFunction;
+import org.apache.beam.sdk.transforms.SerializableFunctions;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.Row;
 import org.joda.time.DateTime;
@@ -37,32 +39,30 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.ExpectedException;
 
-/**
- * Unit tests for {@link RowSize}.
- */
+/** Unit tests for {@link RowSize}. */
 public class RowSizeTest {
 
-  private static final Schema ROW_TYPE = RowSqlTypes.builder()
-      .withTinyIntField("f_tinyint")
-      .withSmallIntField("f_smallint")
-      .withIntegerField("f_int")
-      .withBigIntField("f_bigint")
-      .withFloatField("f_float")
-      .withDoubleField("f_double")
-      .withDecimalField("f_decimal")
-      .withBooleanField("f_boolean")
-      .withTimeField("f_time")
-      .withDateField("f_date")
-      .withTimestampField("f_timestamp")
-      .withCharField("f_char")
-      .withVarcharField("f_varchar")
-      .build();
+  private static final Schema ROW_TYPE =
+      Schema.builder()
+          .addByteField("f_tinyint")
+          .addInt16Field("f_smallint")
+          .addInt32Field("f_int")
+          .addInt64Field("f_bigint")
+          .addFloatField("f_float")
+          .addDoubleField("f_double")
+          .addDecimalField("f_decimal")
+          .addBooleanField("f_boolean")
+          .addField("f_time", CalciteUtils.TIME)
+          .addField("f_date", CalciteUtils.DATE)
+          .addDateTimeField("f_timestamp")
+          .addField("f_char", CalciteUtils.CHAR)
+          .addField("f_varchar", CalciteUtils.VARCHAR)
+          .build();
 
   private static final long ROW_SIZE = 96L;
 
   private static final Row ROW =
-      Row
-          .withSchema(ROW_TYPE)
+      Row.withSchema(ROW_TYPE)
           .addValues(
               (byte) 1,
               (short) 2,
@@ -89,15 +89,17 @@ public class RowSizeTest {
 
   @Test
   public void testParDoConvertsToRecordSize() throws Exception {
-    PCollection<Row> rows = testPipeline.apply(
-        TestStream
-            .create(ROW_TYPE.getRowCoder())
-            .addElements(ROW)
-            .advanceWatermarkToInfinity());
+    PCollection<Row> rows =
+        testPipeline.apply(
+            TestStream.create(
+                    SchemaCoder.of(
+                        ROW_TYPE,
+                        SerializableFunctions.identity(),
+                        SerializableFunctions.identity()))
+                .addElements(ROW)
+                .advanceWatermarkToInfinity());
 
-    PAssert
-        .that(rows)
-        .satisfies(new CorrectSize());
+    PAssert.that(rows).satisfies(new CorrectSize());
 
     testPipeline.run();
   }

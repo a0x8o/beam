@@ -27,12 +27,6 @@ import static org.junit.Assert.assertThat;
 import static org.junit.Assert.fail;
 
 import com.google.common.util.concurrent.Uninterruptibles;
-import io.grpc.ManagedChannel;
-import io.grpc.Server;
-import io.grpc.inprocess.InProcessChannelBuilder;
-import io.grpc.inprocess.InProcessServerBuilder;
-import io.grpc.stub.CallStreamObserver;
-import io.grpc.stub.StreamObserver;
 import java.util.EnumMap;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
@@ -48,8 +42,13 @@ import org.apache.beam.model.fnexecution.v1.BeamFnApi.RegisterRequest;
 import org.apache.beam.model.fnexecution.v1.BeamFnControlGrpc;
 import org.apache.beam.model.pipeline.v1.Endpoints;
 import org.apache.beam.sdk.fn.function.ThrowingFunction;
-import org.apache.beam.sdk.fn.stream.StreamObserverFactory.StreamObserverClientFactory;
+import org.apache.beam.sdk.fn.stream.OutboundObserverFactory;
+import org.apache.beam.sdk.fn.test.InProcessManagedChannelFactory;
 import org.apache.beam.sdk.fn.test.TestStreams;
+import org.apache.beam.vendor.grpc.v1.io.grpc.Server;
+import org.apache.beam.vendor.grpc.v1.io.grpc.inprocess.InProcessServerBuilder;
+import org.apache.beam.vendor.grpc.v1.io.grpc.stub.CallStreamObserver;
+import org.apache.beam.vendor.grpc.v1.io.grpc.stub.StreamObserver;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
@@ -117,9 +116,6 @@ public class BeamFnControlClientTest {
             .build();
     server.start();
     try {
-      ManagedChannel channel =
-          InProcessChannelBuilder.forName(apiServiceDescriptor.getUrl()).build();
-
       EnumMap<
               BeamFnApi.InstructionRequest.RequestCase,
               ThrowingFunction<BeamFnApi.InstructionRequest, BeamFnApi.InstructionResponse.Builder>>
@@ -137,9 +133,10 @@ public class BeamFnControlClientTest {
 
       BeamFnControlClient client =
           new BeamFnControlClient(
+              "",
               apiServiceDescriptor,
-              (Endpoints.ApiServiceDescriptor descriptor) -> channel,
-              this::createStreamForTest,
+              InProcessManagedChannelFactory.create(),
+              OutboundObserverFactory.trivial(),
               handlers);
 
       // Get the connected client and attempt to send and receive an instruction
@@ -204,9 +201,6 @@ public class BeamFnControlClientTest {
             .build();
     server.start();
     try {
-      ManagedChannel channel =
-          InProcessChannelBuilder.forName(apiServiceDescriptor.getUrl()).build();
-
       EnumMap<
               BeamFnApi.InstructionRequest.RequestCase,
               ThrowingFunction<BeamFnApi.InstructionRequest, BeamFnApi.InstructionResponse.Builder>>
@@ -219,9 +213,10 @@ public class BeamFnControlClientTest {
 
       BeamFnControlClient client =
           new BeamFnControlClient(
+              "",
               apiServiceDescriptor,
-              (Endpoints.ApiServiceDescriptor descriptor) -> channel,
-              this::createStreamForTest,
+              InProcessManagedChannelFactory.create(),
+              OutboundObserverFactory.trivial(),
               handlers);
 
       // Get the connected client and attempt to send and receive an instruction
@@ -255,10 +250,5 @@ public class BeamFnControlClientTest {
     } finally {
       server.shutdownNow();
     }
-  }
-
-  private <ReqT, RespT> StreamObserver<RespT> createStreamForTest(
-      StreamObserverClientFactory<ReqT, RespT> clientFactory, StreamObserver<ReqT> handler) {
-    return clientFactory.outboundObserverFor(handler);
   }
 }

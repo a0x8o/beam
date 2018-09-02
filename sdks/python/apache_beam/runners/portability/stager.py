@@ -44,6 +44,8 @@ one-time manual trimming is desirable.
 TODO(silviuc): Should we allow several setup packages?
 TODO(silviuc): We should allow customizing the exact command for setup build.
 """
+from __future__ import absolute_import
+
 import glob
 import logging
 import os
@@ -219,6 +221,10 @@ class Stager(object):
         resources.extend(
             self._stage_beam_sdk(sdk_remote_location, staging_location,
                                  temp_dir))
+      elif setup_options.sdk_location == 'container':
+        # Use the SDK that's built into the container, rather than re-staging
+        # it.
+        pass
       else:
         # This branch is also used by internal tests running with the SDK built
         # at head.
@@ -240,8 +246,8 @@ class Stager(object):
           resources.append(sdk_staged_filename)
         else:
           if setup_options.sdk_location == 'default':
-            raise RuntimeError('Cannot find default Beam SDK tar file "%s"',
-                               sdk_path)
+            raise RuntimeError('Cannot find default Beam SDK tar file "%s"'
+                               % sdk_path)
           elif not setup_options.sdk_location:
             logging.info('Beam SDK will not be staged since --sdk_location '
                          'is empty.')
@@ -252,8 +258,8 @@ class Stager(object):
 
     # Delete all temp files created while staging job resources.
     shutil.rmtree(temp_dir)
-    self.commit_manifest()
-    return resources
+    retrieval_token = self.commit_manifest()
+    return retrieval_token, resources
 
   @staticmethod
   def _download_file(from_url, to_path):

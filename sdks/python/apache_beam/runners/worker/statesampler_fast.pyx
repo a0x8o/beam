@@ -71,24 +71,6 @@ cdef inline int64_t get_nsec_time() nogil:
 
 cdef class StateSampler(object):
   """Tracks time spent in states during pipeline execution."""
-  cdef int _sampling_period_ms
-  cdef int _sampling_period_ms_start
-  cdef double _sampling_period_ratio
-
-  cdef list scoped_states_by_index
-
-  cdef public bint started
-  cdef public bint finished
-  cdef object sampling_thread
-
-  # This lock guards members that are shared between threads, specificaly
-  # finished, scoped_states_by_index, and the nsecs field of each state therein.
-  cdef pythread.PyThread_type_lock lock
-
-  cdef public int64_t state_transition_count
-  cdef public int64_t time_since_transition
-
-  cdef int32_t current_state_index
 
   def __init__(self,
                sampling_period_ms,
@@ -108,8 +90,12 @@ cdef class StateSampler(object):
     self.current_state_index = 0
     self.time_since_transition = 0
     self.state_transition_count = 0
-    unknown_state = ScopedState(
-        self, CounterName('unknown'), self.current_state_index)
+    unknown_state = ScopedState(self,
+                                CounterName('unknown'),
+                                None,
+                                self.current_state_index,
+                                None,
+                                None)
     pythread.PyThread_acquire_lock(self.lock, pythread.WAIT_LOCK)
     self.scoped_states_by_index = [unknown_state]
     pythread.PyThread_release_lock(self.lock)
@@ -171,8 +157,8 @@ cdef class StateSampler(object):
   def current_state(self):
     return self.scoped_states_by_index[self.current_state_index]
 
-  cpdef _scoped_state(self, counter_name, output_counter,
-                      metrics_container=None):
+  cpdef _scoped_state(self, counter_name, name_context, output_counter,
+                      metrics_container):
     """Returns a context manager managing transitions for a given state.
     Args:
      counter_name: A CounterName object with information about the execution
@@ -186,6 +172,7 @@ cdef class StateSampler(object):
     new_state_index = len(self.scoped_states_by_index)
     scoped_state = ScopedState(self,
                                counter_name,
+                               name_context,
                                new_state_index,
                                output_counter,
                                metrics_container)
@@ -201,18 +188,16 @@ cdef class StateSampler(object):
 cdef class ScopedState(object):
   """Context manager class managing transitions for a given sampler state."""
 
-  cdef readonly StateSampler sampler
-  cdef readonly int32_t state_index
-  cdef readonly object counter
-  cdef readonly object name
-  cdef readonly int64_t _nsecs
-  cdef int32_t old_state_index
-  cdef readonly MetricsContainer _metrics_container
-
-  def __init__(
-      self, sampler, name, state_index, counter=None, metrics_container=None):
+  def __init__(self,
+               sampler,
+               name,
+               step_name_context,
+               state_index,
+               counter,
+               metrics_container):
     self.sampler = sampler
     self.name = name
+    self.name_context = step_name_context
     self.state_index = state_index
     self.counter = counter
     self._metrics_container = metrics_container

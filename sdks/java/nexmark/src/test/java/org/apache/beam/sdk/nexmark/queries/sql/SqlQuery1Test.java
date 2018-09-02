@@ -18,41 +18,31 @@
 
 package org.apache.beam.sdk.nexmark.queries.sql;
 
-import static org.apache.beam.sdk.nexmark.model.sql.adapter.ModelAdaptersMapping.ADAPTERS;
 import static org.junit.Assert.assertEquals;
 
 import org.apache.beam.sdk.nexmark.model.Bid;
 import org.apache.beam.sdk.nexmark.model.Event;
-import org.apache.beam.sdk.nexmark.model.sql.adapter.ModelFieldsAdapter;
+import org.apache.beam.sdk.schemas.SchemaRegistry;
 import org.apache.beam.sdk.testing.PAssert;
 import org.apache.beam.sdk.testing.TestPipeline;
 import org.apache.beam.sdk.testing.TestStream;
 import org.apache.beam.sdk.values.PCollection;
+import org.joda.time.Instant;
 import org.junit.Rule;
 import org.junit.Test;
 
-/**
- * Unit tests for {@link SqlQuery1}.
- */
+/** Unit tests for {@link SqlQuery1}. */
 public class SqlQuery1Test {
 
-  private static final Bid BID1_USD =
-      new Bid(5L, 3L, 100L, 43234234L, "extra1");
+  private static final Bid BID1_USD = new Bid(5L, 3L, 100L, new Instant(43234234L), "extra1");
 
-  private static final Bid BID2_USD =
-      new Bid(6L, 4L, 500L, 13234234L, "extra2");
+  private static final Bid BID2_USD = new Bid(6L, 4L, 500L, new Instant(13234234L), "extra2");
 
-  private static final Bid BID1_EUR =
-      new Bid(5L, 3L, 89L, 43234234L, "extra1");
+  private static final Bid BID1_EUR = new Bid(5L, 3L, 89L, new Instant(43234234L), "extra1");
 
-  private static final Bid BID2_EUR =
-      new Bid(6L, 4L, 445L, 13234234L, "extra2");
+  private static final Bid BID2_EUR = new Bid(6L, 4L, 445L, new Instant(13234234L), "extra2");
 
-  private static final ModelFieldsAdapter<Bid> BID_ADAPTER =
-      ADAPTERS.get(Bid.class);
-
-  @Rule
-  public TestPipeline testPipeline = TestPipeline.create();
+  @Rule public TestPipeline testPipeline = TestPipeline.create();
 
   @Test
   public void testDolToEurConversion() {
@@ -62,15 +52,18 @@ public class SqlQuery1Test {
 
   @Test
   public void testConvertsPriceToEur() throws Exception {
-    PCollection<Event> bids = testPipeline.apply(
-        TestStream.create(Event.CODER)
-            .addElements(new Event(BID1_USD))
-            .addElements(new Event(BID2_USD))
-            .advanceWatermarkToInfinity());
+    SchemaRegistry registry = SchemaRegistry.createDefault();
+    PCollection<Event> bids =
+        testPipeline.apply(
+            TestStream.create(
+                    registry.getSchema(Event.class),
+                    registry.getToRowFunction(Event.class),
+                    registry.getFromRowFunction(Event.class))
+                .addElements(new Event(BID1_USD))
+                .addElements(new Event(BID2_USD))
+                .advanceWatermarkToInfinity());
 
-    PAssert
-        .that(bids.apply(new SqlQuery1()))
-        .containsInAnyOrder(BID1_EUR, BID2_EUR);
+    PAssert.that(bids.apply(new SqlQuery1())).containsInAnyOrder(BID1_EUR, BID2_EUR);
 
     testPipeline.run();
   }

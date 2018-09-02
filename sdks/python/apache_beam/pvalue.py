@@ -28,8 +28,10 @@ from __future__ import absolute_import
 
 import collections
 import itertools
+from builtins import hex
+from builtins import object
 
-from six import string_types
+from past.builtins import unicode
 
 from apache_beam import coders
 from apache_beam import typehints
@@ -261,9 +263,9 @@ class TaggedOutput(object):
   """
 
   def __init__(self, tag, value):
-    if not isinstance(tag, string_types):
+    if not isinstance(tag, (str, unicode)):
       raise TypeError(
-          'Attempting to create a TaggedOutput with non-string tag %s' % tag)
+          'Attempting to create a TaggedOutput with non-string tag %s' % (tag,))
     self.tag = tag
     self.value = value
 

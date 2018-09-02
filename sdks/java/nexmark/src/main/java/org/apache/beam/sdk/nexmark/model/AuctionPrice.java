@@ -29,41 +29,43 @@ import org.apache.beam.sdk.coders.CoderException;
 import org.apache.beam.sdk.coders.CustomCoder;
 import org.apache.beam.sdk.coders.VarLongCoder;
 import org.apache.beam.sdk.nexmark.NexmarkUtils;
+import org.apache.beam.sdk.schemas.DefaultSchema;
+import org.apache.beam.sdk.schemas.JavaFieldSchema;
 
-/**
- * Result of Query2.
- */
+/** Result of Query2. */
+@DefaultSchema(JavaFieldSchema.class)
 public class AuctionPrice implements KnownSize, Serializable {
   private static final Coder<Long> LONG_CODER = VarLongCoder.of();
 
-  public static final Coder<AuctionPrice> CODER = new CustomCoder<AuctionPrice>() {
-    @Override
-    public void encode(AuctionPrice value, OutputStream outStream)
-        throws CoderException, IOException {
-      LONG_CODER.encode(value.auction, outStream);
-      LONG_CODER.encode(value.price, outStream);
-    }
+  public static final Coder<AuctionPrice> CODER =
+      new CustomCoder<AuctionPrice>() {
+        @Override
+        public void encode(AuctionPrice value, OutputStream outStream)
+            throws CoderException, IOException {
+          LONG_CODER.encode(value.auction, outStream);
+          LONG_CODER.encode(value.price, outStream);
+        }
 
-    @Override
-    public AuctionPrice decode(
-        InputStream inStream)
-        throws CoderException, IOException {
-      long auction = LONG_CODER.decode(inStream);
-      long price = LONG_CODER.decode(inStream);
-      return new AuctionPrice(auction, price);
-    }
-  };
+        @Override
+        public AuctionPrice decode(InputStream inStream) throws CoderException, IOException {
+          long auction = LONG_CODER.decode(inStream);
+          long price = LONG_CODER.decode(inStream);
+          return new AuctionPrice(auction, price);
+        }
 
-  @JsonProperty
-  public final long auction;
+        @Override
+        public Object structuralValue(AuctionPrice v) {
+          return v;
+        }
+      };
+
+  @JsonProperty public long auction;
 
   /** Price in cents. */
-  @JsonProperty
-  public final long price;
+  @JsonProperty public long price;
 
-  // For Avro only.
   @SuppressWarnings("unused")
-  private AuctionPrice() {
+  public AuctionPrice() {
     auction = 0;
     price = 0;
   }
@@ -83,8 +85,7 @@ public class AuctionPrice implements KnownSize, Serializable {
     }
 
     AuctionPrice other = (AuctionPrice) otherObject;
-    return Objects.equals(auction, other.auction)
-        && Objects.equals(price, other.price);
+    return Objects.equals(auction, other.auction) && Objects.equals(price, other.price);
   }
 
   @Override

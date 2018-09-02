@@ -98,9 +98,9 @@ TableSchema: Describes the schema (types and order) for values in each row.
 
 TableFieldSchema: Describes the schema (type, name) for one field.
   Has several attributes, including 'name' and 'type'. Common values for
-  the type attribute are: 'STRING', 'INTEGER', 'FLOAT', 'BOOLEAN'. All possible
-  values are described at:
-  https://cloud.google.com/bigquery/preparing-data-for-bigquery#datatypes
+  the type attribute are: 'STRING', 'INTEGER', 'FLOAT', 'BOOLEAN', 'NUMERIC'.
+  All possible values are described at:
+  https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types
 
 TableRow: Holds all values in a table row. Has one attribute, 'f', which is a
   list of TableCell instances.
@@ -108,19 +108,27 @@ TableRow: Holds all values in a table row. Has one attribute, 'f', which is a
 TableCell: Holds the value for one cell (or field).  Has one attribute,
   'v', which is a JsonValue instance. This class is defined in
   apitools.base.py.extra_types.py module.
+
+As of Beam 2.7.0, the NUMERIC data type is supported. This data type supports
+high-precision decimal numbers (precision of 38 digits, scale of 9 digits).
 """
 
 from __future__ import absolute_import
 
 import collections
 import datetime
+import decimal
 import json
 import logging
 import re
 import time
 import uuid
+from builtins import object
+from builtins import zip
 
-from six import string_types
+from future.utils import iteritems
+from future.utils import itervalues
+from past.builtins import unicode
 
 from apache_beam import coders
 from apache_beam.internal.gcp import auth
@@ -156,6 +164,13 @@ JSON_COMPLIANCE_ERROR = 'NAN, INF and -INF values are not JSON compliant.'
 MAX_RETRIES = 3
 
 
+def default_encoder(obj):
+  if isinstance(obj, decimal.Decimal):
+    return str(obj)
+  raise TypeError(
+      "Object of type '%s' is not JSON serializable" % type(obj).__name__)
+
+
 class RowAsDictJsonCoder(coders.Coder):
   """A coder for a table row (represented as a dict) to/from a JSON string.
 
@@ -169,7 +184,8 @@ class RowAsDictJsonCoder(coders.Coder):
     # This code will catch this error to emit an error that explains
     # to the programmer that they have used NAN/INF values.
     try:
-      return json.dumps(table_row, allow_nan=False)
+      return json.dumps(
+          table_row, allow_nan=False, default=default_encoder)
     except ValueError as e:
       raise ValueError('%s. %s' % (e, JSON_COMPLIANCE_ERROR))
 
@@ -193,6 +209,7 @@ class TableRowJsonCoder(coders.Coder):
     # Precompute field names since we need them for row encoding.
     if self.table_schema:
       self.field_names = tuple(fs.name for fs in self.table_schema.fields)
+      self.field_types = tuple(fs.type for fs in self.table_schema.fields)
 
   def encode(self, table_row):
     if self.table_schema is None:
@@ -204,7 +221,8 @@ class TableRowJsonCoder(coders.Coder):
           collections.OrderedDict(
               zip(self.field_names,
                   [from_json_value(f.v) for f in table_row.f])),
-          allow_nan=False)
+          allow_nan=False,
+          default=default_encoder)
     except ValueError as e:
       raise ValueError('%s. %s' % (e, JSON_COMPLIANCE_ERROR))
 
@@ -212,7 +230,7 @@ class TableRowJsonCoder(coders.Coder):
     od = json.loads(
         encoded_table_row, object_pairs_hook=collections.OrderedDict)
     return bigquery.TableRow(
-        f=[bigquery.TableCell(v=to_json_value(e)) for e in od.itervalues()])
+        f=[bigquery.TableCell(v=to_json_value(e)) for e in itervalues(od)])
 
 
 def parse_table_schema_from_json(schema_string):
@@ -524,7 +542,7 @@ bigquery_v2_messages.TableSchema` object.
 
     self.table_reference = _parse_table_reference(table, dataset, project)
     # Transform the table schema into a bigquery.TableSchema instance.
-    if isinstance(schema, string_types):
+    if isinstance(schema, (str, unicode)):
       # TODO(silviuc): Should add a regex-based validation of the format.
       table_schema = bigquery.TableSchema()
       schema_list = [s.strip(' ') for s in schema.split(',')]
@@ -715,7 +733,7 @@ class BigQueryWriter(dataflow_io.NativeSinkWriter):
       self.rows_buffer = []
       if not passed:
         raise RuntimeError('Could not successfully insert rows to BigQuery'
-                           ' table [%s:%s.%s]. Errors: %s'%
+                           ' table [%s:%s.%s]. Errors: %s' %
                            (self.project_id, self.dataset_id,
                             self.table_id, errors))
 
@@ -1103,7 +1121,12 @@ class BigQueryWrapper(object):
     final_rows = []
     for row in rows:
       json_object = bigquery.JsonObject()
-      for k, v in row.iteritems():
+      for k, v in iteritems(row):
+        if isinstance(v, decimal.Decimal):
+          # decimal values are converted into string because JSON does not
+          # support the precision that decimal supports. BQ is able to handle
+          # inserts into NUMERIC columns by receiving JSON with string attrs.
+          v = str(v)
         json_object.additionalProperties.append(
             bigquery.JsonObject.AdditionalProperty(
                 key=k, value=to_json_value(v)))
@@ -1152,6 +1175,8 @@ class BigQueryWrapper(object):
       # when querying, the repeated and/or record fields are flattened
       # unless we pass the flatten_results flag as False to the source
       return self.convert_row_to_dict(value, field)
+    elif field.type == 'NUMERIC':
+      return decimal.Decimal(value)
     else:
       raise RuntimeError('Unexpected field type: %s' % field.type)
 
@@ -1177,7 +1202,7 @@ class BigQueryWrapper(object):
       elif value is None:
         if not field.mode == 'NULLABLE':
           raise ValueError('Received \'None\' as the value for the field %s '
-                           'but the field is not NULLABLE.', field.name)
+                           'but the field is not NULLABLE.' % field.name)
         result[field.name] = None
       else:
         result[field.name] = self._convert_cell_value_to_dict(value, field)
@@ -1415,7 +1440,7 @@ bigquery_v2_messages.TableSchema):
       return schema
     elif schema is None:
       return schema
-    elif isinstance(schema, string_types):
+    elif isinstance(schema, (str, unicode)):
       table_schema = WriteToBigQuery.get_table_schema_from_string(schema)
       return WriteToBigQuery.table_schema_to_dict(table_schema)
     elif isinstance(schema, bigquery.TableSchema):

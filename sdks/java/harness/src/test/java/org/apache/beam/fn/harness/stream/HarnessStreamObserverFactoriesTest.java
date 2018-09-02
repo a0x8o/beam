@@ -22,12 +22,12 @@ import static org.hamcrest.Matchers.instanceOf;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertThat;
 
-import io.grpc.stub.CallStreamObserver;
-import io.grpc.stub.StreamObserver;
 import org.apache.beam.sdk.fn.stream.BufferingStreamObserver;
 import org.apache.beam.sdk.fn.stream.DirectStreamObserver;
 import org.apache.beam.sdk.fn.stream.ForwardingClientResponseObserver;
 import org.apache.beam.sdk.options.PipelineOptionsFactory;
+import org.apache.beam.vendor.grpc.v1.io.grpc.stub.CallStreamObserver;
+import org.apache.beam.vendor.grpc.v1.io.grpc.stub.StreamObserver;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -50,7 +50,7 @@ public class HarnessStreamObserverFactoriesTest {
   public void testDefaultInstantiation() {
     StreamObserver<String> observer =
         HarnessStreamObserverFactories.fromOptions(PipelineOptionsFactory.create())
-            .from(this::fakeFactory, mockRequestObserver);
+            .outboundObserverFor(this::fakeFactory, mockRequestObserver);
     assertThat(observer, instanceOf(DirectStreamObserver.class));
   }
 
@@ -61,7 +61,7 @@ public class HarnessStreamObserverFactoriesTest {
                 PipelineOptionsFactory.fromArgs(
                         new String[] {"--experiments=beam_fn_api_buffered_stream"})
                     .create())
-            .from(this::fakeFactory, mockRequestObserver);
+            .outboundObserverFor(this::fakeFactory, mockRequestObserver);
     assertThat(observer, instanceOf(BufferingStreamObserver.class));
   }
 
@@ -75,7 +75,7 @@ public class HarnessStreamObserverFactoriesTest {
                               + "beam_fn_api_buffered_stream_buffer_size=1"
                         })
                     .create())
-            .from(this::fakeFactory, mockRequestObserver);
+            .outboundObserverFor(this::fakeFactory, mockRequestObserver);
     assertThat(observer, instanceOf(BufferingStreamObserver.class));
     assertEquals(1, ((BufferingStreamObserver<String>) observer).getBufferSize());
   }

@@ -20,6 +20,7 @@
 from __future__ import absolute_import
 
 import argparse
+from builtins import list
 from builtins import object
 
 from apache_beam.options.value_provider import RuntimeValueProvider
@@ -182,6 +183,9 @@ class PipelineOptions(HasDisplayData):
       if isinstance(v, bool):
         if v:
           flags.append('--%s' % k)
+      elif isinstance(v, list):
+        for i in v:
+          flags.append('--%s=%s' % (k, i))
       else:
         flags.append('--%s=%s' % (k, v))
 
@@ -510,6 +514,12 @@ class WorkerOptions(PipelineOptions):
         default=None,
         action='store_false',
         help='Whether to assign only private IP addresses to the worker VMs.')
+    parser.add_argument(
+        '--min_cpu_platform',
+        dest='min_cpu_platform',
+        type=str,
+        help='GCE minimum CPU platform. Default is determined by GCP.'
+    )
 
   def validate(self, validator):
     errors = []
@@ -634,6 +644,22 @@ class SetupOptions(PipelineOptions):
          'job submission, the files will be staged in the staging area '
          '(--staging_location option) and the workers will install them in '
          'same order they were specified on the command line.'))
+
+
+class PortableOptions(PipelineOptions):
+
+  @classmethod
+  def _add_argparse_args(cls, parser):
+    parser.add_argument('--job_endpoint',
+                        default=None,
+                        help=
+                        ('Job service endpoint to use. Should be in the form '
+                         'of address and port, e.g. localhost:3000'))
+    parser.add_argument('--harness_docker_image',
+                        default=None,
+                        help=
+                        ('Docker image to use for executing Python code '
+                         'in the pipeline when running using the Fn API.'))
 
 
 class TestOptions(PipelineOptions):

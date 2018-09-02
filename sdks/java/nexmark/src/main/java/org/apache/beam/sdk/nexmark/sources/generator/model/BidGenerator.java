@@ -27,25 +27,21 @@ import static org.apache.beam.sdk.nexmark.sources.generator.model.StringsGenerat
 import java.util.Random;
 import org.apache.beam.sdk.nexmark.model.Bid;
 import org.apache.beam.sdk.nexmark.sources.generator.GeneratorConfig;
+import org.joda.time.Instant;
 
-/**
- * Generates bids.
- */
+/** Generates bids. */
 public class BidGenerator {
 
   /**
-   * Fraction of people/auctions which may be 'hot' sellers/bidders/auctions are 1
-   * over these values.
+   * Fraction of people/auctions which may be 'hot' sellers/bidders/auctions are 1 over these
+   * values.
    */
   private static final int HOT_AUCTION_RATIO = 100;
+
   private static final int HOT_BIDDER_RATIO = 100;
 
-
-  /**
-   * Generate and return a random bid with next available id.
-   */
-  public static Bid nextBid(
-      long eventId, Random random, long timestamp, GeneratorConfig config) {
+  /** Generate and return a random bid with next available id. */
+  public static Bid nextBid(long eventId, Random random, long timestamp, GeneratorConfig config) {
 
     long auction;
     // Here P(bid will be for a hot auction) = 1 - 1/hotAuctionRatio.
@@ -71,6 +67,6 @@ public class BidGenerator {
     long price = PriceGenerator.nextPrice(random);
     int currentSize = 8 + 8 + 8 + 8;
     String extra = nextExtra(random, currentSize, config.getAvgBidByteSize());
-    return new Bid(auction, bidder, price, timestamp, extra);
+    return new Bid(auction, bidder, price, new Instant(timestamp), extra);
   }
 }

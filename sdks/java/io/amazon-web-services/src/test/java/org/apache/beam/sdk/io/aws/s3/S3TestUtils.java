@@ -52,7 +52,7 @@ class S3TestUtils {
   static S3Options s3OptionsWithSSEAwsKeyManagementParams() {
     S3Options options = s3Options();
     String awsKmsKeyId =
-            "arn:aws:kms:eu-west-1:123456789012:key/dc123456-7890-ABCD-EF01-234567890ABC";
+        "arn:aws:kms:eu-west-1:123456789012:key/dc123456-7890-ABCD-EF01-234567890ABC";
     SSEAwsKeyManagementParams sseAwsKeyManagementParams =
         new SSEAwsKeyManagementParams(awsKmsKeyId);
     options.setSSEAwsKeyManagementParams(sseAwsKeyManagementParams);
@@ -66,8 +66,12 @@ class S3TestUtils {
   }
 
   static S3FileSystem buildMockedS3FileSystem(S3Options options) {
+    return buildMockedS3FileSystem(options, Mockito.mock(AmazonS3.class));
+  }
+
+  static S3FileSystem buildMockedS3FileSystem(S3Options options, AmazonS3 client) {
     S3FileSystem s3FileSystem = new S3FileSystem(options);
-    s3FileSystem.setAmazonS3Client(Mockito.mock(AmazonS3.class));
+    s3FileSystem.setAmazonS3Client(client);
     return s3FileSystem;
   }
 
