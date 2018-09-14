@@ -86,6 +86,12 @@ public interface FlinkPipelineOptions
 
   void setCheckpointTimeoutMillis(Long checkpointTimeoutMillis);
 
+  @Description("The minimal pause before the next checkpoint is triggered.")
+  @Default.Long(-1L)
+  Long getMinPauseBetweenCheckpoints();
+
+  void setMinPauseBetweenCheckpoints(Long minPauseInterval);
+
   @Description(
       "Sets the number of times that failed tasks are re-executed. "
           + "A value of zero effectively disables fault tolerance. A value of -1 indicates "
@@ -167,4 +173,12 @@ public interface FlinkPipelineOptions
   Boolean isShutdownSourcesOnFinalWatermark();
 
   void setShutdownSourcesOnFinalWatermark(Boolean shutdownOnFinalWatermark);
+
+  @Description(
+      "Interval in milliseconds for sending latency tracking marks from the sources to the sinks. "
+          + "Interval value <= 0 disables the feature.")
+  @Default.Long(0)
+  Long getLatencyTrackingInterval();
+
+  void setLatencyTrackingInterval(Long interval);
 }
