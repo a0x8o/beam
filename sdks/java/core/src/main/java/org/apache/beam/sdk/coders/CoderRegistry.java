@@ -322,8 +322,7 @@ public class CoderRegistry {
     if (paramCoderOrNull != null) {
       return paramCoderOrNull;
     } else {
-      throw new CannotProvideCoderException(
-          "Cannot infer coder for type parameter " + param.getName());
+      throw new CannotProvideCoderException("Cannot infer coder for type parameter " + param);
     }
   }
 
@@ -544,7 +543,7 @@ public class CoderRegistry {
     // compatible.
     if ((codedType instanceof ParameterizedType) && !isNullOrEmpty(coder.getCoderArguments())) {
       ParameterizedType parameterizedSupertype =
-          ((ParameterizedType) candidateOkDescriptor.getSupertype(codedClass).getType());
+          (ParameterizedType) candidateOkDescriptor.getSupertype(codedClass).getType();
       Type[] typeArguments = parameterizedSupertype.getActualTypeArguments();
       List<? extends Coder<?>> typeArgumentCoders = coder.getCoderArguments();
       if (typeArguments.length < typeArgumentCoders.size()) {

@@ -54,6 +54,11 @@ Most importantly, if you have an idea of how to contribute, then do it!
 For a list of open starter tasks, check
 [https://s.apache.org/beam-starter-tasks](https://s.apache.org/beam-starter-tasks).
 
+## Finding Help
+
+If you find any issues with this guide or have questions that aren't answered, please
+[reach out to the Beam community]({{ site.baseurl }}/community/contact-us).
+
 ## Permissions
 
 For the [Beam issue tracker (JIRA)](https://issues.apache.org/jira/projects/BEAM/issues), 
@@ -62,6 +67,9 @@ to create issues or add comments. Only contributors can be assigned issues. If
 you want to be assigned issues, a PMC member can add you to the project contributor
 group.  Email the [dev@ mailing list]({{ site.baseurl }}/community/contact-us)
 to ask to be added as a contributor in the Beam issue tracker.
+
+Anyone can browse the [Beam Wiki Space](https://cwiki.apache.org/confluence/display/BEAM/Apache+Beam).
+If you wish to contribute changes, please request edit access on the [dev@ mailing list]({{ site.baseurl }}/community/contact-us).
 
 ## Contributing code
 
@@ -75,7 +83,7 @@ Coding happens at
 [https://github.com/apache/beam](https://github.com/apache/beam). To
 contribute, follow the usual GitHub process: fork the repo, make your changes,
 and open a pull request and @mention a reviewer. If you have more than one commit
-in your change, you many be asked to rebase and squash the commits.
+in your change, you may be asked to rebase and squash the commits.
 If you are unfamiliar with this workflow, GitHub maintains these helpful guides:
 
  - [Git Handbook](https://guides.github.com/introduction/git-handbook/)
@@ -88,7 +96,8 @@ For large changes (you may be asked to create a design doc
 ([template](https://s.apache.org/beam-design-doc-template),
 [examples](https://s.apache.org/beam-design-docs))).
 
-Documentation happens at [https://github.com/apache/beam-site](https://github.com/apache/beam-site)
+Documentation happens at
+[https://github.com/apache/beam/tree/master/website](https://github.com/apache/beam/tree/master/website)
 and contributions are welcome.
 
 Large contributions require a signed [Individual Contributor License
@@ -255,7 +264,10 @@ Currently this is a manual process. Tracking bug for automating this:
 For each file to be reviewed, look for an OWNERS file in its directory. Pick a
 single reviewer from that file. If the directory doesn't contain an OWNERS file,
 go up a directory. Keep going until you find one. Try to limit the number of
-reviewers to 2 per PR if possible, to minimize reviewer load.
+reviewers to 2 per PR if possible, to minimize reviewer load. Comment on your PR
+tagging the reviewer as follows:
+
+    R: @reviewer
 
 ### Adding yourself as a reviewer
 
@@ -273,12 +285,10 @@ a read-only collaborator to apache/beam by opening an INFRA ticket. -->
 
 ## Contributing to the website
 
-The Beam website is in the [Beam Site GitHub
-mirror](https://github.com/apache/beam-site) repository in the `asf-site`
-branch (_not_ `master`).  The
-[README](https://github.com/apache/beam-site/blob/asf-site/README.md) there
-explains how to modify different parts of the site. The GitHub workflow is the
-same - make your change and open a pull request.
+The Beam website is in the `/website` directory of the repo. The
+[README](https://github.com/apache/beam/blob/master/website) there explains how
+to modify different parts of the site. The GitHub workflow is the same - make
+your change and open a pull request.
 
 Issues are tracked in the
 [website](https://issues.apache.org/jira/issues/?jql=project%20%3D%20BEAM%20AND%20component%20%3D%20website)
@@ -286,113 +296,9 @@ component in JIRA.
 
 ## Works in progress
 
-A great way to contribute is to join an existing effort. There are many
-works in progress, some on branches because they are very incomplete.
-
-### Portability Framework
-
-The primary Beam vision: Any SDK on any runner. This is a cross-cutting effort
-across Java, Python, and Go, and every Beam runner.
-
- - [Read more]({{ site.baseurl }}/contribute/portability/)
-
-### Apache Spark 2.0 Runner
-
- - Feature branch: [runners-spark2](https://github.com/apache/beam/tree/runners-spark2)
- - Contact: [Jean-Baptiste Onofré](mailto:jbonofre@apache.org)
-
-### JStorm Runner
-
- - [Docs]({{ site.baseurl }}/documentation/runners/jstorm)
- - Feature branch: [jstorm-runner](https://github.com/apache/beam/tree/jstorm-runner)
- - JIRA: [runner-jstorm](https://issues.apache.org/jira/issues/?jql=project%20%3D%20BEAM%20AND%20component%20%3D%20runner-jstorm) / [BEAM-1899](https://issues.apache.org/jira/browse/BEAM-1899)
- - Contact: [Pei He](mailto:pei@apache.org)
-
-### MapReduce Runner
-
- - Feature branch: [mr-runner](https://github.com/apache/beam/tree/mr-runner)
- - JIRA: [runner-mapreduce](https://issues.apache.org/jira/issues/?jql=project%20%3D%20BEAM%20AND%20component%20%3D%20runner-mapreduce) / [BEAM-165](https://issues.apache.org/jira/browse/BEAM-165)
- - Contact: [Pei He](mailto:pei@apache.org)
-
-### Tez Runner
-
- - Feature branch: [tez-runner](https://github.com/apache/beam/tree/tez-runner)
- - JIRA: [runner-tez](https://issues.apache.org/jira/issues/?jql=project%20%3D%20BEAM%20AND%20component%20%3D%20runner-tez) / [BEAM-2709](https://issues.apache.org/jira/browse/BEAM-2709)
-
-### Go SDK
-
- - JIRA: [sdk-go](https://issues.apache.org/jira/issues/?jql=project%20%3D%20BEAM%20AND%20component%20%3D%20sdk-go) / [BEAM-2083](https://issues.apache.org/jira/browse/BEAM-2083) |
- - Contact: [Henning Rohde](mailto:herohde@google.com)
-
-### Python 3 Support
-
-Work is in progress to add Python 3 support to Beam.  Current goal is to make Beam codebase compatible both with Python 2.7 and Python 3.4.
-
- - [Proposal](https://docs.google.com/document/d/1xDG0MWVlDKDPu_IW9gtMvxi2S9I0GB0VDTkPhjXT0nE)
- - [Kanban Board](https://issues.apache.org/jira/secure/RapidBoard.jspa?rapidView=245&view=detail)
-
-Contributions are welcome! If you are interested to help, you can select a subpackage to port and assign yourself the corresponding issue. Comment on the issue if you cannot assign it yourself.
-When submitting a new PR, please tag [@RobbeSneyders](https://github.com/robbesneyders), [@aaltay](https://github.com/aaltay), and [@tvalentyn](https://github.com/tvalentyn).
-
-### Next Java LTS version support (Java 11 / 18.9)
-
-Work to support the next LTS release of Java is in progress. For more details about the scope and info on the various tasks please see the JIRA ticket.
-
-- JIRA: [BEAM-2530](https://issues.apache.org/jira/issues/BEAM-2530)
-- Contact: [Ismaël Mejía](mailto:iemejia@gmail.com)
-
-### IO Performance Testing
-
-We are also working on writing Performance Tests for IOs and developing a Performance Testing Framework for them. Contributions are welcome in the following areas:
-
- - developing more IO Performance Tests (IOITs)
- - providing necessary kubernetes infrastructure (eg. for databases or filesystems to be used in tests)
- - running Performance Tests on runners other than Dataflow and Direct
- - improving existing Performance Testing Framework and it's documentation
-
-See the [documentation](https://beam.apache.org/documentation/io/testing/#i-o-transform-integration-tests) and the [initial proposal](https://docs.google.com/document/d/1dA-5s6OHiP_cz-NRAbwapoKF5MEC1wKps4A5tFbIPKE/edit?usp=sharing)(for file based tests).
-
-If you're willing to help in this area, tag the following people in PRs: [@chamikaramj](https://github.com/chamikaramj), [@DariuszAniszewski](https://github.com/dariuszaniszewski), [@lgajowy](https://github.com/lgajowy), [@szewi](https://github.com/szewi), [@kkucharc](https://github.com/kkucharc)
-
-### Euphoria Java 8 DSL
-
-Easy to use Java 8 DSL for the Beam Java SDK. Provides a high-level abstraction of Beam transformations, which is both easy to read and write. Can be used as a complement to existing Beam pipelines (convertible back and forth). You can have a glimpse of the API at [WordCount example]({{ site.baseurl
-}}/documentation/sdks/java/euphoria/#wordcount-example).
-
-- Feature branch: [dsl-euphoria](https://github.com/apache/beam/tree/dsl-euphoria)
-- JIRA: [dsl-euphoria](https://issues.apache.org/jira/browse/BEAM-4366?jql=project%20%3D%20BEAM%20AND%20component%20%3D%20dsl-euphoria) / [BEAM-3900](https://issues.apache.org/jira/browse/BEAM-3900)
-- Contact: [David Moravek](mailto:david.moravek@gmail.com)
-
-### Improving the contributor experience
-
-Making it easier to write code, run tests, and release. Investigating using docker for jenkins builds, automating the release process, and improving the reliability of tests.
-
-Ideas and help welcome! Contact: [Alan Myrvold](mailto:amyrvold@google.com), [Mark Liu](mailto:markliu@google.com), [Yifan Zou](mailto:yifanzou@google.com)
-
-
-### Beam SQL
-
-Beam SQL has lots of areas to contribute: support for new operators, new
-connectors, performance measurement and improvement, more full specification
-and testing, etc.
-
- - JIRA: [dsl-sql](https://issues.apache.org/jira/issues/?filter=12343977)
- - Contact: [Kenneth Knowles](mailto:kenn@apache.org)
-
-### Add benchmarks to continuous integration
-
-Run Nexmark benchmark queries after each commit for Spark, Flink and Direct Runner and export response times to performance dashboards
-
-- JIRA: [nexmark-perfkit](https://issues.apache.org/jira/browse/BEAM-4225)
-- Contact: [Etienne Chauchot](mailto:echauchot@apache.org)
-
-### Extract metrics in a runner agnostic way
-
-Metrics are pushed by the runners to configurable sinks (HTTP REST sink available).
-It is already enabled in Filnk and Spark runner. Work is in progress for Dataflow
-
-- JIRA: [runner-agnostic-metrics](https://issues.apache.org/jira/browse/BEAM-3310)
-- Contact: [Etienne Chauchot](mailto:echauchot@apache.org)
+A great way to contribute is to join an existing effort. For the most
+intensive efforts, check out the [roadmap]({{site.baseurl}}/roadmap/).
+You can also find a more exhaustive list on the [Beam developers' wiki](https://cwiki.apache.org/confluence/display/BEAM/Apache+Beam)
 
 ## Stale pull requests
 
@@ -401,3 +307,8 @@ healthy. A pull request becomes stale after its author fails to respond to
 actionable comments for 60 days.  Author of a closed pull request is welcome to
 reopen the same pull request again in the future. The associated JIRAs will be
 unassigned from the author but will stay open.
+
+----
+
+If you didn't find the information you were looking for in this guide, please
+[reach out to the Beam community]({{ site.baseurl }}/community/contact-us).

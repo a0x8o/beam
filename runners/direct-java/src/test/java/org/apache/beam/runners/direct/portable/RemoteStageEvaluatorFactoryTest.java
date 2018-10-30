@@ -15,7 +15,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package org.apache.beam.runners.direct.portable;
 
 import static com.google.common.base.Preconditions.checkState;
@@ -45,8 +44,8 @@ import org.apache.beam.runners.fnexecution.control.InstructionRequestHandler;
 import org.apache.beam.runners.fnexecution.control.JobBundleFactory;
 import org.apache.beam.runners.fnexecution.control.SingleEnvironmentInstanceJobBundleFactory;
 import org.apache.beam.runners.fnexecution.data.GrpcDataService;
+import org.apache.beam.runners.fnexecution.environment.EmbeddedEnvironmentFactory;
 import org.apache.beam.runners.fnexecution.environment.EnvironmentFactory;
-import org.apache.beam.runners.fnexecution.environment.InProcessEnvironmentFactory;
 import org.apache.beam.runners.fnexecution.logging.GrpcLoggingService;
 import org.apache.beam.runners.fnexecution.logging.Slf4jLogWriter;
 import org.apache.beam.runners.fnexecution.state.GrpcStateService;
@@ -97,7 +96,7 @@ public class RemoteStageEvaluatorFactoryTest implements Serializable {
             GrpcLoggingService.forWriter(Slf4jLogWriter.getDefault()), serverFactory);
 
     EnvironmentFactory environmentFactory =
-        InProcessEnvironmentFactory.create(
+        EmbeddedEnvironmentFactory.create(
             PipelineOptionsFactory.create(),
             loggingServer,
             controlServer,

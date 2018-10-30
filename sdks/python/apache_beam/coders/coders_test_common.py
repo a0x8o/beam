@@ -143,6 +143,10 @@ class CodersTest(unittest.TestCase):
     self.check_coder(coder, len)
     self.check_coder(coders.TupleCoder((coder,)), ('a',), (1,))
 
+  def test_fast_primitives_coder_large_int(self):
+    coder = coders.FastPrimitivesCoder()
+    self.check_coder(coder, 10 ** 100)
+
   def test_bytes_coder(self):
     self.check_coder(coders.BytesCoder(), b'a', b'\0', b'z' * 1000)
 
@@ -196,6 +200,15 @@ class CodersTest(unittest.TestCase):
     self.check_coder(
         coders.TupleCoder((coders.TimestampCoder(), coders.BytesCoder())),
         (timestamp.Timestamp.of(27), b'abc'))
+
+  def test_timer_coder(self):
+    self.check_coder(coders._TimerCoder(coders.BytesCoder()),
+                     *[{'timestamp': timestamp.Timestamp(micros=x),
+                        'payload': b'xyz'}
+                       for x in range(-3, 3)])
+    self.check_coder(
+        coders.TupleCoder((coders._TimerCoder(coders.VarIntCoder()),)),
+        ({'timestamp': timestamp.Timestamp.of(37), 'payload': 389},))
 
   def test_tuple_coder(self):
     kv_coder = coders.TupleCoder((coders.VarIntCoder(), coders.BytesCoder()))

@@ -18,6 +18,7 @@
 package org.apache.beam.runners.flink;
 
 import static com.google.common.base.Preconditions.checkArgument;
+import static org.apache.beam.runners.flink.translation.utils.FlinkPipelineTranslatorUtils.instantiateCoder;
 
 import com.google.common.collect.BiMap;
 import com.google.common.collect.ImmutableMap;
@@ -31,6 +32,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
@@ -38,7 +40,6 @@ import java.util.stream.Collectors;
 import org.apache.beam.model.pipeline.v1.RunnerApi;
 import org.apache.beam.model.pipeline.v1.RunnerApi.ExecutableStagePayload.SideInputId;
 import org.apache.beam.runners.core.construction.PTransformTranslation;
-import org.apache.beam.runners.core.construction.PipelineOptionsTranslation;
 import org.apache.beam.runners.core.construction.RehydratedComponents;
 import org.apache.beam.runners.core.construction.WindowingStrategyTranslation;
 import org.apache.beam.runners.core.construction.graph.ExecutableStage;
@@ -64,7 +65,6 @@ import org.apache.beam.sdk.coders.CoderRegistry;
 import org.apache.beam.sdk.coders.KvCoder;
 import org.apache.beam.sdk.coders.ListCoder;
 import org.apache.beam.sdk.coders.VoidCoder;
-import org.apache.beam.sdk.options.PipelineOptions;
 import org.apache.beam.sdk.transforms.Combine;
 import org.apache.beam.sdk.transforms.GroupByKey;
 import org.apache.beam.sdk.transforms.join.RawUnionValue;
@@ -88,6 +88,7 @@ import org.apache.flink.api.java.operators.GroupCombineOperator;
 import org.apache.flink.api.java.operators.GroupReduceOperator;
 import org.apache.flink.api.java.operators.Grouping;
 import org.apache.flink.api.java.operators.MapPartitionOperator;
+import org.apache.flink.api.java.operators.SingleInputUdfOperator;
 
 /**
  * A translator that translates bounded portable pipelines into executable Flink pipelines.
@@ -116,17 +117,10 @@ public class FlinkBatchPortablePipelineTranslator
    * {@link ExecutionEnvironment}.
    */
   public static BatchTranslationContext createTranslationContext(
-      JobInfo jobInfo, List<String> filesToStage) {
-    PipelineOptions pipelineOptions;
-    try {
-      pipelineOptions = PipelineOptionsTranslation.fromProto(jobInfo.pipelineOptions());
-    } catch (IOException e) {
-      throw new RuntimeException(e);
-    }
+      JobInfo jobInfo, FlinkPipelineOptions pipelineOptions, List<String> filesToStage) {
     ExecutionEnvironment executionEnvironment =
-        FlinkExecutionEnvironments.createBatchExecutionEnvironment(
-            pipelineOptions.as(FlinkPipelineOptions.class), filesToStage);
-    return new BatchTranslationContext(jobInfo, executionEnvironment);
+        FlinkExecutionEnvironments.createBatchExecutionEnvironment(pipelineOptions, filesToStage);
+    return new BatchTranslationContext(jobInfo, pipelineOptions, executionEnvironment);
   }
 
   /** Creates a batch translator. */
@@ -160,12 +154,15 @@ public class FlinkBatchPortablePipelineTranslator
       implements FlinkPortablePipelineTranslator.TranslationContext {
 
     private final JobInfo jobInfo;
+    private final FlinkPipelineOptions options;
     private final ExecutionEnvironment executionEnvironment;
     private final Map<String, DataSet<?>> dataSets;
     private final Set<String> danglingDataSets;
 
-    private BatchTranslationContext(JobInfo jobInfo, ExecutionEnvironment executionEnvironment) {
+    private BatchTranslationContext(
+        JobInfo jobInfo, FlinkPipelineOptions options, ExecutionEnvironment executionEnvironment) {
       this.jobInfo = jobInfo;
+      this.options = options;
       this.executionEnvironment = executionEnvironment;
       dataSets = new HashMap<>();
       danglingDataSets = new HashSet<>();
@@ -174,6 +171,11 @@ public class FlinkBatchPortablePipelineTranslator
     @Override
     public JobInfo getJobInfo() {
       return jobInfo;
+    }
+
+    @Override
+    public FlinkPipelineOptions getPipelineOptions() {
+      return options;
     }
 
     public ExecutionEnvironment getExecutionEnvironment() {
@@ -334,16 +336,46 @@ public class FlinkBatchPortablePipelineTranslator
     } catch (IOException e) {
       throw new RuntimeException(e);
     }
-    FlinkExecutableStageFunction<InputT> function =
+
+    String inputPCollectionId = stagePayload.getInput();
+    DataSet<WindowedValue<InputT>> inputDataSet = context.getDataSetOrThrow(inputPCollectionId);
+
+    final boolean stateful = stagePayload.getUserStatesCount() > 0;
+    final FlinkExecutableStageFunction<InputT> function =
         new FlinkExecutableStageFunction<>(
-            stagePayload, context.getJobInfo(), outputMap, FlinkExecutableStageContext.factory());
+            stagePayload,
+            context.getJobInfo(),
+            outputMap,
+            FlinkExecutableStageContext.factory(context.getPipelineOptions()),
+            stateful);
 
-    DataSet<WindowedValue<InputT>> inputDataSet =
-        context.getDataSetOrThrow(stagePayload.getInput());
+    final SingleInputUdfOperator taggedDataset;
+    if (stateful) {
+      Coder<WindowedValue<InputT>> windowedInputCoder =
+          instantiateCoder(inputPCollectionId, components);
+      Coder valueCoder =
+          ((WindowedValue.FullWindowedValueCoder) windowedInputCoder).getValueCoder();
+      // Stateful stages are only allowed of KV input to be able to group on the key
+      if (!(valueCoder instanceof KvCoder)) {
+        throw new IllegalStateException(
+            String.format(
+                Locale.ENGLISH,
+                "The element coder for stateful DoFn '%s' must be KvCoder but is: %s",
+                inputPCollectionId,
+                valueCoder.getClass().getSimpleName()));
+      }
+      Coder keyCoder = ((KvCoder) valueCoder).getKeyCoder();
 
-    MapPartitionOperator<WindowedValue<InputT>, RawUnionValue> taggedDataset =
-        new MapPartitionOperator<>(
-            inputDataSet, typeInformation, function, transform.getTransform().getUniqueName());
+      Grouping<WindowedValue<InputT>> groupedInput =
+          inputDataSet.groupBy(new KvKeySelector<>(keyCoder));
+      taggedDataset =
+          new GroupReduceOperator<>(
+              groupedInput, typeInformation, function, transform.getTransform().getUniqueName());
+    } else {
+      taggedDataset =
+          new MapPartitionOperator<>(
+              inputDataSet, typeInformation, function, transform.getTransform().getUniqueName());
+    }
 
     for (SideInputId sideInputId : stagePayload.getSideInputsList()) {
       String collectionId =
@@ -370,7 +402,7 @@ public class FlinkBatchPortablePipelineTranslator
       // no-op sink to each to make sure they are materialized by Flink. However, some SDK-executed
       // stages have no runner-visible output after fusion. We handle this case by adding a sink
       // here.
-      taggedDataset.output(new DiscardingOutputFormat());
+      taggedDataset.output(new DiscardingOutputFormat<>());
     }
   }
 
@@ -472,18 +504,13 @@ public class FlinkBatchPortablePipelineTranslator
     Grouping<WindowedValue<KV<K, V>>> inputGrouping =
         inputDataSet.groupBy(new KvKeySelector<>(inputElementCoder.getKeyCoder()));
 
-    PipelineOptions options;
-    try {
-      options = PipelineOptionsTranslation.fromProto(context.getJobInfo().pipelineOptions());
-    } catch (IOException e) {
-      throw new RuntimeException(e);
-    }
     FlinkPartialReduceFunction<K, V, List<V>, ?> partialReduceFunction =
         new FlinkPartialReduceFunction<>(
-            combineFn, windowingStrategy, Collections.emptyMap(), options);
+            combineFn, windowingStrategy, Collections.emptyMap(), context.getPipelineOptions());
 
     FlinkReduceFunction<K, List<V>, List<V>, ?> reduceFunction =
-        new FlinkReduceFunction<>(combineFn, windowingStrategy, Collections.emptyMap(), options);
+        new FlinkReduceFunction<>(
+            combineFn, windowingStrategy, Collections.emptyMap(), context.getPipelineOptions());
 
     // Partially GroupReduce the values into the intermediate format AccumT (combine)
     GroupCombineOperator<WindowedValue<KV<K, V>>, WindowedValue<KV<K, List<V>>>> groupCombine =

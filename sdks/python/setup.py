@@ -124,13 +124,14 @@ REQUIRED_PACKAGES = [
     'pytz>=2018.3,<=2018.4',
     'pyyaml>=3.12,<4.0.0',
     'pyvcf>=0.6.8,<0.7.0',
-    'typing>=3.6.0,<3.7.0',
+    'typing>=3.6.0,<3.7.0; python_version < "3.5.0"',
     'futures>=3.1.1,<4.0.0',
     'future>=0.16.0,<1.0.0',
     ]
 
 REQUIRED_TEST_PACKAGES = [
     'nose>=1.3.7',
+    'parameterized>=0.6.0,<0.7.0',
     'numpy>=1.14.3,<2',
     'pyhamcrest>=1.9,<2.0',
     ]
@@ -139,11 +140,10 @@ GCP_REQUIREMENTS = [
     # oauth2client >=4 only works with google-apitools>=0.5.18.
     'google-apitools>=0.5.18,<=0.5.20',
     'proto-google-cloud-datastore-v1>=0.90.0,<=0.90.4',
-    'googledatastore==7.0.1',
-    'google-cloud-pubsub==0.26.0',
-    'proto-google-cloud-pubsub-v1==0.15.4',
+    'googledatastore==7.0.1; python_version < "3.0"',
+    'google-cloud-pubsub==0.35.4',
     # GCP packages required by tests
-    'google-cloud-bigquery==0.25.0',
+    'google-cloud-bigquery>=1.6.0,<1.7.0',
 ]
 
 if sys.version_info[0] == 2:

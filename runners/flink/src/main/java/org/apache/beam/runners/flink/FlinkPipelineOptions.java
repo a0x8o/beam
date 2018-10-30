@@ -31,6 +31,8 @@ import org.apache.flink.streaming.api.CheckpointingMode;
 public interface FlinkPipelineOptions
     extends PipelineOptions, ApplicationNameOptions, StreamingOptions {
 
+  String AUTO = "[auto]";
+
   /**
    * List of local files to make available to workers.
    *
@@ -56,7 +58,7 @@ public interface FlinkPipelineOptions
       "Address of the Flink Master where the Pipeline should be executed. Can"
           + " either be of the form \"host:port\" or one of the special values [local], "
           + "[collection] or [auto].")
-  @Default.String("[auto]")
+  @Default.String(AUTO)
   String getFlinkMaster();
 
   void setFlinkMaster(String value);
@@ -70,8 +72,8 @@ public interface FlinkPipelineOptions
   void setParallelism(Integer value);
 
   @Description(
-      "The interval between consecutive checkpoints (i.e. snapshots of the current"
-          + "pipeline state used for fault tolerance).")
+      "The interval in milliseconds at which to trigger checkpoints of the running pipeline. "
+          + "Default: No checkpointing.")
   @Default.Long(-1L)
   Long getCheckpointingInterval();
 
@@ -83,13 +85,14 @@ public interface FlinkPipelineOptions
 
   void setCheckpointingMode(CheckpointingMode mode);
 
-  @Description("The maximum time that a checkpoint may take before being discarded.")
+  @Description(
+      "The maximum time in milliseconds that a checkpoint may take before being discarded.")
   @Default.Long(-1L)
   Long getCheckpointTimeoutMillis();
 
   void setCheckpointTimeoutMillis(Long checkpointTimeoutMillis);
 
-  @Description("The minimal pause before the next checkpoint is triggered.")
+  @Description("The minimal pause in milliseconds before the next checkpoint is triggered.")
   @Default.Long(-1L)
   Long getMinPauseBetweenCheckpoints();
 
@@ -105,7 +108,7 @@ public interface FlinkPipelineOptions
   void setNumberOfExecutionRetries(Integer retries);
 
   @Description(
-      "Sets the delay between executions. A value of {@code -1} "
+      "Sets the delay in milliseconds between executions. A value of {@code -1} "
           + "indicates that the default value should be used.")
   @Default.Long(-1L)
   Long getExecutionRetryDelay();

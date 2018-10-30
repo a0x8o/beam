@@ -31,7 +31,6 @@ from builtins import object
 from builtins import range
 
 import grpc
-from future import standard_library
 from future.utils import raise_
 from future.utils import with_metaclass
 
@@ -39,8 +38,6 @@ from apache_beam.coders import coder_impl
 from apache_beam.portability.api import beam_fn_api_pb2
 from apache_beam.portability.api import beam_fn_api_pb2_grpc
 from apache_beam.runners.worker.worker_id_interceptor import WorkerIdInterceptor
-
-standard_library.install_aliases()
 
 # This module is experimental. No backwards-compatibility guarantees.
 
@@ -140,9 +137,14 @@ class InMemoryDataChannel(DataChannel):
     return self._inverse
 
   def input_elements(self, instruction_id, unused_expected_targets=None):
+    other_inputs = []
     for data in self._inputs:
       if data.instruction_reference == instruction_id:
-        yield data
+        if data.data:
+          yield data
+      else:
+        other_inputs.append(data)
+    self._inputs = other_inputs
 
   def output_stream(self, instruction_id, target):
     def add_to_inverse_output(data):
@@ -232,7 +234,7 @@ class _GrpcDataChannel(DataChannel):
           beam_fn_api_pb2.Elements.Data(
               instruction_reference=instruction_id,
               target=target,
-              data=''))
+              data=b''))
     return ClosableOutputStream(
         close_callback, flush_callback=add_to_send_queue)
 

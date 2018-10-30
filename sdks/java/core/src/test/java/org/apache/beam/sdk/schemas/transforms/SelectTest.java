@@ -15,7 +15,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package org.apache.beam.sdk.schemas.transforms;
 
 import java.util.Objects;
@@ -150,7 +149,6 @@ public class SelectTest {
 
     @Override
     public int hashCode() {
-
       return Objects.hash(field2);
     }
   }

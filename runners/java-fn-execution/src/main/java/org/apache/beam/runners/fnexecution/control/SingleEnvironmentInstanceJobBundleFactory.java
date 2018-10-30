@@ -15,7 +15,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package org.apache.beam.runners.fnexecution.control;
 
 import com.google.common.collect.Iterables;
@@ -43,7 +42,7 @@ import org.apache.beam.sdk.util.WindowedValue;
 /**
  * A {@link JobBundleFactory} which can manage a single instance of an {@link Environment}.
  *
- * @deprecated replace with a {@link DockerJobBundleFactory} when appropriate if the {@link
+ * @deprecated replace with a {@link DefaultJobBundleFactory} when appropriate if the {@link
  *     EnvironmentFactory} is a {@link
  *     org.apache.beam.runners.fnexecution.environment.DockerEnvironmentFactory}, or create an
  *     {@code InProcessJobBundleFactory} and inline the creation of the environment if appropriate.
@@ -165,6 +164,11 @@ public class SingleEnvironmentInstanceJobBundleFactory implements JobBundleFacto
             RemoteOutputReceiver.of(targetCoders.getValue(), outputReceiver));
       }
       return processor.newBundle(outputReceivers, stateRequestHandler, progressHandler);
+    }
+
+    @Override
+    public ExecutableProcessBundleDescriptor getProcessBundleDescriptor() {
+      return descriptor;
     }
 
     @Override

@@ -15,7 +15,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package org.apache.beam.sdk.extensions.sql.impl.rel;
 
 import java.util.Arrays;
@@ -24,8 +23,9 @@ import org.apache.beam.sdk.extensions.sql.BeamSqlSeekableTable;
 import org.apache.beam.sdk.extensions.sql.TestUtils;
 import org.apache.beam.sdk.extensions.sql.impl.schema.BaseBeamTable;
 import org.apache.beam.sdk.extensions.sql.impl.transform.BeamSqlOutputToConsoleFn;
-import org.apache.beam.sdk.extensions.sql.mock.MockedBoundedTable;
-import org.apache.beam.sdk.extensions.sql.mock.MockedUnboundedTable;
+import org.apache.beam.sdk.extensions.sql.meta.provider.test.TestBoundedTable;
+import org.apache.beam.sdk.extensions.sql.meta.provider.test.TestTableUtils;
+import org.apache.beam.sdk.extensions.sql.meta.provider.test.TestUnboundedTable;
 import org.apache.beam.sdk.schemas.Schema;
 import org.apache.beam.sdk.testing.PAssert;
 import org.apache.beam.sdk.testing.TestPipeline;
@@ -52,7 +52,7 @@ public class BeamJoinRelUnboundedVsBoundedTest extends BaseRelTest {
   public static void prepare() {
     registerTable(
         "ORDER_DETAILS",
-        MockedUnboundedTable.of(
+        TestUnboundedTable.of(
                 Schema.FieldType.INT32, "order_id",
                 Schema.FieldType.INT32, "site_id",
                 Schema.FieldType.INT32, "price",
@@ -88,7 +88,7 @@ public class BeamJoinRelUnboundedVsBoundedTest extends BaseRelTest {
 
     registerTable(
         "ORDER_DETAILS1",
-        MockedBoundedTable.of(
+        TestBoundedTable.of(
                 Schema.FieldType.INT32, "order_id",
                 Schema.FieldType.STRING, "buyer")
             .addRows(
@@ -98,7 +98,7 @@ public class BeamJoinRelUnboundedVsBoundedTest extends BaseRelTest {
     registerTable(
         "SITE_LKP",
         new SiteLookupTable(
-            TestUtils.buildBeamSqlSchema(
+            TestTableUtils.buildBeamSqlSchema(
                 Schema.FieldType.INT32, "site_id",
                 Schema.FieldType.STRING, "site_name")));
   }

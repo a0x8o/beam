@@ -44,7 +44,12 @@ def _default_crc32c_fn(value):
   if not _default_crc32c_fn.fn:
     try:
       import snappy  # pylint: disable=import-error
-      _default_crc32c_fn.fn = snappy._snappy._crc32c  # pylint: disable=protected-access
+      # Support multiple versions of snappy:
+      # https://github.com/andrix/python-snappy/pull/53
+      if getattr(snappy, '_crc32c', None):
+        _default_crc32c_fn.fn = snappy._crc32c  # pylint: disable=protected-access
+      else:
+        _default_crc32c_fn.fn = snappy._snappy._crc32c  # pylint: disable=protected-access
     except ImportError:
       logging.warning('Couldn\'t find python-snappy so the implementation of '
                       '_TFRecordUtil._masked_crc32c is not as fast as it could '
@@ -60,7 +65,7 @@ class _TFRecordUtil(object):
   """Provides basic TFRecord encoding/decoding with consistency checks.
 
   For detailed TFRecord format description see:
-    https://www.tensorflow.org/versions/master/api_docs/python/python_io.html#tfrecords-format-details
+    https://www.tensorflow.org/versions/r1.11/api_guides/python/python_io#TFRecords_Format_Details
 
   Note that masks and length are represented in LittleEndian order.
   """
@@ -148,7 +153,7 @@ class _TFRecordSource(FileBasedSource):
   """A File source for reading files of TFRecords.
 
   For detailed TFRecords format description see:
-    https://www.tensorflow.org/versions/master/api_docs/python/python_io.html#tfrecords-format-details
+    https://www.tensorflow.org/versions/r1.11/api_guides/python/python_io#TFRecords_Format_Details
   """
 
   def __init__(self,
@@ -182,7 +187,7 @@ class _TFRecordSource(FileBasedSource):
           yield self._coder.decode(record)
 
 
-def _create_tfrcordio_source(
+def _create_tfrecordio_source(
     file_pattern=None, coder=None, compression_type=None):
   # We intentionally disable validation for ReadAll pattern so that reading does
   # not fail for globs (elements) that are empty.
@@ -210,7 +215,7 @@ class ReadAllFromTFRecord(PTransform):
     """
     super(ReadAllFromTFRecord, self).__init__(**kwargs)
     source_from_file = partial(
-        _create_tfrcordio_source, compression_type=compression_type,
+        _create_tfrecordio_source, compression_type=compression_type,
         coder=coder)
     # Desired and min bundle sizes do not matter since TFRecord files are
     # unsplittable.
@@ -260,7 +265,7 @@ class _TFRecordSink(filebasedsink.FileBasedSink):
   """Sink for writing TFRecords files.
 
   For detailed TFRecord format description see:
-    https://www.tensorflow.org/versions/master/api_docs/python/python_io.html#tfrecords-format-details
+    https://www.tensorflow.org/versions/r1.11/api_guides/python/python_io#TFRecords_Format_Details
   """
 
   def __init__(self, file_path_prefix, coder, file_name_suffix, num_shards,

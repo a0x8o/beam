@@ -15,7 +15,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package org.apache.beam.runners.samza.translation;
 
 import com.google.common.collect.Iterables;
@@ -38,7 +37,7 @@ import org.apache.samza.operators.StreamGraph;
  * MessageStream}. It also provides other context data such as input and output of a {@link
  * PTransform}.
  */
-class TranslationContext {
+public class TranslationContext {
   private final StreamGraph streamGraph;
   private final Map<PValue, MessageStream<?>> messsageStreams = new HashMap<>();
   private final Map<PCollectionView<?>, MessageStream<?>> viewStreams = new HashMap<>();

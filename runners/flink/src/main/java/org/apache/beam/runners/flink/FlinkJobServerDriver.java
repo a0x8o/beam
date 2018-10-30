@@ -17,11 +17,12 @@
  */
 package org.apache.beam.runners.flink;
 
-import com.google.common.base.Strings;
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.util.concurrent.ListeningExecutorService;
 import com.google.common.util.concurrent.MoreExecutors;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import java.io.IOException;
+import java.nio.file.Paths;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
 import org.apache.beam.model.pipeline.v1.Endpoints;
@@ -44,7 +45,7 @@ public class FlinkJobServerDriver implements Runnable {
   private static final Logger LOG = LoggerFactory.getLogger(FlinkJobServerDriver.class);
 
   private final ListeningExecutorService executor;
-  private final ServerConfiguration configuration;
+  @VisibleForTesting ServerConfiguration configuration;
   private final ServerFactory jobServerFactory;
   private final ServerFactory artifactServerFactory;
   private GrpcFnServer<InMemoryJobService> jobServer;
@@ -53,25 +54,46 @@ public class FlinkJobServerDriver implements Runnable {
   /** Configuration for the jobServer. */
   public static class ServerConfiguration {
     @Option(name = "--job-host", usage = "The job server host name")
-    private String host = "";
+    String host = "localhost";
 
-    @Option(name = "--job-port", usage = "The job service port. (Default: 8099)")
-    private int port = 8099;
+    @Option(
+      name = "--job-port",
+      usage = "The job service port. 0 to use a dynamic port. (Default: 8099)"
+    )
+    int port = 8099;
 
-    @Option(name = "--artifact-port", usage = "The artifact service port. (Default: 8098)")
-    private int artifactPort = 8098;
+    @Option(
+      name = "--artifact-port",
+      usage = "The artifact service port. 0 to use a dynamic port. (Default: 8098)"
+    )
+    int artifactPort = 8098;
 
     @Option(name = "--artifacts-dir", usage = "The location to store staged artifact files")
-    private String artifactStagingPath = "/tmp/beam-artifact-staging";
+    String artifactStagingPath =
+        Paths.get(System.getProperty("java.io.tmpdir"), "beam-artifact-staging").toString();
 
     @Option(
       name = "--clean-artifacts-per-job",
       usage = "When true, remove each job's staged artifacts when it completes"
     )
-    private Boolean cleanArtifactsPerJob = false;
+    boolean cleanArtifactsPerJob = false;
 
     @Option(name = "--flink-master-url", usage = "Flink master url to submit job.")
-    private String flinkMasterUrl = "[auto]";
+    String flinkMasterUrl = "[auto]";
+
+    String getFlinkMasterUrl() {
+      return this.flinkMasterUrl;
+    }
+
+    @Option(
+      name = "--sdk-worker-parallelism",
+      usage = "Default parallelism for SDK worker processes (see portable pipeline options)"
+    )
+    Long sdkWorkerParallelism = 1L;
+
+    Long getSdkWorkerParallelism() {
+      return this.sdkWorkerParallelism;
+    }
   }
 
   public static void main(String[] args) throws Exception {
@@ -178,7 +200,7 @@ public class FlinkJobServerDriver implements Runnable {
   private GrpcFnServer<InMemoryJobService> createJobServer() throws IOException {
     InMemoryJobService service = createJobService();
     GrpcFnServer<InMemoryJobService> jobServiceGrpcFnServer;
-    if (Strings.isNullOrEmpty(configuration.host)) {
+    if (configuration.port == 0) {
       jobServiceGrpcFnServer = GrpcFnServer.allocatePortAndCreateFor(service, jobServerFactory);
     } else {
       Endpoints.ApiServiceDescriptor descriptor =
@@ -187,7 +209,7 @@ public class FlinkJobServerDriver implements Runnable {
               .build();
       jobServiceGrpcFnServer = GrpcFnServer.create(service, descriptor, jobServerFactory);
     }
-    LOG.info("JobServer started on {}", jobServiceGrpcFnServer.getApiServiceDescriptor().getUrl());
+    LOG.info("JobService started on {}", jobServiceGrpcFnServer.getApiServiceDescriptor().getUrl());
     return jobServiceGrpcFnServer;
   }
 
@@ -216,7 +238,7 @@ public class FlinkJobServerDriver implements Runnable {
       throws IOException {
     BeamFileSystemArtifactStagingService service = new BeamFileSystemArtifactStagingService();
     final GrpcFnServer<BeamFileSystemArtifactStagingService> artifactStagingService;
-    if (Strings.isNullOrEmpty(configuration.host)) {
+    if (configuration.artifactPort == 0) {
       artifactStagingService =
           GrpcFnServer.allocatePortAndCreateFor(service, artifactServerFactory);
     } else {
@@ -232,7 +254,7 @@ public class FlinkJobServerDriver implements Runnable {
     return artifactStagingService;
   }
 
-  private JobInvoker createJobInvoker() throws IOException {
-    return FlinkJobInvoker.create(executor, configuration.flinkMasterUrl);
+  private JobInvoker createJobInvoker() {
+    return FlinkJobInvoker.create(executor, configuration);
   }
 }
