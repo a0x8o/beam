@@ -700,7 +700,13 @@ class BeamModulePlugin implements Plugin<Project> {
       // Enables a plugin which can apply code formatting to source.
       // TODO(https://issues.apache.org/jira/browse/BEAM-4394): Should this plugin be enabled for all projects?
       project.apply plugin: "com.diffplug.gradle.spotless"
+
+      // Spotless can be removed from the 'check' task by passing -PdisableSpotlessCheck=true on the Gradle
+      // command-line. This is useful for pre-commit which runs spotless separately.
+      def disableSpotlessCheck = project.hasProperty('disableSpotlessCheck') &&
+              project.disableSpotlessCheck == 'true'
       project.spotless {
+        enforceCheck !disableSpotlessCheck
         java {
           licenseHeader javaLicenseHeader
           googleJavaFormat()
@@ -803,6 +809,9 @@ class BeamModulePlugin implements Plugin<Project> {
               FileTree exposedClasses = project.zipTree(it).matching {
                 include "**/*.class"
                 exclude "org/apache/beam/**"
+                // BEAM-5919: Exclude paths for Java 9 multi-release jars.
+                exclude "META-INF/versions/*/module-info.class"
+                exclude "META-INF/versions/*/org/apache/beam/**"
               }
               if (exposedClasses.files) {
                 throw new GradleException("$it exposed classes outside of org.apache.beam namespace: ${exposedClasses.files}")
