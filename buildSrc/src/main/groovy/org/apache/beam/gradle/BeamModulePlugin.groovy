@@ -375,7 +375,7 @@ class BeamModulePlugin implements Plugin<Project> {
         bigdataoss_util                             : "com.google.cloud.bigdataoss:util:$google_cloud_bigdataoss_version",
         bigtable_client_core                        : "com.google.cloud.bigtable:bigtable-client-core:$bigtable_version",
         bigtable_protos                             : "com.google.api.grpc:grpc-google-cloud-bigtable-v2:$generated_grpc_beta_version",
-        byte_buddy                                  : "net.bytebuddy:byte-buddy:1.8.11",
+        byte_buddy                                  : "net.bytebuddy:byte-buddy:1.9.3",
         commons_compress                            : "org.apache.commons:commons-compress:1.16.1",
         commons_csv                                 : "org.apache.commons:commons-csv:1.4",
         commons_io_1x                               : "commons-io:commons-io:1.3.2",
@@ -803,7 +803,9 @@ class BeamModulePlugin implements Plugin<Project> {
 
       if (configuration.validateShadowJar) {
         project.task('validateShadedJarDoesntLeakNonOrgApacheBeamClasses', dependsOn: 'shadowJar') {
+          ext.outFile = project.file("${project.reportsDir}/${name}.out")
           inputs.files project.configurations.shadow.artifacts.files
+          outputs.files outFile
           doLast {
             project.configurations.shadow.artifacts.files.each {
               FileTree exposedClasses = project.zipTree(it).matching {
@@ -813,6 +815,7 @@ class BeamModulePlugin implements Plugin<Project> {
                 exclude "META-INF/versions/*/module-info.class"
                 exclude "META-INF/versions/*/org/apache/beam/**"
               }
+              outFile.text = exposedClasses.files
               if (exposedClasses.files) {
                 throw new GradleException("$it exposed classes outside of org.apache.beam namespace: ${exposedClasses.files}")
               }
@@ -1502,10 +1505,13 @@ artifactId=${project.name}
       }
 
       project.task('validateShadedJarDoesntExportVendoredDependencies', dependsOn: 'shadowJar') {
+        ext.outFile = project.file("${project.reportsDir}/${name}.out")
         inputs.files project.configurations.shadow.artifacts.files
+        outputs.files outFile
         doLast {
           project.configurations.shadow.artifacts.files.each {
             FileTree exportedClasses = project.zipTree(it).matching { include "org/apache/beam/vendor/**" }
+            outFile.text = exportedClasses.files
             if (exportedClasses.files) {
               throw new GradleException("$it exported classes inside of org.apache.beam.vendor namespace: ${exportedClasses.files}")
             }
