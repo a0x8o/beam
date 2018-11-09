@@ -26,11 +26,12 @@ import java.util.Map;
 import java.util.stream.IntStream;
 import org.apache.beam.sdk.schemas.Schema;
 import org.apache.beam.sdk.schemas.Schema.FieldType;
+import org.apache.calcite.avatica.util.ByteString;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeFactory;
 import org.apache.calcite.rel.type.RelDataTypeField;
 import org.apache.calcite.sql.type.SqlTypeName;
-import org.joda.time.ReadableInstant;
+import org.joda.time.base.AbstractInstant;
 
 /** Utility methods for Calcite related operations. */
 public class CalciteUtils {
@@ -195,15 +196,17 @@ public class CalciteUtils {
 
   /**
    * SQL-Java type mapping, with specified Beam rules: <br>
-   * 1. redirect {@link ReadableInstant} to {@link Date} so Calcite can recognize it.
+   * 1. redirect {@link AbstractInstant} to {@link Date} so Calcite can recognize it.
    *
    * @param rawType
    * @return
    */
   public static RelDataType sqlTypeWithAutoCast(RelDataTypeFactory typeFactory, Type rawType) {
     //For Joda time types, return SQL type for java.util.Date.
-    if (rawType instanceof Class && ReadableInstant.class.isAssignableFrom((Class<?>) rawType)) {
+    if (rawType instanceof Class && AbstractInstant.class.isAssignableFrom((Class<?>) rawType)) {
       return typeFactory.createJavaType(Date.class);
+    } else if (rawType instanceof Class && ByteString.class.isAssignableFrom((Class<?>) rawType)) {
+      return typeFactory.createJavaType(byte[].class);
     }
     return typeFactory.createJavaType((Class) rawType);
   }

@@ -73,6 +73,7 @@ public class BeamSqlBuiltinFunctionsIntegrationTestBase {
           .put(String.class, TypeName.STRING)
           .put(DateTime.class, TypeName.DATETIME)
           .put(Boolean.class, TypeName.BOOLEAN)
+          .put(byte[].class, TypeName.BYTES)
           .build();
 
   private static final Schema ROW_TYPE =
@@ -117,7 +118,7 @@ public class BeamSqlBuiltinFunctionsIntegrationTestBase {
     try {
       return TestBoundedTable.of(ROW_TYPE)
           .addRows(
-              parseDate("1986-02-15 11:35:26"),
+              parseTimestamp("1986-02-15 11:35:26"),
               (byte) 1,
               (short) 1,
               1,
@@ -139,7 +140,7 @@ public class BeamSqlBuiltinFunctionsIntegrationTestBase {
   protected PCollection<Row> getFloorCeilingTestPCollection() {
     try {
       return TestBoundedTable.of(ROW_TYPE_THREE)
-          .addRows(parseDate("1986-02-15 11:35:26"), 1.4)
+          .addRows(parseTimestamp("1986-02-15 11:35:26"), 1.4)
           .buildIOReader(pipeline.begin())
           .setRowSchema(ROW_TYPE_THREE);
     } catch (Exception e) {
@@ -151,7 +152,7 @@ public class BeamSqlBuiltinFunctionsIntegrationTestBase {
     try {
       return TestBoundedTable.of(ROW_TYPE_TWO)
           .addRows(
-              parseDate("1986-02-15 11:35:26"),
+              parseTimestamp("1986-02-15 11:35:26"),
               (byte) 1,
               (short) 1,
               1,
@@ -162,7 +163,7 @@ public class BeamSqlBuiltinFunctionsIntegrationTestBase {
               7.0,
               BigDecimal.valueOf(1.0))
           .addRows(
-              parseDate("1986-03-15 11:35:26"),
+              parseTimestamp("1986-03-15 11:35:26"),
               (byte) 2,
               (short) 2,
               2,
@@ -173,7 +174,7 @@ public class BeamSqlBuiltinFunctionsIntegrationTestBase {
               8.0,
               BigDecimal.valueOf(2.0))
           .addRows(
-              parseDate("1986-04-15 11:35:26"),
+              parseTimestamp("1986-04-15 11:35:26"),
               (byte) 3,
               (short) 3,
               3,
@@ -191,8 +192,21 @@ public class BeamSqlBuiltinFunctionsIntegrationTestBase {
     }
   }
 
-  protected static DateTime parseDate(String str) {
+  protected static DateTime parseTimestamp(String str) {
     return DateTimeFormat.forPattern("yyyy-MM-dd HH:mm:ss").withZoneUTC().parseDateTime(str);
+  }
+
+  protected static DateTime parseDate(String str) {
+    return DateTimeFormat.forPattern("yyyy-MM-dd").withZoneUTC().parseDateTime(str);
+  }
+
+  protected static DateTime parseTime(String str) {
+    // DateTimeFormat does not parse "08:10:10" for pattern "HH:mm:ss.SSS". In this case, '.' must appear.
+    if (str.indexOf('.') == -1) {
+      return DateTimeFormat.forPattern("HH:mm:ss").withZoneUTC().parseDateTime(str);
+    } else {
+      return DateTimeFormat.forPattern("HH:mm:ss.SSS").withZoneUTC().parseDateTime(str);
+    }
   }
 
   @AutoValue
@@ -240,6 +254,12 @@ public class BeamSqlBuiltinFunctionsIntegrationTestBase {
                   + "FieldType type)' instead and provide the type of the expected object",
               expectedValue));
       addExpr(expression, expectedValue, FieldType.of(resultTypeName));
+      return this;
+    }
+
+    public ExpressionChecker addExprWithNullExpectedValue(
+        String expression, TypeName resultTypeName) {
+      addExpr(expression, null, FieldType.of(resultTypeName));
       return this;
     }
 
