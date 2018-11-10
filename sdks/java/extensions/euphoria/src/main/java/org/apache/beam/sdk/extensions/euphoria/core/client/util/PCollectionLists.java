@@ -15,24 +15,18 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.beam.sdk.extensions.euphoria.core.client.operator;
+package org.apache.beam.sdk.extensions.euphoria.core.client.util;
 
+import com.google.common.collect.Iterables;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.PCollectionList;
 
-/**
- * An operator that can be constructed using basic operators.
- *
- * @param <InputT> type of input
- * @param <OutputT> type of output
- */
-public interface CompositeOperator<InputT, OutputT> {
+/** Utilities related to {@link PCollection}s. */
+public class PCollectionLists {
 
-  /**
-   * Expand input operator to basic operators.
-   *
-   * @param inputs list of input data sets
-   * @return output data set
-   */
-  PCollection<OutputT> expand(PCollectionList<InputT> inputs);
+  private PCollectionLists() {}
+
+  public static <T> PCollection<T> getOnlyElement(PCollectionList<T> inputs) {
+    return Iterables.getOnlyElement(inputs.getAll());
+  }
 }
