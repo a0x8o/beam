@@ -17,6 +17,7 @@
  */
 package org.apache.beam.runners.flink;
 
+import static org.apache.beam.runners.flink.translation.utils.FlinkPipelineTranslatorUtils.getWindowingStrategy;
 import static org.apache.beam.runners.flink.translation.utils.FlinkPipelineTranslatorUtils.instantiateCoder;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -80,7 +81,7 @@ import org.apache.beam.sdk.values.PCollectionView;
 import org.apache.beam.sdk.values.PCollectionViews;
 import org.apache.beam.sdk.values.TupleTag;
 import org.apache.beam.sdk.values.WindowingStrategy;
-import org.apache.beam.vendor.protobuf.v3.com.google.protobuf.InvalidProtocolBufferException;
+import org.apache.beam.vendor.grpc.v1_13_1.com.google.protobuf.InvalidProtocolBufferException;
 import org.apache.flink.api.common.functions.FlatMapFunction;
 import org.apache.flink.api.common.functions.MapFunction;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
@@ -376,7 +377,7 @@ public class FlinkStreamingPortablePipelineTranslator
     TupleTag<KV<K, Iterable<V>>> mainTag = new TupleTag<>("main output");
 
     WindowDoFnOperator<K, V, Iterable<V>> doFnOperator =
-        new WindowDoFnOperator<K, V, Iterable<V>>(
+        new WindowDoFnOperator<>(
             reduceFn,
             operatorName,
             (Coder) windowedWorkItemCoder,
@@ -562,8 +563,7 @@ public class FlinkStreamingPortablePipelineTranslator
 
     Coder keyCoder = null;
     KeySelector<WindowedValue<InputT>, ?> keySelector = null;
-    final boolean stateful = stagePayload.getUserStatesCount() > 0;
-    if (stateful) {
+    if (stagePayload.getUserStatesCount() > 0 || stagePayload.getTimersCount() > 0) {
       // Stateful stages are only allowed of KV input
       Coder valueCoder =
           ((WindowedValue.FullWindowedValueCoder) windowedInputCoder).getValueCoder();
@@ -601,6 +601,7 @@ public class FlinkStreamingPortablePipelineTranslator
             context.getJobInfo(),
             FlinkExecutableStageContext.factory(context.getPipelineOptions()),
             collectionIdToTupleTag,
+            getWindowingStrategy(inputPCollectionId, components),
             keyCoder,
             keySelector);
 

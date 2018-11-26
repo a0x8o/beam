@@ -28,7 +28,7 @@ import org.apache.beam.sdk.values.TimestampedValue;
 /** A direct implementation of {@link BoundedSideInputJoin}. */
 public class BoundedSideInputJoinModel extends NexmarkQueryModel<Bid> {
 
-  /** Simulator for query 0. */
+  /** Simulator for BOUNDED_SIDE_INPUT_JOIN query. */
   private static class Simulator extends AbstractSimulator<Event, Bid> {
     private final NexmarkConfiguration configuration;
 
@@ -76,6 +76,6 @@ public class BoundedSideInputJoinModel extends NexmarkQueryModel<Bid> {
 
   @Override
   protected Collection<String> toCollection(Iterator<TimestampedValue<Bid>> itr) {
-    return toValueTimestamp(itr);
+    return toValue(itr);
   }
 }

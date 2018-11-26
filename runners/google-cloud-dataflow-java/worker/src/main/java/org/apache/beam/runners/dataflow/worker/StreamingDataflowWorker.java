@@ -133,7 +133,7 @@ import org.apache.beam.sdk.util.Sleeper;
 import org.apache.beam.sdk.util.Transport;
 import org.apache.beam.sdk.util.UserCodeException;
 import org.apache.beam.sdk.util.WindowedValue.WindowedValueCoder;
-import org.apache.beam.vendor.protobuf.v3.com.google.protobuf.ByteString;
+import org.apache.beam.vendor.grpc.v1_13_1.com.google.protobuf.ByteString;
 import org.joda.time.Duration;
 import org.joda.time.Instant;
 import org.slf4j.Logger;
@@ -1521,7 +1521,7 @@ public class StreamingDataflowWorker {
       if (config.getWindmillServicePort() != null && config.getWindmillServicePort() != 0) {
         port = config.getWindmillServicePort().intValue();
       }
-      HashSet<HostAndPort> endpoints = new HashSet<HostAndPort>();
+      HashSet<HostAndPort> endpoints = new HashSet<>();
       for (String endpoint : Splitter.on(',').split(config.getWindmillServiceEndpoint())) {
         endpoints.add(HostAndPort.fromString(endpoint).withDefaultPort(port));
       }

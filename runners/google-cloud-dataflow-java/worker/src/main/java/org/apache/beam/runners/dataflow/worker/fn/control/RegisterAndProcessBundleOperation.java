@@ -69,8 +69,8 @@ import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
 import org.apache.beam.sdk.transforms.windowing.GlobalWindow;
 import org.apache.beam.sdk.util.MoreFutures;
 import org.apache.beam.sdk.values.PCollectionView;
-import org.apache.beam.vendor.protobuf.v3.com.google.protobuf.ByteString;
-import org.apache.beam.vendor.protobuf.v3.com.google.protobuf.TextFormat;
+import org.apache.beam.vendor.grpc.v1_13_1.com.google.protobuf.ByteString;
+import org.apache.beam.vendor.grpc.v1_13_1.com.google.protobuf.TextFormat;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -334,6 +334,15 @@ public class RegisterAndProcessBundleOperation extends Operation {
   public CompletionStage<BeamFnApi.Metrics> getFinalMetrics() {
     return getProcessBundleResponse(processBundleResponse)
         .thenApply(response -> response.getMetrics());
+  }
+
+  public boolean hasFailed() throws ExecutionException, InterruptedException {
+    if (processBundleResponse != null && processBundleResponse.toCompletableFuture().isDone()) {
+      return !processBundleResponse.toCompletableFuture().get().getError().isEmpty();
+    } else {
+      // At the very least, we don't know that this has failed yet.
+      return false;
+    }
   }
 
   /** Returns the number of input elements consumed by the gRPC read, if known, otherwise 0. */

@@ -41,9 +41,11 @@ if [[ "*sdks/python" != $PWD ]]; then
   cd $(pwd | sed 's/sdks\/python.*/sdks\/python/')
 fi
 
-set -v
 tox -c tox.ini --recreate -e $1
+exit_code=$?
 # Retry once for the specific exit code -11.
-if [[ $? == -11 ]]; then
+if [[ $exit_code == -11 ]]; then
   tox -c tox.ini --recreate -e $1
+  exit_code=$?
 fi
+exit $exit_code

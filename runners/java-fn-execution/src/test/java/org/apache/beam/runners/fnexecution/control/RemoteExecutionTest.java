@@ -107,7 +107,7 @@ import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.PCollectionList;
 import org.apache.beam.sdk.values.PCollectionView;
-import org.apache.beam.vendor.protobuf.v3.com.google.protobuf.ByteString;
+import org.apache.beam.vendor.grpc.v1_13_1.com.google.protobuf.ByteString;
 import org.hamcrest.collection.IsEmptyIterable;
 import org.hamcrest.collection.IsIterableContainingInOrder;
 import org.joda.time.DateTimeUtils;
@@ -655,10 +655,10 @@ public class RemoteExecutionTest implements Serializable {
         descriptor.getTimerSpecs().values()) {
       for (ProcessBundleDescriptors.TimerSpec timerSpec : timerSpecs.values()) {
         if (TimeDomain.EVENT_TIME.equals(timerSpec.getTimerSpec().getTimeDomain())) {
-          eventTimeInputPCollectionId = timerSpec.collectionId();
+          eventTimeInputPCollectionId = timerSpec.inputCollectionId();
           eventTimeOutputTarget = timerSpec.outputTarget();
         } else if (TimeDomain.PROCESSING_TIME.equals(timerSpec.getTimerSpec().getTimeDomain())) {
-          processingTimeInputPCollectionId = timerSpec.collectionId();
+          processingTimeInputPCollectionId = timerSpec.inputCollectionId();
           processingTimeOutputTarget = timerSpec.outputTarget();
         } else {
           fail(String.format("Unknown timer specification %s", timerSpec));
