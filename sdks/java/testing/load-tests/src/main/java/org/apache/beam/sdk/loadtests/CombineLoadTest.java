@@ -23,9 +23,9 @@ import com.google.common.base.Preconditions;
 import java.io.IOException;
 import java.math.BigInteger;
 import java.util.Optional;
-import org.apache.beam.sdk.io.synthetic.SyntheticBoundedIO;
 import org.apache.beam.sdk.io.synthetic.SyntheticStep;
-import org.apache.beam.sdk.loadtests.metrics.MetricsMonitor;
+import org.apache.beam.sdk.loadtests.metrics.ByteMonitor;
+import org.apache.beam.sdk.loadtests.metrics.TimeMonitor;
 import org.apache.beam.sdk.options.Default;
 import org.apache.beam.sdk.options.Description;
 import org.apache.beam.sdk.transforms.Combine;
@@ -44,16 +44,16 @@ import org.apache.beam.sdk.values.PCollection;
  * Load test for {@link ParDo} operation.
  *
  * <p>The purpose of this test is to measure {@link Combine}'s behaviour in stressful conditions. It
- * uses {@link SyntheticBoundedIO} and {@link SyntheticStep} which both can be parametrized to
- * generate keys and values of various size, impose delay (sleep or cpu burnout) in various moments
- * during the pipeline execution and provide some other performance challenges.
+ * uses synthetic sources and {@link SyntheticStep} which both can be parametrized to generate keys
+ * and values of various size, impose delay (sleep or cpu burnout) in various moments during the
+ * pipeline execution and provide some other performance challenges.
  *
- * @see SyntheticStep
- * @see SyntheticBoundedIO
- *     <p>You can choose between multiple combine modes to test per key combine operations ({@link
- *     CombinerType}).
- *     <p>To run it manually, use the following command:
- *     <pre>
+ * <p>You can choose between multiple combine modes to test per key combine operations ({@link
+ * CombinerType}).
+ *
+ * <p>To run it manually, use the following command:
+ *
+ * <pre>
  *    ./gradlew :beam-sdks-java-load-tests:run -PloadTest.args='
  *      --fanout=1
  *      --perKeyCombinerType=TOP_LARGEST
@@ -107,23 +107,30 @@ public class CombineLoadTest extends LoadTest<CombineLoadTest.Options> {
 
   @Override
   protected void loadTest() throws IOException {
-    PTransform combiner = createPerKeyCombiner(options.getPerKeyCombinerType());
-
     Optional<SyntheticStep> syntheticStep = createStep(options.getStepOptions());
 
     PCollection<KV<byte[], byte[]>> input =
         pipeline
-            .apply("Read input", SyntheticBoundedIO.readFrom(sourceOptions))
-            .apply("Collect metrics", ParDo.of(new MetricsMonitor(METRICS_NAMESPACE)));
+            .apply("Read input", readFromSource(sourceOptions))
+            .apply(
+                "Collect start time metric",
+                ParDo.of(new TimeMonitor<>(METRICS_NAMESPACE, "runtime")))
+            .apply(
+                "Collect metrics",
+                ParDo.of(new ByteMonitor(METRICS_NAMESPACE, "totalBytes.count")));
 
     for (int i = 0; i < options.getFanout(); i++) {
       applyStepIfPresent(input, format("Step: %d", i), syntheticStep)
-          .apply(format("Convert to BigInteger: %d", i), MapElements.via(new ByteValueToLong()))
-          .apply(format("Combine: %d", i), combiner);
+          .apply(format("Convert to Long: %d", i), MapElements.via(new ByteValueToLong()))
+          .apply(format("Combine: %d", i), getPerKeyCombiner(options.getPerKeyCombinerType()))
+          .apply(
+              "Collect end time metric",
+              ParDo.of(new TimeMonitor<byte[], Object>(METRICS_NAMESPACE, "runtime")));
     }
   }
 
-  private PTransform createPerKeyCombiner(CombinerType combinerType) {
+  private PTransform<PCollection<KV<byte[], Long>>, ? extends PCollection> getPerKeyCombiner(
+      CombinerType combinerType) {
     switch (combinerType) {
       case MEAN:
         return Mean.perKey();

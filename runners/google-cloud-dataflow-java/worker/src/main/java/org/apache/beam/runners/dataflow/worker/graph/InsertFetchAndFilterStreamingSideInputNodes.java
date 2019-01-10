@@ -42,7 +42,7 @@ import org.apache.beam.runners.dataflow.worker.util.common.worker.ParDoFn;
 import org.apache.beam.sdk.transforms.ParDo;
 import org.apache.beam.sdk.values.PCollectionView;
 import org.apache.beam.sdk.values.WindowingStrategy;
-import org.apache.beam.vendor.grpc.v1_13_1.com.google.protobuf.InvalidProtocolBufferException;
+import org.apache.beam.vendor.grpc.v1p13p1.com.google.protobuf.InvalidProtocolBufferException;
 
 /**
  * Inserts a {@link ParDoFn} that handles filtering blocked side inputs and fetching ready side
@@ -82,7 +82,7 @@ public class InsertFetchAndFilterStreamingSideInputNodes {
 
       // Skip ParDoInstruction nodes that contain payloads without side inputs.
       String userFnClassName = userFnSpec.getClassName();
-      if (userFnClassName.equals("CombineValuesFn") || userFnClassName.equals("KeyedCombineFn")) {
+      if ("CombineValuesFn".equals(userFnClassName) || "KeyedCombineFn".equals(userFnClassName)) {
         continue; // These nodes have CombinePayloads which have no side inputs.
       }
 
@@ -158,7 +158,8 @@ public class InsertFetchAndFilterStreamingSideInputNodes {
       InstructionOutputNode predecessor =
           (InstructionOutputNode) network.incidentNodes(mainInput).source();
       InstructionOutputNode predecessorCopy =
-          InstructionOutputNode.create(predecessor.getInstructionOutput());
+          InstructionOutputNode.create(
+              predecessor.getInstructionOutput(), predecessor.getPcollectionId());
       network.removeEdge(mainInput);
       network.addNode(streamingSideInputWindowHandlerNode);
       network.addNode(predecessorCopy);

@@ -44,7 +44,7 @@ import org.apache.commons.math3.distribution.ZipfDistribution;
 
 /**
  * This {@link SyntheticOptions} class provides common parameterizable synthetic options that are
- * used by {@link SyntheticBoundedIO}.
+ * used by {@link SyntheticBoundedSource} and {@link SyntheticUnboundedSource}.
  */
 public class SyntheticOptions implements Serializable {
   private static final long serialVersionUID = 0;
@@ -354,5 +354,13 @@ public class SyntheticOptions implements Serializable {
     byte[] val = new byte[(int) valueSizeBytes];
     random.nextBytes(val);
     return KV.of(key, val);
+  }
+
+  public static <T extends SyntheticOptions> T fromJsonString(String json, Class<T> type)
+      throws IOException {
+    ObjectMapper mapper = new ObjectMapper();
+    T result = mapper.readValue(json, type);
+    result.validate();
+    return result;
   }
 }

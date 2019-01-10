@@ -78,6 +78,9 @@ import org.apache.beam.sdk.nexmark.queries.Query8;
 import org.apache.beam.sdk.nexmark.queries.Query8Model;
 import org.apache.beam.sdk.nexmark.queries.Query9;
 import org.apache.beam.sdk.nexmark.queries.Query9Model;
+import org.apache.beam.sdk.nexmark.queries.SessionSideInputJoin;
+import org.apache.beam.sdk.nexmark.queries.SessionSideInputJoinModel;
+import org.apache.beam.sdk.nexmark.queries.sql.SqlBoundedSideInputJoin;
 import org.apache.beam.sdk.nexmark.queries.sql.SqlQuery0;
 import org.apache.beam.sdk.nexmark.queries.sql.SqlQuery1;
 import org.apache.beam.sdk.nexmark.queries.sql.SqlQuery2;
@@ -122,13 +125,13 @@ public class NexmarkLauncher<OptionT extends NexmarkOptions> {
    * activity.
    */
   private static final Duration DONE_DELAY = Duration.standardMinutes(1);
-  /** How long to allow no activity without warning. */
+  /** How long to allow no activity at sources and sinks without warning. */
   private static final Duration STUCK_WARNING_DELAY = Duration.standardMinutes(10);
   /**
-   * How long to let streaming pipeline run after we've seen no activity, even if all events have
-   * not been generated.
+   * How long to let streaming pipeline run after we've seen no activity at sources or sinks, even
+   * if all events have not been generated.
    */
-  private static final Duration STUCK_TERMINATE_DELAY = Duration.standardDays(3);
+  private static final Duration STUCK_TERMINATE_DELAY = Duration.standardHours(1);
 
   /** NexmarkOptions for this run. */
   private final OptionT options;
@@ -252,20 +255,20 @@ public class NexmarkLauncher<OptionT extends NexmarkOptions> {
 
     MetricsReader eventMetrics = new MetricsReader(result, eventMonitor.name);
 
-    long numEvents = eventMetrics.getCounterMetric(eventMonitor.prefix + ".elements", -1);
-    long numEventBytes = eventMetrics.getCounterMetric(eventMonitor.prefix + ".bytes", -1);
-    long eventStart = eventMetrics.getStartTimeMetric(now, eventMonitor.prefix + ".startTime");
-    long eventEnd = eventMetrics.getEndTimeMetric(now, eventMonitor.prefix + ".endTime");
+    long numEvents = eventMetrics.getCounterMetric(eventMonitor.prefix + ".elements");
+    long numEventBytes = eventMetrics.getCounterMetric(eventMonitor.prefix + ".bytes");
+    long eventStart = eventMetrics.getStartTimeMetric(eventMonitor.prefix + ".startTime");
+    long eventEnd = eventMetrics.getEndTimeMetric(eventMonitor.prefix + ".endTime");
 
     MetricsReader resultMetrics = new MetricsReader(result, resultMonitor.name);
 
-    long numResults = resultMetrics.getCounterMetric(resultMonitor.prefix + ".elements", -1);
-    long numResultBytes = resultMetrics.getCounterMetric(resultMonitor.prefix + ".bytes", -1);
-    long resultStart = resultMetrics.getStartTimeMetric(now, resultMonitor.prefix + ".startTime");
-    long resultEnd = resultMetrics.getEndTimeMetric(now, resultMonitor.prefix + ".endTime");
+    long numResults = resultMetrics.getCounterMetric(resultMonitor.prefix + ".elements");
+    long numResultBytes = resultMetrics.getCounterMetric(resultMonitor.prefix + ".bytes");
+    long resultStart = resultMetrics.getStartTimeMetric(resultMonitor.prefix + ".startTime");
+    long resultEnd = resultMetrics.getEndTimeMetric(resultMonitor.prefix + ".endTime");
     long timestampStart =
-        resultMetrics.getStartTimeMetric(now, resultMonitor.prefix + ".startTimestamp");
-    long timestampEnd = resultMetrics.getEndTimeMetric(now, resultMonitor.prefix + ".endTimestamp");
+        resultMetrics.getStartTimeMetric(resultMonitor.prefix + ".startTimestamp");
+    long timestampEnd = resultMetrics.getEndTimeMetric(resultMonitor.prefix + ".endTimestamp");
 
     long effectiveEnd = -1;
     if (eventEnd >= 0 && resultEnd >= 0) {
@@ -449,9 +452,14 @@ public class NexmarkLauncher<OptionT extends NexmarkOptions> {
 
       if (options.isStreaming() && !waitingForShutdown) {
         Duration quietFor = new Duration(lastActivityMsSinceEpoch, now);
-        long fatalCount = new MetricsReader(job, query.getName()).getCounterMetric("fatal", 0);
+        long fatalCount = new MetricsReader(job, query.getName()).getCounterMetric("fatal");
+
+        if (fatalCount == -1) {
+          fatalCount = 0;
+        }
+
         if (fatalCount > 0) {
-          NexmarkUtils.console("job has fatal errors, cancelling.");
+          NexmarkUtils.console("ERROR: job has fatal errors, cancelling.");
           errors.add(String.format("Pipeline reported %s fatal errors", fatalCount));
           waitingForShutdown = true;
           cancelJob = true;
@@ -463,16 +471,19 @@ public class NexmarkLauncher<OptionT extends NexmarkOptions> {
           NexmarkUtils.console("streaming query appears to have finished waiting for completion.");
           waitingForShutdown = true;
         } else if (quietFor.isLongerThan(STUCK_TERMINATE_DELAY)) {
-          NexmarkUtils.console("streaming query appears to have gotten stuck, cancelling job.");
-          errors.add("Cancelling streaming job since it appeared stuck");
+          NexmarkUtils.console(
+              "ERROR: streaming query appears to have been stuck for %d minutes, cancelling job.",
+              quietFor.getStandardMinutes());
+          errors.add(
+              String.format(
+                  "Cancelling streaming job since it appeared stuck for %d min.",
+                  quietFor.getStandardMinutes()));
           waitingForShutdown = true;
           cancelJob = true;
         } else if (quietFor.isLongerThan(STUCK_WARNING_DELAY)) {
           NexmarkUtils.console(
               "WARNING: streaming query appears to have been stuck for %d min.",
               quietFor.getStandardMinutes());
-          errors.add(
-              String.format("Streaming query was stuck for %d min", quietFor.getStandardMinutes()));
         }
 
         if (cancelJob) {
@@ -1212,6 +1223,7 @@ public class NexmarkLauncher<OptionT extends NexmarkOptions> {
         .put(NexmarkQueryName.MONITOR_NEW_USERS, new Query8Model(configuration))
         .put(NexmarkQueryName.WINNING_BIDS, new Query9Model(configuration))
         .put(NexmarkQueryName.BOUNDED_SIDE_INPUT_JOIN, new BoundedSideInputJoinModel(configuration))
+        .put(NexmarkQueryName.SESSION_SIDE_INPUT_JOIN, new SessionSideInputJoinModel(configuration))
         .build();
   }
 
@@ -1230,11 +1242,14 @@ public class NexmarkLauncher<OptionT extends NexmarkOptions> {
             NexmarkQueryName.LOCAL_ITEM_SUGGESTION,
             new NexmarkQuery(configuration, new SqlQuery3(configuration)))
         .put(
-            NexmarkQueryName.AVERAGE_PRICE_FOR_CATEGORY,
+            NexmarkQueryName.HOT_ITEMS,
             new NexmarkQuery(configuration, new SqlQuery5(configuration)))
         .put(
-            NexmarkQueryName.HOT_ITEMS,
+            NexmarkQueryName.HIGHEST_BID,
             new NexmarkQuery(configuration, new SqlQuery7(configuration)))
+        .put(
+            NexmarkQueryName.BOUNDED_SIDE_INPUT_JOIN,
+            new NexmarkQuery(configuration, new SqlBoundedSideInputJoin(configuration)))
         .build();
   }
 
@@ -1276,6 +1291,9 @@ public class NexmarkLauncher<OptionT extends NexmarkOptions> {
         .put(
             NexmarkQueryName.BOUNDED_SIDE_INPUT_JOIN,
             new NexmarkQuery(configuration, new BoundedSideInputJoin(configuration)))
+        .put(
+            NexmarkQueryName.SESSION_SIDE_INPUT_JOIN,
+            new NexmarkQuery(configuration, new SessionSideInputJoin(configuration)))
         .build();
   }
 

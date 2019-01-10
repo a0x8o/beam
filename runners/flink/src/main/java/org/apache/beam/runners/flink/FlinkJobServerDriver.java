@@ -25,6 +25,7 @@ import java.io.IOException;
 import java.nio.file.Paths;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
+import javax.annotation.Nullable;
 import org.apache.beam.model.pipeline.v1.Endpoints;
 import org.apache.beam.runners.fnexecution.GrpcFnServer;
 import org.apache.beam.runners.fnexecution.ServerFactory;
@@ -48,8 +49,8 @@ public class FlinkJobServerDriver implements Runnable {
   @VisibleForTesting ServerConfiguration configuration;
   private final ServerFactory jobServerFactory;
   private final ServerFactory artifactServerFactory;
-  private GrpcFnServer<InMemoryJobService> jobServer;
-  private GrpcFnServer<BeamFileSystemArtifactStagingService> artifactStagingServer;
+  private volatile GrpcFnServer<InMemoryJobService> jobServer;
+  private volatile GrpcFnServer<BeamFileSystemArtifactStagingService> artifactStagingServer;
 
   /** Configuration for the jobServer. */
   public static class ServerConfiguration {
@@ -93,6 +94,20 @@ public class FlinkJobServerDriver implements Runnable {
 
     Long getSdkWorkerParallelism() {
       return this.sdkWorkerParallelism;
+    }
+
+    @Option(
+      name = "--flink-conf-dir",
+      usage =
+          "Directory containing Flink YAML configuration files. "
+              + "These properties will be set to all jobs submitted to Flink and take precedence "
+              + "over configurations in FLINK_CONF_DIR."
+    )
+    String flinkConfDir = null;
+
+    @Nullable
+    String getFlinkConfDir() {
+      return flinkConfDir;
     }
   }
 
@@ -169,12 +184,16 @@ public class FlinkJobServerDriver implements Runnable {
     }
   }
 
+  // This method is executed by TestPortableRunner via Reflection
   public String start() throws IOException {
     jobServer = createJobServer();
     return jobServer.getApiServiceDescriptor().getUrl();
   }
 
-  public void stop() {
+  // This method is executed by TestPortableRunner via Reflection
+  // Needs to be synchronized to prevent concurrency issues in testing shutdown
+  @SuppressWarnings("WeakerAccess")
+  public synchronized void stop() {
     if (jobServer != null) {
       try {
         jobServer.close();

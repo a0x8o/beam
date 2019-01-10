@@ -30,7 +30,7 @@ import org.apache.beam.runners.dataflow.options.DataflowWorkerHarnessOptions;
 import org.apache.beam.runners.dataflow.worker.ExperimentContext.Experiment;
 import org.apache.beam.runners.dataflow.worker.logging.DataflowWorkerLoggingInitializer;
 import org.apache.beam.runners.dataflow.worker.logging.DataflowWorkerLoggingMDC;
-import org.apache.beam.vendor.grpc.v1_13_1.com.google.protobuf.TextFormat;
+import org.apache.beam.vendor.grpc.v1p13p1.com.google.protobuf.TextFormat;
 import org.conscrypt.OpenSSLProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -57,18 +57,19 @@ public final class DataflowWorkerHarnessHelper {
 
     ExperimentContext ec = ExperimentContext.parseFrom(pipelineOptions);
 
-    String experimentName = Experiment.DisableConscryptSecurityProvider.getName();
-    if (!ec.isEnabled(Experiment.DisableConscryptSecurityProvider)) {
+    String experimentName = Experiment.EnableConscryptSecurityProvider.getName();
+    if (ec.isEnabled(Experiment.EnableConscryptSecurityProvider)) {
       /* Enable fast SSL provider. */
       LOG.info(
-          "Dataflow runner uses conscrypt by default for SSL. To disable this feature, "
-              + "pass pipeline option --experiments={}",
+          "Dataflow runner is using conscrypt SSL. To disable this feature, "
+              + "remove the pipeline option --experiments={}",
           experimentName);
       Security.insertProviderAt(new OpenSSLProvider(), 1);
     } else {
       LOG.info(
-          "Experiment {} specified, disabling conscrypt SSL. Note this is the default "
-              + "Java behavior, but may have reduced performance.",
+          "Not using conscrypt SSL. Note this is the default Java behavior, but may "
+              + "have reduced performance. To use conscrypt SSL pass pipeline option "
+              + "--experiments={}",
           experimentName);
     }
     return pipelineOptions;

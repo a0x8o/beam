@@ -329,7 +329,7 @@ public class UnboundedReadEvaluatorFactoryTest {
                   result.getUnprocessedElements());
     } while (!Iterables.isEmpty(residual.getElements()));
 
-    verify(output, times((numElements))).add(any());
+    verify(output, times(numElements)).add(any());
     assertThat(TestUnboundedSource.readerCreatedCount, equalTo(1));
     assertThat(TestUnboundedSource.readerClosedCount, equalTo(1));
   }
@@ -580,8 +580,7 @@ public class UnboundedReadEvaluatorFactoryTest {
 
       @Override
       public UnboundedSource<T, ?> getCurrentSource() {
-        TestUnboundedSource<T> source = TestUnboundedSource.this;
-        return source;
+        return TestUnboundedSource.this;
       }
 
       @Override

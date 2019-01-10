@@ -62,7 +62,7 @@ import org.apache.beam.sdk.transforms.ParDo;
 import org.apache.beam.sdk.transforms.View;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.PCollectionView;
-import org.apache.beam.vendor.grpc.v1_13_1.com.google.protobuf.InvalidProtocolBufferException;
+import org.apache.beam.vendor.grpc.v1p13p1.com.google.protobuf.InvalidProtocolBufferException;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
@@ -93,7 +93,8 @@ public class InsertFetchAndFilterStreamingSideInputNodesTest {
     RunnerApi.Pipeline pipeline = PipelineTranslation.toProto(p);
 
     Node predecessor = createParDoNode("predecessor");
-    InstructionOutputNode mainInput = InstructionOutputNode.create(new InstructionOutput());
+    InstructionOutputNode mainInput =
+        InstructionOutputNode.create(new InstructionOutput(), "fakeId");
     Node sideInputParDo = createParDoNode(findParDoWithSideInput(pipeline));
 
     MutableNetwork<Node, Edge> network = createEmptyNetwork();
@@ -106,7 +107,7 @@ public class InsertFetchAndFilterStreamingSideInputNodesTest {
     Network<Node, Edge> inputNetwork = ImmutableNetwork.copyOf(network);
     network = InsertFetchAndFilterStreamingSideInputNodes.with(pipeline).forNetwork(network);
 
-    Node mainInputClone = InstructionOutputNode.create(mainInput.getInstructionOutput());
+    Node mainInputClone = InstructionOutputNode.create(mainInput.getInstructionOutput(), "fakeId");
     Node fetchAndFilter =
         FetchAndFilterStreamingSideInputsNode.create(
             pcView.getWindowingStrategyInternal(),
@@ -139,7 +140,7 @@ public class InsertFetchAndFilterStreamingSideInputNodesTest {
     RunnerApi.Pipeline pipeline = PipelineTranslation.toProto(p);
 
     Node predecessor = createParDoNode("predecessor");
-    Node mainInput = InstructionOutputNode.create(new InstructionOutput());
+    Node mainInput = InstructionOutputNode.create(new InstructionOutput(), "fakeId");
     Node sideInputParDo = createParDoNode("noSideInput");
 
     MutableNetwork<Node, Edge> network = createEmptyNetwork();

@@ -17,6 +17,7 @@
  */
 package org.apache.beam.runners.flink;
 
+import static org.apache.beam.runners.core.construction.ExecutableStageTranslation.generateNameFromStagePayload;
 import static org.apache.beam.runners.flink.translation.utils.FlinkPipelineTranslatorUtils.getWindowingStrategy;
 import static org.apache.beam.runners.flink.translation.utils.FlinkPipelineTranslatorUtils.instantiateCoder;
 
@@ -38,6 +39,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
 import org.apache.beam.model.pipeline.v1.RunnerApi;
 import org.apache.beam.runners.core.SystemReduceFn;
@@ -81,7 +83,8 @@ import org.apache.beam.sdk.values.PCollectionView;
 import org.apache.beam.sdk.values.PCollectionViews;
 import org.apache.beam.sdk.values.TupleTag;
 import org.apache.beam.sdk.values.WindowingStrategy;
-import org.apache.beam.vendor.grpc.v1_13_1.com.google.protobuf.InvalidProtocolBufferException;
+import org.apache.beam.vendor.grpc.v1p13p1.com.google.protobuf.InvalidProtocolBufferException;
+import org.apache.flink.api.common.JobExecutionResult;
 import org.apache.flink.api.common.functions.FlatMapFunction;
 import org.apache.flink.api.common.functions.MapFunction;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
@@ -92,6 +95,7 @@ import org.apache.flink.streaming.api.datastream.KeyedStream;
 import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.operators.OneInputStreamOperator;
+import org.apache.flink.streaming.api.transformations.TwoInputTransformation;
 import org.apache.flink.util.Collector;
 import org.apache.flink.util.OutputTag;
 
@@ -104,10 +108,15 @@ public class FlinkStreamingPortablePipelineTranslator
    * Creates a streaming translation context. The resulting Flink execution dag will live in a new
    * {@link StreamExecutionEnvironment}.
    */
-  public static StreamingTranslationContext createTranslationContext(
-      JobInfo jobInfo, FlinkPipelineOptions pipelineOptions, List<String> filesToStage) {
+  @Override
+  public StreamingTranslationContext createTranslationContext(
+      JobInfo jobInfo,
+      FlinkPipelineOptions pipelineOptions,
+      String confDir,
+      List<String> filesToStage) {
     StreamExecutionEnvironment executionEnvironment =
-        FlinkExecutionEnvironments.createStreamExecutionEnvironment(pipelineOptions, filesToStage);
+        FlinkExecutionEnvironments.createStreamExecutionEnvironment(
+            pipelineOptions, filesToStage, confDir);
     return new StreamingTranslationContext(jobInfo, pipelineOptions, executionEnvironment);
   }
 
@@ -116,7 +125,8 @@ public class FlinkStreamingPortablePipelineTranslator
    * the Flink {@link StreamExecutionEnvironment} that the execution plan will be applied to.
    */
   public static class StreamingTranslationContext
-      implements FlinkPortablePipelineTranslator.TranslationContext {
+      implements FlinkPortablePipelineTranslator.TranslationContext,
+          FlinkPortablePipelineTranslator.Executor {
 
     private final JobInfo jobInfo;
     private final FlinkPipelineOptions options;
@@ -141,6 +151,11 @@ public class FlinkStreamingPortablePipelineTranslator
     @Override
     public FlinkPipelineOptions getPipelineOptions() {
       return options;
+    }
+
+    @Override
+    public JobExecutionResult execute(String jobName) throws Exception {
+      return getExecutionEnvironment().execute(jobName);
     }
 
     public StreamExecutionEnvironment getExecutionEnvironment() {
@@ -187,7 +202,13 @@ public class FlinkStreamingPortablePipelineTranslator
   }
 
   @Override
-  public void translate(StreamingTranslationContext context, RunnerApi.Pipeline pipeline) {
+  public Set<String> knownUrns() {
+    return urnToTransformTranslator.keySet();
+  }
+
+  @Override
+  public FlinkPortablePipelineTranslator.Executor translate(
+      StreamingTranslationContext context, RunnerApi.Pipeline pipeline) {
     QueryablePipeline p =
         QueryablePipeline.forTransforms(
             pipeline.getRootTransformIdsList(), pipeline.getComponents());
@@ -196,6 +217,8 @@ public class FlinkStreamingPortablePipelineTranslator
           .getOrDefault(transform.getTransform().getSpec().getUrn(), this::urnNotFound)
           .translate(transform.getId(), pipeline, context);
     }
+
+    return context;
   }
 
   private void urnNotFound(
@@ -410,7 +433,7 @@ public class FlinkStreamingPortablePipelineTranslator
     SingleOutputStreamOperator<WindowedValue<byte[]>> source =
         context
             .getExecutionEnvironment()
-            .addSource(new ImpulseSourceFunction(keepSourceAlive))
+            .addSource(new ImpulseSourceFunction(keepSourceAlive), "Impulse")
             .returns(typeInfo);
 
     context.addDataStream(Iterables.getOnlyElement(pTransform.getOutputsMap().values()), source);
@@ -448,7 +471,9 @@ public class FlinkStreamingPortablePipelineTranslator
     SingleOutputStreamOperator<WindowedValue<byte[]>> source =
         context
             .getExecutionEnvironment()
-            .addSource(new StreamingImpulseSource(intervalMillis, messageCount))
+            .addSource(
+                new StreamingImpulseSource(intervalMillis, messageCount),
+                StreamingImpulseSource.class.getSimpleName())
             .returns(typeInfo);
 
     context.addDataStream(Iterables.getOnlyElement(pTransform.getOutputsMap().values()), source);
@@ -492,8 +517,6 @@ public class FlinkStreamingPortablePipelineTranslator
 
   private <InputT, OutputT> void translateExecutableStage(
       String id, RunnerApi.Pipeline pipeline, StreamingTranslationContext context) {
-    // TODO: Fail on stateful DoFns for now.
-    // TODO: Support stateful DoFns by inserting group-by-keys where necessary.
     // TODO: Fail on splittable DoFns.
     // TODO: Special-case single outputs to avoid multiplexing PCollections.
     RunnerApi.Components components = pipeline.getComponents();
@@ -561,9 +584,11 @@ public class FlinkStreamingPortablePipelineTranslator
     final Coder<WindowedValue<InputT>> windowedInputCoder =
         instantiateCoder(inputPCollectionId, components);
 
+    final boolean stateful =
+        stagePayload.getUserStatesCount() > 0 || stagePayload.getTimersCount() > 0;
     Coder keyCoder = null;
     KeySelector<WindowedValue<InputT>, ?> keySelector = null;
-    if (stagePayload.getUserStatesCount() > 0 || stagePayload.getTimersCount() > 0) {
+    if (stateful) {
       // Stateful stages are only allowed of KV input
       Coder valueCoder =
           ((WindowedValue.FullWindowedValueCoder) windowedInputCoder).getValueCoder();
@@ -605,14 +630,43 @@ public class FlinkStreamingPortablePipelineTranslator
             keyCoder,
             keySelector);
 
+    final String operatorName = generateNameFromStagePayload(stagePayload);
+
     if (transformedSideInputs.unionTagToView.isEmpty()) {
-      outputStream =
-          inputDataStream.transform(transform.getUniqueName(), outputTypeInformation, doFnOperator);
+      outputStream = inputDataStream.transform(operatorName, outputTypeInformation, doFnOperator);
     } else {
-      outputStream =
-          inputDataStream
-              .connect(transformedSideInputs.unionedSideInputs.broadcast())
-              .transform(transform.getUniqueName(), outputTypeInformation, doFnOperator);
+      DataStream<RawUnionValue> sideInputStream =
+          transformedSideInputs.unionedSideInputs.broadcast();
+      if (stateful) {
+        // We have to manually construct the two-input transform because we're not
+        // allowed to have only one input keyed, normally. Since Flink 1.5.0 it's
+        // possible to use the Broadcast State Pattern which provides a more elegant
+        // way to process keyed main input with broadcast state, but it's not feasible
+        // here because it breaks the DoFnOperator abstraction.
+        TwoInputTransformation<WindowedValue<KV<?, InputT>>, RawUnionValue, WindowedValue<OutputT>>
+            rawFlinkTransform =
+                new TwoInputTransformation(
+                    inputDataStream.getTransformation(),
+                    sideInputStream.getTransformation(),
+                    transform.getUniqueName(),
+                    doFnOperator,
+                    outputTypeInformation,
+                    inputDataStream.getParallelism());
+
+        rawFlinkTransform.setStateKeyType(((KeyedStream) inputDataStream).getKeyType());
+        rawFlinkTransform.setStateKeySelectors(
+            ((KeyedStream) inputDataStream).getKeySelector(), null);
+
+        outputStream =
+            new SingleOutputStreamOperator(
+                inputDataStream.getExecutionEnvironment(),
+                rawFlinkTransform) {}; // we have to cheat around the ctor being protected
+      } else {
+        outputStream =
+            inputDataStream
+                .connect(sideInputStream)
+                .transform(operatorName, outputTypeInformation, doFnOperator);
+      }
     }
 
     if (mainOutputTag != null) {

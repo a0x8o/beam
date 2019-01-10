@@ -121,6 +121,7 @@ rat {
     "**/.github/**/*",
 
     "**/package-list",
+    "**/test.avsc",
     "**/user.avsc",
     "**/test/resources/**/*.txt",
     "**/test/**/.placeholder",
@@ -193,6 +194,7 @@ task javaPreCommit() {
   dependsOn ":beam-examples-java:preCommit"
   dependsOn ":beam-sdks-java-extensions-sql-jdbc:preCommit"
   dependsOn ":beam-sdks-java-javadoc:allJavadoc"
+  dependsOn ":beam-runners-direct-java:needsRunnerTests"
 }
 
 task javaPreCommitPortabilityApi() {
@@ -203,6 +205,9 @@ task javaPreCommitPortabilityApi() {
 task javaPostCommit() {
   dependsOn ":beam-runners-google-cloud-dataflow-java:postCommit"
   dependsOn ":beam-sdks-java-io-google-cloud-platform:postCommit"
+}
+
+task sqlPostCommit() {
   dependsOn ":beam-sdks-java-extensions-sql:postCommit"
   dependsOn ":beam-sdks-java-extensions-sql-jdbc:postCommit"
 }
@@ -240,10 +245,15 @@ task goIntegrationTests() {
 
 task pythonPreCommit() {
   dependsOn ":beam-sdks-python:preCommit"
+  dependsOn ":beam-sdks-python-precommit-dataflow:precommitIT"
 }
 
 task pythonPostCommit() {
   dependsOn ":beam-sdks-python:postCommit"
+}
+
+task portablePythonPreCommit() {
+  dependsOn ":beam-sdks-python:portablePreCommit"
 }
 
 task websitePreCommit() {

@@ -97,6 +97,11 @@ page at http://checkstyle.sourceforge.net/config.html -->
                value="Unused import: {0}."/>
     </module>
 
+    <module name="IllegalThrows">
+      <property name="illegalClassNames"
+        value="java.lang.Error,java.lang.RuntimeException" />
+    </module>
+
     <!--
 
     JAVADOC CHECKS
@@ -155,6 +160,8 @@ page at http://checkstyle.sourceforge.net/config.html -->
       <property name="format" value="^[a-z]+(\.[a-z][a-z0-9]{1,})*$"/>
       <property name="severity" value="error"/>
     </module>
+ 
+    <module name="PackageDeclaration" />
 
     <module name="TypeNameCheck">
       <!-- Validates static, final fields against the
@@ -310,6 +317,9 @@ page at http://checkstyle.sourceforge.net/config.html -->
       <property name="onCommentFormat" value="CHECKSTYLE.ON\: ([\w\|]+)"/>
       <property name="checkFormat" value="$1"/>
     </module>
+
+    <module name="ArrayTypeStyle"/>
   </module>
+
 </module>
 

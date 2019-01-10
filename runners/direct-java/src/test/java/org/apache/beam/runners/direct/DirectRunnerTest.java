@@ -125,14 +125,13 @@ public class DirectRunnerTest implements Serializable {
                 new SimpleFunction<KV<String, Long>, String>() {
                   @Override
                   public String apply(KV<String, Long> input) {
-                    String str = String.format("%s: %s", input.getKey(), input.getValue());
-                    return str;
+                    return String.format("%s: %s", input.getKey(), input.getValue());
                   }
                 }));
 
     PAssert.that(countStrs).containsInAnyOrder("baz: 1", "bar: 2", "foo: 3");
 
-    DirectPipelineResult result = ((DirectPipelineResult) p.run());
+    DirectPipelineResult result = (DirectPipelineResult) p.run();
     result.waitUntilFinish();
   }
 
@@ -160,8 +159,7 @@ public class DirectRunnerTest implements Serializable {
                 new SimpleFunction<KV<String, Long>, String>() {
                   @Override
                   public String apply(KV<String, Long> input) {
-                    String str = String.format("%s: %s", input.getKey(), input.getValue());
-                    return str;
+                    return String.format("%s: %s", input.getKey(), input.getValue());
                   }
                 }));
 
@@ -176,10 +174,10 @@ public class DirectRunnerTest implements Serializable {
 
     PAssert.that(countStrs).containsInAnyOrder("baz: 1", "bar: 2", "foo: 3");
 
-    DirectPipelineResult result = ((DirectPipelineResult) p.run());
+    DirectPipelineResult result = (DirectPipelineResult) p.run();
     result.waitUntilFinish();
 
-    DirectPipelineResult otherResult = ((DirectPipelineResult) p.run());
+    DirectPipelineResult otherResult = (DirectPipelineResult) p.run();
     otherResult.waitUntilFinish();
 
     assertThat("Each element should have been processed twice", changed.get(), equalTo(6));

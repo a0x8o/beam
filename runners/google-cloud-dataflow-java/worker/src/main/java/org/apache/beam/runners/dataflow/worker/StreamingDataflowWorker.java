@@ -88,7 +88,6 @@ import org.apache.beam.runners.dataflow.worker.counters.Counter;
 import org.apache.beam.runners.dataflow.worker.counters.CounterSet;
 import org.apache.beam.runners.dataflow.worker.counters.DataflowCounterUpdateExtractor;
 import org.apache.beam.runners.dataflow.worker.counters.NameContext;
-import org.apache.beam.runners.dataflow.worker.fn.IdGenerator;
 import org.apache.beam.runners.dataflow.worker.graph.CloneAmbiguousFlattensFunction;
 import org.apache.beam.runners.dataflow.worker.graph.CreateRegisterFnOperationFunction;
 import org.apache.beam.runners.dataflow.worker.graph.DeduceFlattenLocationsFunction;
@@ -125,6 +124,8 @@ import org.apache.beam.runners.dataflow.worker.windmill.WindmillServerStub.Commi
 import org.apache.beam.runners.dataflow.worker.windmill.WindmillServerStub.GetWorkStream;
 import org.apache.beam.runners.dataflow.worker.windmill.WindmillServerStub.StreamPool;
 import org.apache.beam.sdk.coders.Coder;
+import org.apache.beam.sdk.fn.IdGenerator;
+import org.apache.beam.sdk.fn.IdGenerators;
 import org.apache.beam.sdk.io.FileSystems;
 import org.apache.beam.sdk.util.BackOff;
 import org.apache.beam.sdk.util.BackOffUtils;
@@ -133,7 +134,7 @@ import org.apache.beam.sdk.util.Sleeper;
 import org.apache.beam.sdk.util.Transport;
 import org.apache.beam.sdk.util.UserCodeException;
 import org.apache.beam.sdk.util.WindowedValue.WindowedValueCoder;
-import org.apache.beam.vendor.grpc.v1_13_1.com.google.protobuf.ByteString;
+import org.apache.beam.vendor.grpc.v1p13p1.com.google.protobuf.ByteString;
 import org.joda.time.Duration;
 import org.joda.time.Instant;
 import org.slf4j.Logger;
@@ -143,12 +144,14 @@ import org.slf4j.LoggerFactory;
 public class StreamingDataflowWorker {
   private static final Logger LOG = LoggerFactory.getLogger(StreamingDataflowWorker.class);
 
+  /** The idGenerator to generate unique id globally. */
+  private static final IdGenerator idGenerator = IdGenerators.decrementingLongs();
   /**
    * Fix up MapTask representation because MultiOutputInfos are missing from system generated
    * ParDoInstructions.
    */
   private static final Function<MapTask, MapTask> fixMultiOutputInfos =
-      new FixMultiOutputInfosOnParDoInstructions(IdGenerator::generate);
+      new FixMultiOutputInfosOnParDoInstructions(idGenerator);
 
   /**
    * Function which converts map tasks to their network representation for execution.
@@ -159,7 +162,7 @@ public class StreamingDataflowWorker {
    * </ul>
    */
   private static final Function<MapTask, MutableNetwork<Node, Edge>> mapTaskToBaseNetwork =
-      new MapTaskToNetworkFunction();
+      new MapTaskToNetworkFunction(idGenerator);
 
   // Maximum number of threads for processing.  Currently each thread processes one key at a time.
   static final int MAX_PROCESSING_THREADS = 300;
@@ -437,11 +440,11 @@ public class StreamingDataflowWorker {
     final Counter<Long, Long> totalProcessingMsecs;
     final Counter<Long, Long> timerProcessingMsecs;
 
-    StageInfo(String stageName, String systemName) {
+    StageInfo(String stageName, String systemName, StreamingDataflowWorker worker) {
       this.stageName = stageName;
       this.systemName = systemName;
       metricsContainerRegistry = StreamingStepMetricsContainer.createRegistry();
-      executionStateRegistry = new StreamingModeExecutionStateRegistry();
+      executionStateRegistry = new StreamingModeExecutionStateRegistry(worker);
       NameContext nameContext = NameContext.create(stageName, null, systemName, null);
       deltaCounters = new CounterSet();
       throttledMsecs =
@@ -627,11 +630,9 @@ public class StreamingDataflowWorker {
       Function<MutableNetwork<Node, Edge>, Node> sdkFusedStage =
           pipeline == null
               ? RegisterNodeFunction.withoutPipeline(
-                  IdGenerator::generate, sdkHarnessRegistry.beamFnStateApiServiceDescriptor())
+                  idGenerator, sdkHarnessRegistry.beamFnStateApiServiceDescriptor())
               : RegisterNodeFunction.forPipeline(
-                  pipeline,
-                  IdGenerator::generate,
-                  sdkHarnessRegistry.beamFnStateApiServiceDescriptor());
+                  pipeline, idGenerator, sdkHarnessRegistry.beamFnStateApiServiceDescriptor());
       Function<MutableNetwork<Node, Edge>, MutableNetwork<Node, Edge>> lengthPrefixUnknownCoders =
           LengthPrefixUnknownCoders::forSdkNetwork;
       Function<MutableNetwork<Node, Edge>, MutableNetwork<Node, Edge>>
@@ -640,9 +641,10 @@ public class StreamingDataflowWorker {
 
       Function<MutableNetwork<Node, Edge>, MutableNetwork<Node, Edge>> transformToRunnerNetwork =
           new CreateRegisterFnOperationFunction(
-              IdGenerator::generate,
+              idGenerator,
               this::createPortNode,
-              lengthPrefixUnknownCoders.andThen(sdkFusedStage));
+              lengthPrefixUnknownCoders.andThen(sdkFusedStage),
+              false);
 
       mapTaskToNetwork =
           mapTaskToBaseNetwork
@@ -669,8 +671,8 @@ public class StreamingDataflowWorker {
         RemoteGrpcPort.newBuilder()
             .setApiServiceDescriptor(sdkHarnessRegistry.beamFnDataApiServiceDescriptor())
             .build(),
-        IdGenerator.generate(),
-        IdGenerator.generate(),
+        idGenerator.getId(),
+        idGenerator.getId(),
         predecessorId,
         successorId);
   }
@@ -937,9 +939,7 @@ public class StreamingDataflowWorker {
         // Reconnect every now and again to enable better load balancing.
         // If at any point the server closes the stream, we will reconnect immediately; otherwise
         // we half-close the stream after some time and create a new one.
-        if (!stream.awaitTermination(3, TimeUnit.MINUTES)) {
-          stream.close();
-        }
+        stream.closeAfterDefaultTimeout();
       } catch (InterruptedException e) {
         // Continue processing until !running.get()
       }
@@ -1097,7 +1097,7 @@ public class StreamingDataflowWorker {
 
     StageInfo stageInfo =
         stageInfoMap.computeIfAbsent(
-            mapTask.getStageName(), s -> new StageInfo(s, mapTask.getSystemName()));
+            mapTask.getStageName(), s -> new StageInfo(s, mapTask.getSystemName(), this));
 
     ExecutionState executionState = null;
 
@@ -1143,9 +1143,9 @@ public class StreamingDataflowWorker {
         DataflowMapTaskExecutor mapTaskExecutor =
             mapTaskExecutorFactory.create(
                 worker.getControlClientHandler(),
-                worker.getDataService(),
+                worker.getGrpcDataFnServer(),
                 sdkHarnessRegistry.beamFnDataApiServiceDescriptor(),
-                worker.getStateService(),
+                worker.getGrpcStateFnServer(),
                 mapTaskNetwork,
                 options,
                 mapTask.getStageName(),
@@ -1153,7 +1153,7 @@ public class StreamingDataflowWorker {
                 sinkRegistry,
                 context,
                 pendingDeltaCounters,
-                IdGenerator::generate);
+                idGenerator);
         ReadOperation readOperation = mapTaskExecutor.getReadOperation();
         // Disable progress updates since its results are unused  for streaming
         // and involves starting a thread.
@@ -1649,10 +1649,7 @@ public class StreamingDataflowWorker {
   // Returns true if reporting the exception is successful and the work should be retried.
   private boolean reportFailure(String computation, Windmill.WorkItem work, Throwable t) {
     // Enqueue the errors to be sent to DFE in periodic updates
-    synchronized (pendingFailuresToReport) {
-      pendingFailuresToReport.add(
-          buildExceptionStackTrace(t, options.getMaxStackTraceDepthToReport()));
-    }
+    addFailure(buildExceptionStackTrace(t, options.getMaxStackTraceDepthToReport()));
     if (windmillServiceEnabled) {
       return true;
     } else {
@@ -1665,6 +1662,16 @@ public class StreamingDataflowWorker {
                   .setWorkToken(work.getWorkToken())
                   .build());
       return !response.getFailed();
+    }
+  }
+
+  /**
+   * Adds the given failure message to the queue of messages to be reported to DFE in periodic
+   * updates.
+   */
+  public void addFailure(String failureMessage) {
+    synchronized (pendingFailuresToReport) {
+      pendingFailuresToReport.add(failureMessage);
     }
   }
 

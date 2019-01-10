@@ -21,9 +21,8 @@ import static java.lang.String.format;
 
 import java.io.IOException;
 import java.util.Optional;
-import org.apache.beam.sdk.io.synthetic.SyntheticBoundedIO;
 import org.apache.beam.sdk.io.synthetic.SyntheticStep;
-import org.apache.beam.sdk.loadtests.metrics.MetricsMonitor;
+import org.apache.beam.sdk.loadtests.metrics.ByteMonitor;
 import org.apache.beam.sdk.options.Default;
 import org.apache.beam.sdk.options.Description;
 import org.apache.beam.sdk.transforms.DoFn;
@@ -36,17 +35,17 @@ import org.apache.beam.sdk.values.PCollection;
  * Load test for {@link GroupByKey} operation.
  *
  * <p>The purpose of this test is to measure {@link GroupByKey}'s behaviour in stressful conditions.
- * It uses {@link SyntheticBoundedIO} and {@link SyntheticStep} which both can be parametrized to
- * generate keys and values of various size, impose delay (sleep or cpu burnout) in various moments
- * during the pipeline execution and provide some other performance challenges.
+ * It uses synthetic sources and {@link SyntheticStep} which both can be parametrized to generate
+ * keys and values of various size, impose delay (sleep or cpu burnout) in various moments during
+ * the pipeline execution and provide some other performance challenges.
  *
- * @see SyntheticStep
- * @see SyntheticBoundedIO
- *     <p>In addition, this test allows to: - fanout: produce one input (using Synthetic Source) and
- *     process it with multiple sessions performing the same set of operations - reiterate produced
- *     PCollection multiple times
- *     <p>To run it manually, use the following command:
- *     <pre>
+ * <p>In addition, this test allows to: - fanout: produce one input (using Synthetic Source) and
+ * process it with multiple sessions performing the same set of operations - reiterate produced
+ * PCollection multiple times
+ *
+ * <p>To run it manually, use the following command:
+ *
+ * <pre>
  *    ./gradlew :beam-sdks-java-load-tests:run -PloadTest.args='
  *      --fanout=1
  *      --iterations=1
@@ -84,15 +83,20 @@ public class GroupByKeyLoadTest extends LoadTest<GroupByKeyLoadTest.Options> {
     Optional<SyntheticStep> syntheticStep = createStep(options.getStepOptions());
 
     PCollection<KV<byte[], byte[]>> input =
-        pipeline.apply(SyntheticBoundedIO.readFrom(sourceOptions));
+        pipeline
+            .apply("Read input", readFromSource(sourceOptions))
+            .apply("Collect start time metrics", ParDo.of(runtimeMonitor))
+            .apply(
+                "Total bytes monitor",
+                ParDo.of(new ByteMonitor(METRICS_NAMESPACE, "totalBytes.count")));
 
     for (int branch = 0; branch < options.getFanout(); branch++) {
       applyStepIfPresent(input, format("Synthetic step (%s)", branch), syntheticStep)
-          .apply(ParDo.of(new MetricsMonitor(METRICS_NAMESPACE)))
           .apply(format("Group by key (%s)", branch), GroupByKey.create())
           .apply(
               format("Ungroup and reiterate (%s)", branch),
-              ParDo.of(new UngroupAndReiterate(options.getIterations())));
+              ParDo.of(new UngroupAndReiterate(options.getIterations())))
+          .apply(format("Collect end time metrics (%s)", branch), ParDo.of(runtimeMonitor));
     }
   }
 

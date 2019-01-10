@@ -18,9 +18,8 @@
 package org.apache.beam.sdk.loadtests;
 
 import java.io.IOException;
-import org.apache.beam.sdk.io.synthetic.SyntheticBoundedIO;
 import org.apache.beam.sdk.io.synthetic.SyntheticStep;
-import org.apache.beam.sdk.loadtests.metrics.MetricsMonitor;
+import org.apache.beam.sdk.loadtests.metrics.ByteMonitor;
 import org.apache.beam.sdk.options.Default;
 import org.apache.beam.sdk.options.Description;
 import org.apache.beam.sdk.options.Validation;
@@ -32,14 +31,13 @@ import org.apache.beam.sdk.values.PCollection;
  * Load test for {@link ParDo} operation.
  *
  * <p>The purpose of this test is to measure {@link ParDo}'s behaviour in stressful conditions. It
- * uses {@link SyntheticBoundedIO} and {@link SyntheticStep} which both can be parametrized to
- * generate keys and values of various size, impose delay (sleep or cpu burnout) in various moments
- * during the pipeline execution and provide some other performance challenges.
+ * uses synthetic sources and {@link SyntheticStep} which both can be parametrized to generate keys
+ * and values of various size, impose delay (sleep or cpu burnout) in various moments during the
+ * pipeline execution and provide some other performance challenges.
  *
- * @see SyntheticStep
- * @see SyntheticBoundedIO
- *     <p>To run it manually, use the following command:
- *     <pre>
+ * <p>To run it manually, use the following command:
+ *
+ * <pre>
  *    ./gradlew :beam-sdks-java-load-tests:run -PloadTest.args='
  *      --numberOfCounterOperations=1
  *      --sourceOptions={"numRecords":1000,...}
@@ -73,13 +71,16 @@ public class ParDoLoadTest extends LoadTest<ParDoLoadTest.Options> {
   @Override
   protected void loadTest() {
     PCollection<KV<byte[], byte[]>> input =
-        pipeline.apply("Read input", SyntheticBoundedIO.readFrom(sourceOptions));
+        pipeline
+            .apply("Read input", readFromSource(sourceOptions))
+            .apply(ParDo.of(runtimeMonitor))
+            .apply(ParDo.of(new ByteMonitor(METRICS_NAMESPACE, "totalBytes.count")));
 
     for (int i = 0; i < options.getNumberOfCounterOperations(); i++) {
       input = input.apply(String.format("Step: %d", i), ParDo.of(new SyntheticStep(stepOptions)));
     }
 
-    input.apply("Collect metrics", ParDo.of(new MetricsMonitor(METRICS_NAMESPACE)));
+    input.apply(ParDo.of(runtimeMonitor));
   }
 
   public static void main(String[] args) throws IOException {

@@ -15,43 +15,95 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package org.apache.beam.runners.spark.coders;
 
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
+
 import com.esotericsoftware.kryo.Kryo;
-import com.esotericsoftware.kryo.serializers.JavaSerializer;
-import com.google.common.collect.Iterables;
-import java.io.Serializable;
-import org.apache.beam.sdk.coders.Coder;
-import org.apache.beam.sdk.io.Source;
-import org.hamcrest.Matchers;
-import org.junit.Assert;
+import com.esotericsoftware.kryo.Registration;
+import org.apache.beam.runners.spark.SparkContextOptions;
+import org.apache.beam.runners.spark.SparkPipelineOptions;
+import org.apache.beam.runners.spark.TestSparkPipelineOptions;
+import org.apache.beam.runners.spark.TestSparkRunner;
+import org.apache.beam.runners.spark.io.MicrobatchSource;
+import org.apache.beam.sdk.Pipeline;
+import org.apache.beam.sdk.options.PipelineOptionsFactory;
+import org.apache.beam.sdk.transforms.Create;
+import org.apache.spark.SparkConf;
+import org.apache.spark.api.java.JavaSparkContext;
 import org.junit.Test;
-import org.reflections.Reflections;
 
-
-/**
- * BeamSparkRunnerRegistrator Test.
- */
+/** Testing of beam registrar. */
 public class BeamSparkRunnerRegistratorTest {
+
   @Test
-  public void testCodersAndSourcesRegistration() {
-    BeamSparkRunnerRegistrator registrator = new BeamSparkRunnerRegistrator();
+  public void testKryoRegistration() {
+    SparkConf conf = new SparkConf();
+    conf.set("spark.serializer", "org.apache.spark.serializer.KryoSerializer");
+    conf.set("spark.kryo.registrator", WrapperKryoRegistrator.class.getName());
+    runSimplePipelineWithSparkContext(conf);
+    assertTrue(
+        "WrapperKryoRegistrator wasn't initiated, probably KryoSerializer is not set",
+        WrapperKryoRegistrator.wasInitiated);
+  }
 
-    Reflections reflections = new Reflections();
-    Iterable<Class<? extends Serializable>> classesForJavaSerialization =
-        Iterables.concat(reflections.getSubTypesOf(Coder.class),
-            reflections.getSubTypesOf(Source.class));
+  @Test
+  public void testDefaultSerializerNotCallingKryo() {
+    SparkConf conf = new SparkConf();
+    conf.set("spark.kryo.registrator", KryoRegistratorIsNotCalled.class.getName());
+    runSimplePipelineWithSparkContext(conf);
+  }
 
-    Kryo kryo = new Kryo();
+  private void runSimplePipelineWithSparkContext(SparkConf conf) {
+    SparkPipelineOptions options =
+        PipelineOptionsFactory.create().as(TestSparkPipelineOptions.class);
+    options.setRunner(TestSparkRunner.class);
 
-    registrator.registerClasses(kryo);
+    conf.set("spark.master", "local");
+    conf.setAppName("test");
 
-    for (Class<?> clazz : classesForJavaSerialization) {
-      Assert.assertThat("Registered serializer for class " + clazz.getName()
-              + " was not an instance of " + JavaSerializer.class.getName(),
-          kryo.getSerializer(clazz),
-          Matchers.instanceOf(JavaSerializer.class));
+    JavaSparkContext javaSparkContext = new JavaSparkContext(conf);
+    options.setUsesProvidedSparkContext(true);
+    options.as(SparkContextOptions.class).setProvidedSparkContext(javaSparkContext);
+    Pipeline p = Pipeline.create(options);
+    p.apply(Create.of("a")); // some operation to trigger pipeline construction
+    p.run().waitUntilFinish();
+    javaSparkContext.stop();
+  }
+
+  /**
+   * A {@link BeamSparkRunnerRegistrator} that fails if called. Use only for test purposes. Needs to
+   * be public for serialization.
+   */
+  public static class KryoRegistratorIsNotCalled extends BeamSparkRunnerRegistrator {
+
+    @Override
+    public void registerClasses(Kryo kryo) {
+      fail(
+          "Default spark.serializer is JavaSerializer"
+              + " so spark.kryo.registrator shouldn't be called");
+    }
+  }
+
+  /**
+   * A {@link BeamSparkRunnerRegistrator} that registers an internal class to validate
+   * KryoSerialization resolution. Use only for test purposes. Needs to be public for serialization.
+   */
+  public static class WrapperKryoRegistrator extends BeamSparkRunnerRegistrator {
+
+    static boolean wasInitiated = false;
+
+    public WrapperKryoRegistrator() {
+      wasInitiated = true;
+    }
+
+    @Override
+    public void registerClasses(Kryo kryo) {
+      super.registerClasses(kryo);
+      Registration registration = kryo.getRegistration(MicrobatchSource.class);
+      com.esotericsoftware.kryo.Serializer kryoSerializer = registration.getSerializer();
+      assertTrue(kryoSerializer instanceof StatelessJavaSerializer);
     }
   }
 }

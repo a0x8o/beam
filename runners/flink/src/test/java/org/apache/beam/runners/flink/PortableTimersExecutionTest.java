@@ -17,7 +17,6 @@
  */
 package org.apache.beam.runners.flink;
 
-import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.core.Is.is;
 import static org.junit.Assert.assertThat;
 
@@ -31,6 +30,7 @@ import java.util.concurrent.Executors;
 import org.apache.beam.model.jobmanagement.v1.JobApi.JobState.Enum;
 import org.apache.beam.model.pipeline.v1.RunnerApi;
 import org.apache.beam.runners.core.construction.Environments;
+import org.apache.beam.runners.core.construction.JavaReadViaImpulse;
 import org.apache.beam.runners.core.construction.PipelineTranslation;
 import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.coders.StringUtf8Coder;
@@ -45,11 +45,13 @@ import org.apache.beam.sdk.state.TimerSpec;
 import org.apache.beam.sdk.state.TimerSpecs;
 import org.apache.beam.sdk.state.ValueState;
 import org.apache.beam.sdk.testing.CrashingRunner;
+import org.apache.beam.sdk.testing.PAssert;
 import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.Impulse;
 import org.apache.beam.sdk.transforms.ParDo;
 import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
 import org.apache.beam.sdk.values.KV;
+import org.apache.beam.sdk.values.PCollection;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -65,7 +67,7 @@ import org.junit.runners.Parameterized.Parameters;
 @RunWith(Parameterized.class)
 public class PortableTimersExecutionTest implements Serializable {
 
-  @Parameters
+  @Parameters(name = "streaming: {0}")
   public static Object[] testModes() {
     return new Object[] {true, false};
   }
@@ -74,11 +76,8 @@ public class PortableTimersExecutionTest implements Serializable {
 
   private transient ListeningExecutorService flinkJobExecutor;
 
-  private static List<KV<String, Integer>> results = new ArrayList<>();
-
   @Before
   public void setup() {
-    results.clear();
     flinkJobExecutor = MoreExecutors.listeningDecorator(Executors.newCachedThreadPool());
   }
 
@@ -87,12 +86,13 @@ public class PortableTimersExecutionTest implements Serializable {
     flinkJobExecutor.shutdown();
   }
 
-  @Test(timeout = 60_000)
+  @Test(timeout = 120_000)
   public void testTimerExecution() throws Exception {
     PipelineOptions options = PipelineOptionsFactory.create();
     options.setRunner(CrashingRunner.class);
     options.as(FlinkPipelineOptions.class).setFlinkMaster("[local]");
     options.as(FlinkPipelineOptions.class).setStreaming(isStreaming);
+    options.as(FlinkPipelineOptions.class).setParallelism(2);
     options
         .as(PortablePipelineOptions.class)
         .setDefaultEnvironmentType(Environments.ENVIRONMENT_EMBEDDED);
@@ -116,6 +116,7 @@ public class PortableTimersExecutionTest implements Serializable {
         expectedOutput.add(KV.of(key.toString(), i + offset));
       }
     }
+
     Collections.shuffle(input);
 
     DoFn<byte[], KV<String, Integer>> inputFn =
@@ -157,20 +158,13 @@ public class PortableTimersExecutionTest implements Serializable {
           }
         };
 
-    DoFn<KV<String, Integer>, Void> collectResults =
-        new DoFn<KV<String, Integer>, Void>() {
-          @ProcessElement
-          public void processElement(ProcessContext context) {
-            results.add(context.element());
-          }
-        };
-
     final Pipeline pipeline = Pipeline.create(options);
-    pipeline
-        .apply(Impulse.create())
-        .apply(ParDo.of(inputFn))
-        .apply(ParDo.of(testFn))
-        .apply(ParDo.of(collectResults));
+    PCollection<KV<String, Integer>> output =
+        pipeline.apply(Impulse.create()).apply(ParDo.of(inputFn)).apply(ParDo.of(testFn));
+    PAssert.that(output).containsInAnyOrder(expectedOutput);
+    // This is line below required to convert the PAssert's read to an impulse, which is expected
+    // by the GreedyPipelineFuser.
+    pipeline.replaceAll(Collections.singletonList(JavaReadViaImpulse.boundedOverride()));
 
     RunnerApi.Pipeline pipelineProto = PipelineTranslation.toProto(pipeline);
 
@@ -181,14 +175,13 @@ public class PortableTimersExecutionTest implements Serializable {
             flinkJobExecutor,
             pipelineProto,
             options.as(FlinkPipelineOptions.class),
+            null,
             Collections.emptyList());
 
     jobInvocation.start();
-    long timeout = System.currentTimeMillis() + 60 * 1000;
-    while (jobInvocation.getState() != Enum.DONE && System.currentTimeMillis() < timeout) {
+    while (jobInvocation.getState() != Enum.DONE) {
       Thread.sleep(1000);
     }
     assertThat(jobInvocation.getState(), is(Enum.DONE));
-    assertThat(results, containsInAnyOrder(expectedOutput.toArray()));
   }
 }
