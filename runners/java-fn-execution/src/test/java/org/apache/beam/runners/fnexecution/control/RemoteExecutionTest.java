@@ -17,21 +17,14 @@
  */
 package org.apache.beam.runners.fnexecution.control;
 
-import static com.google.common.base.Preconditions.checkState;
+import static junit.framework.TestCase.assertEquals;
+import static org.apache.beam.vendor.guava.v20_0.com.google.common.base.Preconditions.checkState;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.equalTo;
 import static org.junit.Assert.assertThat;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
-import com.google.common.base.Optional;
-import com.google.common.collect.Collections2;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Iterables;
-import com.google.common.collect.Iterators;
-import com.google.common.collect.Sets;
-import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -103,6 +96,7 @@ import org.apache.beam.sdk.transforms.Flatten;
 import org.apache.beam.sdk.transforms.GroupByKey;
 import org.apache.beam.sdk.transforms.Impulse;
 import org.apache.beam.sdk.transforms.ParDo;
+import org.apache.beam.sdk.transforms.ParDo.SingleOutput;
 import org.apache.beam.sdk.transforms.View;
 import org.apache.beam.sdk.transforms.WithKeys;
 import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
@@ -114,13 +108,19 @@ import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.PCollectionList;
 import org.apache.beam.sdk.values.PCollectionView;
 import org.apache.beam.vendor.grpc.v1p13p1.com.google.protobuf.ByteString;
-import org.hamcrest.CoreMatchers;
+import org.apache.beam.vendor.guava.v20_0.com.google.common.base.Optional;
+import org.apache.beam.vendor.guava.v20_0.com.google.common.collect.Collections2;
+import org.apache.beam.vendor.guava.v20_0.com.google.common.collect.ImmutableMap;
+import org.apache.beam.vendor.guava.v20_0.com.google.common.collect.ImmutableSet;
+import org.apache.beam.vendor.guava.v20_0.com.google.common.collect.Iterables;
+import org.apache.beam.vendor.guava.v20_0.com.google.common.collect.Iterators;
+import org.apache.beam.vendor.guava.v20_0.com.google.common.collect.Sets;
+import org.apache.beam.vendor.guava.v20_0.com.google.common.util.concurrent.ThreadFactoryBuilder;
 import org.hamcrest.collection.IsEmptyIterable;
 import org.hamcrest.collection.IsIterableContainingInOrder;
 import org.joda.time.DateTimeUtils;
 import org.joda.time.Duration;
 import org.junit.After;
-import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
@@ -442,11 +442,7 @@ public class RemoteExecutionTest implements Serializable {
           RemoteOutputReceiver.of(targetCoder.getValue(), outputContents::add));
     }
 
-    Iterable<byte[]> sideInputData =
-        Arrays.asList(
-            CoderUtils.encodeToByteArray(StringUtf8Coder.of(), "A"),
-            CoderUtils.encodeToByteArray(StringUtf8Coder.of(), "B"),
-            CoderUtils.encodeToByteArray(StringUtf8Coder.of(), "C"));
+    Iterable<String> sideInputData = Arrays.asList("A", "B", "C");
     StateRequestHandler stateRequestHandler =
         StateRequestHandlers.forSideInputHandlerFactory(
             descriptor.getSideInputSpecs(),
@@ -476,13 +472,9 @@ public class RemoteExecutionTest implements Serializable {
     try (ActiveBundle bundle =
         processor.newBundle(outputReceivers, stateRequestHandler, progressHandler)) {
       Iterables.getOnlyElement(bundle.getInputReceivers().values())
-          .accept(
-              WindowedValue.valueInGlobalWindow(
-                  CoderUtils.encodeToByteArray(StringUtf8Coder.of(), "X")));
+          .accept(WindowedValue.valueInGlobalWindow("X"));
       Iterables.getOnlyElement(bundle.getInputReceivers().values())
-          .accept(
-              WindowedValue.valueInGlobalWindow(
-                  CoderUtils.encodeToByteArray(StringUtf8Coder.of(), "Y")));
+          .accept(WindowedValue.valueInGlobalWindow("Y"));
     }
     for (Collection<WindowedValue<?>> windowedValues : outputValues.values()) {
       assertThat(
@@ -507,12 +499,35 @@ public class RemoteExecutionTest implements Serializable {
                 "create",
                 ParDo.of(
                     new DoFn<byte[], String>() {
+                      private boolean emitted = false;
+
                       @ProcessElement
                       public void process(ProcessContext ctxt) {
-                        Metrics.counter(RemoteExecutionTest.class, counterMetricName).inc();
+                        // TODO(BEAM-6467): Impulse is producing two elements instead of one.
+                        // So add this check to only emit these three elemenets.
+                        if (!emitted) {
+                          ctxt.output("zero");
+                          ctxt.output("one");
+                          ctxt.output("two");
+                          Metrics.counter(RemoteExecutionTest.class, counterMetricName).inc();
+                        }
+                        emitted = true;
                       }
                     }))
             .setCoder(StringUtf8Coder.of());
+
+    SingleOutput<String, String> pardo =
+        ParDo.of(
+            new DoFn<String, String>() {
+              @ProcessElement
+              public void process(ProcessContext ctxt) {
+                // Output the element twice to keep unique numbers in asserts, 6 output elements.
+                ctxt.output(ctxt.element());
+                ctxt.output(ctxt.element());
+              }
+            });
+    input.apply("processA", pardo).setCoder(StringUtf8Coder.of());
+    input.apply("processB", pardo).setCoder(StringUtf8Coder.of());
 
     RunnerApi.Pipeline pipelineProto = PipelineTranslation.toProto(p);
     FusedPipeline fused = GreedyPipelineFuser.fuse(pipelineProto);
@@ -584,21 +599,52 @@ public class RemoteExecutionTest implements Serializable {
           @Override
           public void onCompleted(ProcessBundleResponse response) {
             // Assert the timestamps are non empty then 0 them out before comparing.
-            List<MonitoringInfo> actualMIs = new ArrayList<>();
+            List<MonitoringInfo> result = new ArrayList<MonitoringInfo>();
             for (MonitoringInfo mi : response.getMonitoringInfosList()) {
-              MonitoringInfo.Builder builder = MonitoringInfo.newBuilder();
-              Assert.assertTrue(mi.getTimestamp().getSeconds() > 0);
-              builder.mergeFrom(mi);
-              builder.clearTimestamp();
-              actualMIs.add(builder.build());
+              result.add(SimpleMonitoringInfoBuilder.clearTimestamp(mi));
             }
+
+            // The user counter is counted in both ParDos, so it should be counted twice for each
+            // element 4 = 2 x 2 elements.
+            List<MonitoringInfo> expected = new ArrayList<MonitoringInfo>();
 
             SimpleMonitoringInfoBuilder builder = new SimpleMonitoringInfoBuilder();
             builder.setUrnForUserMetric(RemoteExecutionTest.class.getName(), counterMetricName);
-            builder.setInt64Value(2);
-            MonitoringInfo expectedCounter = builder.build();
+            // TODO(ajamato): Add test having a user counter with the same name, in two
+            // separate ptransforms, should be labelled differnetly. Currently this does not work
+            // because the MetricContainer is not being seeded properly with the step name.
+            builder.setInt64Value(1); // Count just the one inc() in create();
+            expected.add(builder.build());
 
-            assertThat(actualMIs, CoreMatchers.hasItems(expectedCounter));
+            // The element counter should be counted only once for the pcollection.
+            // So there should be only two elements.
+            builder = new SimpleMonitoringInfoBuilder();
+            builder.setUrn(SimpleMonitoringInfoBuilder.ELEMENT_COUNT_URN);
+            builder.setPCollectionLabel("impulse.out");
+            builder.setInt64Value(2);
+            expected.add(builder.build());
+
+            builder = new SimpleMonitoringInfoBuilder();
+            builder.setUrn(SimpleMonitoringInfoBuilder.ELEMENT_COUNT_URN);
+            builder.setPCollectionLabel("create/ParMultiDo(Anonymous).output");
+            builder.setInt64Value(3);
+            expected.add(builder.build());
+
+            // Verify that the element count is not double counted if two PCollections consume it.
+            builder = new SimpleMonitoringInfoBuilder();
+            builder.setUrn(SimpleMonitoringInfoBuilder.ELEMENT_COUNT_URN);
+            builder.setPCollectionLabel("processA/ParMultiDo(Anonymous).output");
+            builder.setInt64Value(6);
+            expected.add(builder.build());
+
+            builder = new SimpleMonitoringInfoBuilder();
+            builder.setUrn(SimpleMonitoringInfoBuilder.ELEMENT_COUNT_URN);
+            builder.setPCollectionLabel("processB/ParMultiDo(Anonymous).output");
+            builder.setInt64Value(6);
+            expected.add(builder.build());
+
+            assertEquals(5, result.size());
+            assertThat(result, containsInAnyOrder(expected.toArray()));
           }
         };
 
@@ -1024,22 +1070,18 @@ public class RemoteExecutionTest implements Serializable {
             WindowedValue.valueInGlobalWindow(kvBytes("stream2X", ""))));
   }
 
-  private KV<byte[], byte[]> kvBytes(String key, long value) throws CoderException {
-    return KV.of(
-        CoderUtils.encodeToByteArray(StringUtf8Coder.of(), key),
-        CoderUtils.encodeToByteArray(BigEndianLongCoder.of(), value));
+  private KV<String, byte[]> kvBytes(String key, long value) throws CoderException {
+    return KV.of(key, CoderUtils.encodeToByteArray(BigEndianLongCoder.of(), value));
   }
 
-  private KV<byte[], byte[]> kvBytes(String key, String value) throws CoderException {
-    return KV.of(
-        CoderUtils.encodeToByteArray(StringUtf8Coder.of(), key),
-        CoderUtils.encodeToByteArray(StringUtf8Coder.of(), value));
+  private KV<String, String> kvBytes(String key, String value) throws CoderException {
+    return KV.of(key, value);
   }
 
-  private KV<byte[], org.apache.beam.runners.core.construction.Timer<byte[]>> timerBytes(
+  private KV<String, org.apache.beam.runners.core.construction.Timer<byte[]>> timerBytes(
       String key, long timestampOffset) throws CoderException {
     return KV.of(
-        CoderUtils.encodeToByteArray(StringUtf8Coder.of(), key),
+        key,
         org.apache.beam.runners.core.construction.Timer.of(
             BoundedWindow.TIMESTAMP_MIN_VALUE.plus(timestampOffset),
             CoderUtils.encodeToByteArray(VoidCoder.of(), null, Coder.Context.NESTED)));
@@ -1048,7 +1090,7 @@ public class RemoteExecutionTest implements Serializable {
   private Object timerStructuralValue(Object timer) {
     return WindowedValue.FullWindowedValueCoder.of(
             KvCoder.of(
-                ByteArrayCoder.of(),
+                StringUtf8Coder.of(),
                 org.apache.beam.runners.core.construction.Timer.Coder.of(ByteArrayCoder.of())),
             GlobalWindow.Coder.INSTANCE)
         .structuralValue(timer);

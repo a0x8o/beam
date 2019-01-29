@@ -24,13 +24,11 @@ import static org.hamcrest.core.Is.is;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertThat;
 
-import com.google.common.collect.ImmutableList;
 import java.io.Serializable;
 import org.apache.beam.sdk.coders.KvCoder;
 import org.apache.beam.sdk.coders.StringUtf8Coder;
 import org.apache.beam.sdk.coders.VarIntCoder;
 import org.apache.beam.sdk.coders.VarLongCoder;
-import org.apache.beam.sdk.testing.DataflowPortabilityExecutableStageUnsupported;
 import org.apache.beam.sdk.testing.PAssert;
 import org.apache.beam.sdk.testing.TestPipeline;
 import org.apache.beam.sdk.testing.TestStream;
@@ -46,6 +44,7 @@ import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.TimestampedValue;
 import org.apache.beam.sdk.values.TypeDescriptors;
 import org.apache.beam.sdk.values.WindowingStrategy;
+import org.apache.beam.vendor.guava.v20_0.com.google.common.collect.ImmutableList;
 import org.joda.time.Duration;
 import org.joda.time.Instant;
 import org.junit.Rule;
@@ -150,7 +149,7 @@ public class ReshuffleTest implements Serializable {
   }
 
   @Test
-  @Category({ValidatesRunner.class, DataflowPortabilityExecutableStageUnsupported.class})
+  @Category(ValidatesRunner.class)
   public void testReshuffleAfterSessionsAndGroupByKey() {
 
     PCollection<KV<String, Iterable<Integer>>> input =
@@ -171,7 +170,7 @@ public class ReshuffleTest implements Serializable {
   }
 
   @Test
-  @Category({ValidatesRunner.class, DataflowPortabilityExecutableStageUnsupported.class})
+  @Category(ValidatesRunner.class)
   public void testReshuffleAfterFixedWindowsAndGroupByKey() {
 
     PCollection<KV<String, Iterable<Integer>>> input =
@@ -192,7 +191,7 @@ public class ReshuffleTest implements Serializable {
   }
 
   @Test
-  @Category({ValidatesRunner.class, DataflowPortabilityExecutableStageUnsupported.class})
+  @Category(ValidatesRunner.class)
   public void testReshuffleAfterSlidingWindowsAndGroupByKey() {
 
     PCollection<KV<String, Iterable<Integer>>> input =
@@ -213,7 +212,7 @@ public class ReshuffleTest implements Serializable {
   }
 
   @Test
-  @Category({ValidatesRunner.class, DataflowPortabilityExecutableStageUnsupported.class})
+  @Category(ValidatesRunner.class)
   public void testReshuffleAfterFixedWindows() {
 
     PCollection<KV<String, Integer>> input =
@@ -233,7 +232,7 @@ public class ReshuffleTest implements Serializable {
   }
 
   @Test
-  @Category({ValidatesRunner.class, DataflowPortabilityExecutableStageUnsupported.class})
+  @Category(ValidatesRunner.class)
   public void testReshuffleAfterSlidingWindows() {
 
     PCollection<KV<String, Integer>> input =

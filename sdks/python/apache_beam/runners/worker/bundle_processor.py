@@ -151,6 +151,10 @@ class _StateBackedIterable(object):
     return list, (list(self),)
 
 
+coder_impl.FastPrimitivesCoderImpl.register_iterable_like_type(
+    _StateBackedIterable)
+
+
 class StateBackedSideInputMap(object):
   def __init__(self, state_handler, transform_id, tag, side_input_data, coder):
     self._state_handler = state_handler
@@ -267,6 +271,9 @@ class _ConcatIterable(object):
       yield elem
     for elem in self.second:
       yield elem
+
+
+coder_impl.FastPrimitivesCoderImpl.register_iterable_like_type(_ConcatIterable)
 
 
 # TODO(BEAM-5428): Implement cross-bundle state caching.
@@ -592,7 +599,7 @@ class BeamTransformFactory(object):
     else:
       # No URN, assume cloud object encoding json bytes.
       return operation_specs.get_coder_from_spec(
-          json.loads(coder_proto.spec.spec.payload))
+          json.loads(coder_proto.spec.spec.payload.decode('utf-8')))
 
   def get_windowed_coder(self, pcoll_id):
     coder = self.get_coder(self.descriptor.pcollections[pcoll_id].coder_id)

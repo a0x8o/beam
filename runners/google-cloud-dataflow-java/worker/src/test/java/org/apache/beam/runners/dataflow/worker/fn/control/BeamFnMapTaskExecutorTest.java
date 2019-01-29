@@ -19,15 +19,13 @@ package org.apache.beam.runners.dataflow.worker.fn.control;
 
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.equalTo;
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertThat;
+import static org.junit.Assert.assertTrue;
 import static org.mockito.Matchers.any;
 import static org.mockito.Mockito.when;
 
 import com.google.api.services.dataflow.model.CounterUpdate;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableTable;
-import com.google.common.collect.Iterables;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
@@ -42,11 +40,11 @@ import org.apache.beam.model.pipeline.v1.RunnerApi;
 import org.apache.beam.runners.core.StateInternals;
 import org.apache.beam.runners.core.TimerInternals;
 import org.apache.beam.runners.core.TimerInternals.TimerData;
+import org.apache.beam.runners.core.metrics.ExecutionStateTracker;
 import org.apache.beam.runners.dataflow.worker.DataflowExecutionContext.DataflowStepContext;
 import org.apache.beam.runners.dataflow.worker.counters.NameContext;
 import org.apache.beam.runners.dataflow.worker.fn.data.RemoteGrpcPortWriteOperation;
 import org.apache.beam.runners.dataflow.worker.util.CounterHamcrestMatchers;
-import org.apache.beam.runners.dataflow.worker.util.common.worker.ExecutionStateTracker;
 import org.apache.beam.runners.dataflow.worker.util.common.worker.OperationContext;
 import org.apache.beam.runners.dataflow.worker.util.common.worker.ReadOperation;
 import org.apache.beam.runners.fnexecution.control.InstructionRequestHandler;
@@ -57,6 +55,10 @@ import org.apache.beam.sdk.fn.IdGenerators;
 import org.apache.beam.sdk.fn.data.RemoteGrpcPortRead;
 import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
 import org.apache.beam.sdk.util.MoreFutures;
+import org.apache.beam.vendor.guava.v20_0.com.google.common.collect.ImmutableList;
+import org.apache.beam.vendor.guava.v20_0.com.google.common.collect.ImmutableMap;
+import org.apache.beam.vendor.guava.v20_0.com.google.common.collect.ImmutableTable;
+import org.apache.beam.vendor.guava.v20_0.com.google.common.collect.Iterables;
 import org.joda.time.Instant;
 import org.junit.Before;
 import org.junit.Test;
@@ -434,7 +436,7 @@ public class BeamFnMapTaskExecutorTest {
         contains(new CounterHamcrestMatchers.CounterUpdateIntegerValueMatcher(finalCounterValue)));
   }
 
-  @Test(timeout = ReadOperation.DEFAULT_PROGRESS_UPDATE_PERIOD_MS * 10)
+  @Test(timeout = ReadOperation.DEFAULT_PROGRESS_UPDATE_PERIOD_MS * 60)
   public void testExtractCounterUpdatesReturnsValidProgressTrackerCounterUpdatesIfPresent()
       throws Exception {
     final String stepName = "fakeStepNameWithUserMetrics";
@@ -554,11 +556,13 @@ public class BeamFnMapTaskExecutorTest {
     metricsCounterUpdates = mapTaskExecutor.extractMetricUpdates();
 
     assertThat(Iterables.size(metricsCounterUpdates), equalTo(1));
+    CounterUpdate resultCounter = metricsCounterUpdates.iterator().next();
 
-    assertThat(
-        metricsCounterUpdates,
-        contains(
-            new CounterHamcrestMatchers.CounterUpdateIntegerValueMatcher(expectedCounterValue)));
+    assertTrue(
+        new CounterHamcrestMatchers.CounterUpdateIntegerValueMatcher(expectedCounterValue)
+            .matches(resultCounter));
+    assertEquals(
+        "ExpectedCounter", resultCounter.getStructuredNameAndMetadata().getName().getName());
   }
 
   /**

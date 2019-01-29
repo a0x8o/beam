@@ -19,12 +19,12 @@ package org.apache.beam.runners.flink;
 
 import static org.apache.flink.streaming.api.environment.StreamExecutionEnvironment.getDefaultLocalParallelism;
 
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.net.HostAndPort;
 import java.net.URL;
 import java.util.Collections;
 import java.util.List;
 import javax.annotation.Nullable;
+import org.apache.beam.vendor.guava.v20_0.com.google.common.annotations.VisibleForTesting;
+import org.apache.beam.vendor.guava.v20_0.com.google.common.net.HostAndPort;
 import org.apache.flink.api.common.ExecutionConfig;
 import org.apache.flink.api.common.JobExecutionResult;
 import org.apache.flink.api.java.CollectionEnvironment;
@@ -99,7 +99,8 @@ public class FlinkExecutionEnvironments {
     if (options.getParallelism() != -1 && !(flinkBatchEnv instanceof CollectionEnvironment)) {
       flinkBatchEnv.setParallelism(options.getParallelism());
     }
-    // Set the correct parallelism, required by UnboundedSourceWrapper to generate consistent splits.
+    // Set the correct parallelism, required by UnboundedSourceWrapper to generate consistent
+    // splits.
     final int parallelism;
     if (flinkBatchEnv instanceof CollectionEnvironment) {
       parallelism = 1;
@@ -141,20 +142,20 @@ public class FlinkExecutionEnvironments {
     LOG.info("Creating a Streaming Environment.");
 
     String masterUrl = options.getFlinkMaster();
-    Configuration flinkConfig = getFlinkConfiguration(confDir);
+    Configuration flinkConfiguration = getFlinkConfiguration(confDir);
     final StreamExecutionEnvironment flinkStreamEnv;
 
     // depending on the master, create the right environment.
     if ("[local]".equals(masterUrl)) {
       flinkStreamEnv =
           StreamExecutionEnvironment.createLocalEnvironment(
-              getDefaultLocalParallelism(), flinkConfig);
+              getDefaultLocalParallelism(), flinkConfiguration);
     } else if ("[auto]".equals(masterUrl)) {
       flinkStreamEnv = StreamExecutionEnvironment.getExecutionEnvironment();
     } else {
-      int defaultPort = flinkConfig.getInteger(RestOptions.PORT);
+      int defaultPort = flinkConfiguration.getInteger(RestOptions.PORT);
       HostAndPort hostAndPort = HostAndPort.fromString(masterUrl).withDefaultPort(defaultPort);
-      flinkConfig.setInteger(RestOptions.PORT, hostAndPort.getPort());
+      flinkConfiguration.setInteger(RestOptions.PORT, hostAndPort.getPort());
       final SavepointRestoreSettings savepointRestoreSettings;
       if (options.getSavepointPath() != null) {
         savepointRestoreSettings =
@@ -167,7 +168,7 @@ public class FlinkExecutionEnvironments {
           new BeamFlinkRemoteStreamEnvironment(
               hostAndPort.getHost(),
               hostAndPort.getPort(),
-              flinkConfig,
+              flinkConfiguration,
               savepointRestoreSettings,
               filesToStage.toArray(new String[filesToStage.size()]));
       LOG.info("Using Flink Master URL {}:{}.", hostAndPort.getHost(), hostAndPort.getPort());
@@ -176,7 +177,7 @@ public class FlinkExecutionEnvironments {
     // Set the parallelism, required by UnboundedSourceWrapper to generate consistent splits.
     final int parallelism =
         determineParallelism(
-            options.getParallelism(), flinkStreamEnv.getParallelism(), flinkConfig);
+            options.getParallelism(), flinkStreamEnv.getParallelism(), flinkConfiguration);
     flinkStreamEnv.setParallelism(parallelism);
     if (options.getMaxParallelism() > 0) {
       flinkStreamEnv.setMaxParallelism(options.getMaxParallelism());
@@ -235,10 +236,8 @@ public class FlinkExecutionEnvironments {
             .getCheckpointConfig()
             .setMinPauseBetweenCheckpoints(minPauseBetweenCheckpoints);
       }
-    } else {
-      // https://issues.apache.org/jira/browse/FLINK-2491
-      // Checkpointing is disabled, we can allow shutting down sources when they're done
-      options.setShutdownSourcesOnFinalWatermark(true);
+      boolean failOnCheckpointingErrors = options.getFailOnCheckpointingErrors();
+      flinkStreamEnv.getCheckpointConfig().setFailOnCheckpointingErrors(failOnCheckpointingErrors);
     }
 
     applyLatencyTrackingInterval(flinkStreamEnv.getConfig(), options);
@@ -264,7 +263,8 @@ public class FlinkExecutionEnvironments {
       return pipelineOptionsParallelism;
     }
     if (envParallelism > 0) {
-      // If the user supplies a parallelism on the command-line, this is set on the execution environment during creation
+      // If the user supplies a parallelism on the command-line, this is set on the execution
+      // environment during creation
       return envParallelism;
     }
 

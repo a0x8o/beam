@@ -26,8 +26,6 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
-import com.google.common.base.Throwables;
-import com.google.common.collect.Iterables;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -58,6 +56,8 @@ import org.apache.beam.sdk.util.common.ElementByteSizeObserver;
 import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.TimestampedValue;
+import org.apache.beam.vendor.guava.v20_0.com.google.common.base.Throwables;
+import org.apache.beam.vendor.guava.v20_0.com.google.common.collect.Iterables;
 import org.joda.time.Duration;
 import org.joda.time.Instant;
 import org.junit.Rule;
@@ -312,8 +312,7 @@ public class PAssertTest implements Serializable {
   @Test
   @Category({
     ValidatesRunner.class,
-    UsesStatefulParDo.class, // This test fails if State is unsupported despite no direct usage.
-    DataflowPortabilityExecutableStageUnsupported.class
+    UsesStatefulParDo.class // This test fails if State is unsupported despite no direct usage.
   })
   public void testWindowedIsEqualTo() throws Exception {
     PCollection<Integer> pcollection =
@@ -408,7 +407,7 @@ public class PAssertTest implements Serializable {
 
   /** Tests that windowed {@code containsInAnyOrder} is actually order-independent. */
   @Test
-  @Category({ValidatesRunner.class, DataflowPortabilityExecutableStageUnsupported.class})
+  @Category(ValidatesRunner.class)
   public void testWindowedContainsInAnyOrder() throws Exception {
     PCollection<Integer> pcollection =
         pipeline

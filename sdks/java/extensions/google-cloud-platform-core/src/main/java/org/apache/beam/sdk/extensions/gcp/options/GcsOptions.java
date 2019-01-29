@@ -19,8 +19,6 @@ package org.apache.beam.sdk.extensions.gcp.options;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.google.cloud.hadoop.util.AbstractGoogleAsyncWriteChannel;
-import com.google.common.util.concurrent.MoreExecutors;
-import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.SynchronousQueue;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -38,6 +36,8 @@ import org.apache.beam.sdk.options.Hidden;
 import org.apache.beam.sdk.options.PipelineOptions;
 import org.apache.beam.sdk.util.GcsUtil;
 import org.apache.beam.sdk.util.InstanceBuilder;
+import org.apache.beam.vendor.guava.v20_0.com.google.common.util.concurrent.MoreExecutors;
+import org.apache.beam.vendor.guava.v20_0.com.google.common.util.concurrent.ThreadFactoryBuilder;
 
 /** Options used to configure Google Cloud Storage. */
 public interface GcsOptions extends ApplicationNameOptions, GcpOptions, PipelineOptions {
@@ -52,14 +52,14 @@ public interface GcsOptions extends ApplicationNameOptions, GcpOptions, Pipeline
 
   /**
    * The ExecutorService instance to use to create threads, can be overridden to specify an
-   * ExecutorService that is compatible with the users environment. If unset, the default is to
+   * ExecutorService that is compatible with the user's environment. If unset, the default is to
    * create an ExecutorService with an unbounded number of threads; this is compatible with Google
    * AppEngine.
    */
   @JsonIgnore
   @Description(
       "The ExecutorService instance to use to create multiple threads. Can be overridden "
-          + "to specify an ExecutorService that is compatible with the users environment. If unset, "
+          + "to specify an ExecutorService that is compatible with the user's environment. If unset, "
           + "the default is to create an ExecutorService with an unbounded number of threads; this "
           + "is compatible with Google AppEngine.")
   @Default.InstanceFactory(ExecutorServiceFactory.class)

@@ -25,7 +25,6 @@ import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.collection.IsIterableContainingInAnyOrder.containsInAnyOrder;
 import static org.junit.Assert.assertThat;
 
-import com.google.common.collect.ImmutableList;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
@@ -49,7 +48,6 @@ import org.apache.beam.sdk.coders.MapCoder;
 import org.apache.beam.sdk.coders.StringUtf8Coder;
 import org.apache.beam.sdk.coders.VarIntCoder;
 import org.apache.beam.sdk.testing.DataflowPortabilityApiUnsupported;
-import org.apache.beam.sdk.testing.DataflowPortabilityExecutableStageUnsupported;
 import org.apache.beam.sdk.testing.LargeKeys;
 import org.apache.beam.sdk.testing.NeedsRunner;
 import org.apache.beam.sdk.testing.PAssert;
@@ -73,6 +71,7 @@ import org.apache.beam.sdk.values.PBegin;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.TimestampedValue;
 import org.apache.beam.sdk.values.WindowingStrategy;
+import org.apache.beam.vendor.guava.v20_0.com.google.common.collect.ImmutableList;
 import org.hamcrest.Matcher;
 import org.joda.time.Duration;
 import org.joda.time.Instant;
@@ -255,7 +254,7 @@ public class GroupByKeyTest implements Serializable {
      * two values.
      */
     @Test
-    @Category({ValidatesRunner.class, DataflowPortabilityExecutableStageUnsupported.class})
+    @Category(ValidatesRunner.class)
     public void testTimestampCombinerEarliest() {
 
       p.apply(
@@ -276,7 +275,7 @@ public class GroupByKeyTest implements Serializable {
      * the windowing function customized to use the latest value.
      */
     @Test
-    @Category({ValidatesRunner.class, DataflowPortabilityExecutableStageUnsupported.class})
+    @Category(ValidatesRunner.class)
     public void testTimestampCombinerLatest() {
       p.apply(
               Create.timestamped(
@@ -383,7 +382,7 @@ public class GroupByKeyTest implements Serializable {
   @RunWith(JUnit4.class)
   public static class WindowTests extends SharedTestBase {
     @Test
-    @Category({ValidatesRunner.class, DataflowPortabilityExecutableStageUnsupported.class})
+    @Category(ValidatesRunner.class)
     public void testGroupByKeyAndWindows() {
       List<KV<String, Integer>> ungroupedPairs =
           Arrays.asList(
@@ -424,7 +423,7 @@ public class GroupByKeyTest implements Serializable {
     }
 
     @Test
-    @Category({ValidatesRunner.class, DataflowPortabilityExecutableStageUnsupported.class})
+    @Category(ValidatesRunner.class)
     public void testGroupByKeyMultipleWindows() {
       PCollection<KV<String, Integer>> windowedInput =
           p.apply(
@@ -454,7 +453,7 @@ public class GroupByKeyTest implements Serializable {
     }
 
     @Test
-    @Category({ValidatesRunner.class, DataflowPortabilityExecutableStageUnsupported.class})
+    @Category(ValidatesRunner.class)
     public void testGroupByKeyMergingWindows() {
       PCollection<KV<String, Integer>> windowedInput =
           p.apply(

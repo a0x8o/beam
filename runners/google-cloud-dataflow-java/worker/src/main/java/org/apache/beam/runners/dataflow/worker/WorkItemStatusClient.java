@@ -17,9 +17,9 @@
  */
 package org.apache.beam.runners.dataflow.worker;
 
-import static com.google.common.base.Preconditions.checkArgument;
-import static com.google.common.base.Preconditions.checkNotNull;
-import static com.google.common.base.Preconditions.checkState;
+import static org.apache.beam.vendor.guava.v20_0.com.google.common.base.Preconditions.checkArgument;
+import static org.apache.beam.vendor.guava.v20_0.com.google.common.base.Preconditions.checkNotNull;
+import static org.apache.beam.vendor.guava.v20_0.com.google.common.base.Preconditions.checkState;
 
 import com.google.api.services.dataflow.model.CounterUpdate;
 import com.google.api.services.dataflow.model.MetricStructuredName;
@@ -29,26 +29,27 @@ import com.google.api.services.dataflow.model.Status;
 import com.google.api.services.dataflow.model.WorkItem;
 import com.google.api.services.dataflow.model.WorkItemServiceState;
 import com.google.api.services.dataflow.model.WorkItemStatus;
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.collect.ImmutableList;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
 import javax.annotation.Nullable;
+import org.apache.beam.runners.core.metrics.ExecutionStateTracker;
+import org.apache.beam.runners.core.metrics.ExecutionStateTracker.ExecutionState;
 import org.apache.beam.runners.core.metrics.MetricsContainerImpl;
 import org.apache.beam.runners.dataflow.util.TimeUtil;
 import org.apache.beam.runners.dataflow.worker.counters.CounterSet;
 import org.apache.beam.runners.dataflow.worker.counters.DataflowCounterUpdateExtractor;
 import org.apache.beam.runners.dataflow.worker.logging.DataflowWorkerLoggingHandler;
-import org.apache.beam.runners.dataflow.worker.util.common.worker.ExecutionStateTracker;
-import org.apache.beam.runners.dataflow.worker.util.common.worker.ExecutionStateTracker.ExecutionState;
 import org.apache.beam.runners.dataflow.worker.util.common.worker.NativeReader;
 import org.apache.beam.runners.dataflow.worker.util.common.worker.NativeReader.DynamicSplitResult;
 import org.apache.beam.runners.dataflow.worker.util.common.worker.NativeReader.Progress;
 import org.apache.beam.sdk.util.UserCodeException;
+import org.apache.beam.vendor.guava.v20_0.com.google.common.annotations.VisibleForTesting;
+import org.apache.beam.vendor.guava.v20_0.com.google.common.collect.ImmutableList;
 import org.joda.time.Duration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -266,27 +267,41 @@ public class WorkItemStatusClient {
     return status;
   }
 
-  // todo(migryz) this method should return List<CounterUpdate> instead of updating member variable
   @VisibleForTesting
   synchronized void populateCounterUpdates(WorkItemStatus status) {
     if (worker == null) {
       return;
     }
 
+    // Checking against boolean, because getCompleted can return null
     boolean isFinalUpdate = Boolean.TRUE.equals(status.getCompleted());
 
-    ImmutableList.Builder<CounterUpdate> counterUpdatesListBuilder = ImmutableList.builder();
-    // Output counters
-    counterUpdatesListBuilder.addAll(extractCounters(worker.getOutputCounters()));
-    // User metrics reported in Worker
-    counterUpdatesListBuilder.addAll(extractMetrics(isFinalUpdate));
-    // MSec counters reported in worker
-    counterUpdatesListBuilder.addAll(extractMsecCounters(isFinalUpdate));
-    // Metrics reported in SDK runner.
-    counterUpdatesListBuilder.addAll(worker.extractMetricUpdates());
+    Map<Object, CounterUpdate> counterUpdatesMap = new HashMap<>();
 
-    ImmutableList<CounterUpdate> counterUpdates = counterUpdatesListBuilder.build();
-    status.setCounterUpdates(counterUpdates);
+    final Consumer<CounterUpdate> appendCounterUpdate =
+        x ->
+            counterUpdatesMap.put(
+                x.getStructuredNameAndMetadata() == null
+                    ? x.getNameAndKind()
+                    : x.getStructuredNameAndMetadata(),
+                x);
+
+    // Output counters
+    extractCounters(worker.getOutputCounters()).forEach(appendCounterUpdate);
+
+    // User metrics reported in Worker
+    extractMetrics(isFinalUpdate).forEach(appendCounterUpdate);
+
+    // MSec counters reported in worker
+    extractMsecCounters(isFinalUpdate).forEach(appendCounterUpdate);
+
+    // Metrics reported in SDK runner.
+    // This includes all different kinds of metrics coming from SDK.
+    // Keep in mind that these metrics might contain different types of counter names:
+    // i.e. structuredNameAndMetadata and nameAndKind
+    worker.extractMetricUpdates().forEach(appendCounterUpdate);
+
+    status.setCounterUpdates(ImmutableList.copyOf(counterUpdatesMap.values()));
   }
 
   private synchronized Iterable<CounterUpdate> extractCounters(@Nullable CounterSet counters) {

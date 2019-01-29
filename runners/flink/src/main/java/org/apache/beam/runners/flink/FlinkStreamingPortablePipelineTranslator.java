@@ -24,12 +24,6 @@ import static org.apache.beam.runners.flink.translation.utils.FlinkPipelineTrans
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.auto.service.AutoService;
-import com.google.common.collect.BiMap;
-import com.google.common.collect.HashMultiset;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.Iterables;
-import com.google.common.collect.Lists;
-import com.google.common.collect.Maps;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
@@ -84,6 +78,12 @@ import org.apache.beam.sdk.values.PCollectionViews;
 import org.apache.beam.sdk.values.TupleTag;
 import org.apache.beam.sdk.values.WindowingStrategy;
 import org.apache.beam.vendor.grpc.v1p13p1.com.google.protobuf.InvalidProtocolBufferException;
+import org.apache.beam.vendor.guava.v20_0.com.google.common.collect.BiMap;
+import org.apache.beam.vendor.guava.v20_0.com.google.common.collect.HashMultiset;
+import org.apache.beam.vendor.guava.v20_0.com.google.common.collect.ImmutableMap;
+import org.apache.beam.vendor.guava.v20_0.com.google.common.collect.Iterables;
+import org.apache.beam.vendor.guava.v20_0.com.google.common.collect.Lists;
+import org.apache.beam.vendor.guava.v20_0.com.google.common.collect.Maps;
 import org.apache.flink.api.common.JobExecutionResult;
 import org.apache.flink.api.common.functions.FlatMapFunction;
 import org.apache.flink.api.common.functions.MapFunction;
@@ -242,8 +242,8 @@ public class FlinkStreamingPortablePipelineTranslator
 
   private <T> void translateFlatten(
       String id, RunnerApi.Pipeline pipeline, StreamingTranslationContext context) {
-    Map<String, String> allInputs =
-        pipeline.getComponents().getTransformsOrThrow(id).getInputsMap();
+    RunnerApi.PTransform transform = pipeline.getComponents().getTransformsOrThrow(id);
+    Map<String, String> allInputs = transform.getInputsMap();
 
     if (allInputs.isEmpty()) {
 
@@ -264,10 +264,7 @@ public class FlinkStreamingPortablePipelineTranslator
                   new CoderTypeInformation<>(
                       WindowedValue.getFullCoder(
                           (Coder<T>) VoidCoder.of(), GlobalWindow.Coder.INSTANCE)));
-      context.addDataStream(
-          Iterables.getOnlyElement(
-              pipeline.getComponents().getTransformsOrThrow(id).getOutputsMap().values()),
-          result);
+      context.addDataStream(Iterables.getOnlyElement(transform.getOutputsMap().values()), result);
     } else {
       DataStream<T> result = null;
 
@@ -298,10 +295,7 @@ public class FlinkStreamingPortablePipelineTranslator
         result = (result == null) ? current : result.union(current);
       }
 
-      context.addDataStream(
-          Iterables.getOnlyElement(
-              pipeline.getComponents().getTransformsOrThrow(id).getOutputsMap().values()),
-          result);
+      context.addDataStream(Iterables.getOnlyElement(transform.getOutputsMap().values()), result);
     }
   }
 
@@ -347,6 +341,8 @@ public class FlinkStreamingPortablePipelineTranslator
             windowedInputCoder,
             pTransform.getUniqueName(),
             context);
+    // Assign a unique but consistent id to re-map operator state
+    outputDataStream.uid(pTransform.getUniqueName());
 
     context.addDataStream(
         Iterables.getOnlyElement(pTransform.getOutputsMap().values()), outputDataStream);
@@ -489,7 +485,7 @@ public class FlinkStreamingPortablePipelineTranslator
     } catch (InvalidProtocolBufferException e) {
       throw new IllegalArgumentException(e);
     }
-    //TODO: https://issues.apache.org/jira/browse/BEAM-4296
+    // TODO: https://issues.apache.org/jira/browse/BEAM-4296
     // This only works for well known window fns, we should defer this execution to the SDK
     // if the WindowFn can't be parsed or just defer it all the time.
     WindowFn<T, ? extends BoundedWindow> windowFn =
@@ -668,6 +664,8 @@ public class FlinkStreamingPortablePipelineTranslator
                 .transform(operatorName, outputTypeInformation, doFnOperator);
       }
     }
+    // Assign a unique but consistent id to re-map operator state
+    outputStream.uid(transform.getUniqueName());
 
     if (mainOutputTag != null) {
       context.addDataStream(outputs.get(mainOutputTag.getId()), outputStream);
@@ -695,7 +693,8 @@ public class FlinkStreamingPortablePipelineTranslator
     for (RunnerApi.ExecutableStagePayload.SideInputId sideInputId :
         stagePayload.getSideInputsList()) {
 
-      // TODO: local name is unique as long as only one transform with side input can be within a stage
+      // TODO: local name is unique as long as only one transform with side input can be within a
+      // stage
       String sideInputTag = sideInputId.getLocalName();
       String collectionId =
           components
@@ -788,10 +787,9 @@ public class FlinkStreamingPortablePipelineTranslator
         sideInputs.entrySet()) {
       TupleTag<?> tag = sideInput.getValue().getTagInternal();
       final int intTag = tagToIntMapping.get(tag);
-      String collectionId =
-          components
-              .getTransformsOrThrow(sideInput.getKey().getTransformId())
-              .getInputsOrThrow(sideInput.getKey().getLocalName());
+      RunnerApi.PTransform pTransform =
+          components.getTransformsOrThrow(sideInput.getKey().getTransformId());
+      String collectionId = pTransform.getInputsOrThrow(sideInput.getKey().getLocalName());
       DataStream<WindowedValue<?>> sideInputStream = context.getDataStreamOrThrow(collectionId);
 
       // insert GBK to materialize side input view
@@ -808,6 +806,8 @@ public class FlinkStreamingPortablePipelineTranslator
               kvCoder,
               viewName,
               context);
+      // Assign a unique but consistent id to re-map operator state
+      viewStream.uid(pTransform.getUniqueName() + "-" + sideInput.getKey().getLocalName());
 
       DataStream<RawUnionValue> unionValueStream =
           viewStream
