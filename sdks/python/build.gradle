@@ -18,7 +18,7 @@
 
 import org.apache.tools.ant.taskdefs.condition.Os
 
-apply plugin: org.apache.beam.gradle.BeamModulePlugin
+plugins { id 'org.apache.beam.module' }
 applyPythonNature()
 
 
@@ -91,12 +91,19 @@ test.dependsOn testPython2
 toxTask "testPython3", "py3"
 test.dependsOn testPython3
 
-toxTask "testCython", "py27-cython"
-test.dependsOn testCython
-// Ensure that testCython runs exclusively to other tests. This line is not
+toxTask "testPy2Cython", "py27-cython"
+test.dependsOn testPy2Cython
+// Ensure that testPy2Cython runs exclusively to other tests. This line is not
 // actually required, since gradle doesn't do parallel execution within a
 // project.
-testCython.mustRunAfter testPython2, testPy2Gcp
+testPy2Cython.mustRunAfter testPython2, testPy2Gcp
+
+toxTask "testPy3Cython", "py3-cython"
+test.dependsOn testPy3Cython
+// Ensure that testPy3Cython runs exclusively to other tests. This line is not
+// actually required, since gradle doesn't do parallel execution within a
+// project.
+testPy3Cython.mustRunAfter testPython3, testPy3Gcp
 
 toxTask "docs", "docs"
 assemble.dependsOn docs
@@ -105,19 +112,21 @@ toxTask "cover", "cover"
 
 task preCommit() {
   dependsOn "docs"
-  dependsOn "testCython"
+  dependsOn "testPy2Cython"
+  dependsOn "testPy3Cython"
   dependsOn "testPython2"
   dependsOn "testPython3"
   dependsOn "testPy2Gcp"
   dependsOn "testPy3Gcp"
   dependsOn "lint"
+  dependsOn ":beam-sdks-python-test-suites-dataflow:preCommitIT"
 }
 
 task portablePreCommit() {
   dependsOn ':beam-runners-flink_2.11-job-server-container:docker'
   dependsOn ':beam-sdks-python-container:docker'
-  dependsOn portableWordCountTask('portableWordCountBatch', false)
-  dependsOn portableWordCountTask('portableWordCountStreaming', true)
+  dependsOn portableWordCountTask('portableWordCountBatch', false, false)
+  dependsOn portableWordCountTask('portableWordCountStreaming', true, false)
 }
 
 
@@ -131,22 +140,6 @@ def basicTestOpts = [
         "--process-timeout=4500", // timeout of whole command execution
 ]
 
-static def mapToArgString(argMap) {
-  def argList = []
-  argMap.each { k, v ->
-    if (v in List) {
-      v = "\"${v.join(' ')}\""
-    } else if (v in String && v.contains(' ')) {
-      // We should use double quote around the arg value if it contains series
-      // of flags joined with space. Otherwise, commandline parsing of the
-      // shell script will be broken.
-      v = "\"${v.replace('"', '')}\""
-    }
-    argList.add("--$k $v")
-  }
-  return argList.join(' ')
-}
-
 task directRunnerIT(dependsOn: 'installGcpTest') {
   // Run IT tests with TestDirectRunner in batch.
   doLast {
@@ -159,7 +152,7 @@ task directRunnerIT(dependsOn: 'installGcpTest') {
     def batchTestOpts = basicTestOpts + ["--tests=${tests.join(',')}"]
     def argMap = ["runner": "TestDirectRunner",
                   "test_opts": batchTestOpts]
-    def batchCmdArgs = mapToArgString(argMap)
+    def batchCmdArgs = project.mapToArgString(argMap)
     exec {
       executable 'sh'
       args '-c', ". ${project.ext.envdir}/bin/activate && ./scripts/run_integration_test.sh $batchCmdArgs"
@@ -176,7 +169,7 @@ task directRunnerIT(dependsOn: 'installGcpTest') {
     def argMap = ["runner": "TestDirectRunner",
                   "streaming": "true",
                   "test_opts": streamingTestOpts]
-    def streamingCmdArgs = mapToArgString(argMap)
+    def streamingCmdArgs = project.mapToArgString(argMap)
     exec {
       executable 'sh'
       args '-c', ". ${project.ext.envdir}/bin/activate && ./scripts/run_integration_test.sh $streamingCmdArgs"
@@ -211,13 +204,13 @@ task directRunnerIT(dependsOn: 'installGcpTest') {
 //    ./gradlew :beam-sdks-python:portableWordCount -PjobEndpoint=localhost:8099
 //
 task portableWordCount {
-  dependsOn portableWordCountTask('portableWordCountExample', project.hasProperty("streaming"))
+  dependsOn portableWordCountTask('portableWordCountExample', project.hasProperty("streaming"), project.hasProperty("crossLanguage"))
 }
 
-def portableWordCountTask(name, streaming) {
+def portableWordCountTask(name, streaming, crossLanguage) {
   tasks.create(name) {
     dependsOn = ['installGcpTest']
-    mustRunAfter = [':beam-runners-flink_2.11-job-server-container:docker', ':beam-sdks-python-container:docker']
+    mustRunAfter = [':beam-runners-flink_2.11-job-server-container:docker', ':beam-sdks-python-container:docker', ':beam-sdks-java-container:docker', ':beam-runners-core-construction-java:buildTestExpansionServiceJar']
     doLast {
       // TODO: Figure out GCS credentials and use real GCS input and output.
       def options = [
@@ -233,11 +226,14 @@ def portableWordCountTask(name, streaming) {
       else
         // workaround for local file output in docker container
         options += ["--environment_cache_millis=10000"]
+      if (crossLanguage)
+        options += ["--expansion_service_jar=${project(":beam-runners-core-construction-java:").buildTestExpansionServiceJar.archivePath}"]
       if (project.hasProperty("jobEndpoint"))
         options += ["--job_endpoint=${project.property('jobEndpoint')}"]
+      def wordcountMain = crossLanguage ? "apache_beam.examples.wordcount_xlang" : "apache_beam.examples.wordcount"
       exec {
         executable 'sh'
-        args '-c', ". ${project.ext.envdir}/bin/activate && python -m apache_beam.examples.wordcount ${options.join(' ')}"
+        args '-c', ". ${project.ext.envdir}/bin/activate && python -m ${wordcountMain} ${options.join(' ')}"
         // TODO: Check that the output file is generated and runs.
       }
     }
@@ -266,7 +262,7 @@ task integrationTest(dependsOn: ['installGcpTest', 'sdist']) {
     if (project.hasProperty('kmsKeyName'))
       argMap["kms_key_name"] = project.property('kmsKeyName')
 
-    def cmdArgs = mapToArgString(argMap)
+    def cmdArgs = project.mapToArgString(argMap)
     exec {
       executable 'sh'
       args '-c', ". ${project.ext.envdir}/bin/activate && ./scripts/run_integration_test.sh $cmdArgs"
@@ -278,7 +274,7 @@ task integrationTest(dependsOn: ['installGcpTest', 'sdist']) {
 task postCommitIT(dependsOn: ['installGcpTest', 'sdist']) {
   doLast {
     def testOpts = basicTestOpts + ["--attr=IT"]
-    def cmdArgs = mapToArgString(["test_opts": testOpts])
+    def cmdArgs = project.mapToArgString(["test_opts": testOpts])
     exec {
       executable 'sh'
       args '-c', ". ${project.ext.envdir}/bin/activate && ./scripts/run_integration_test.sh $cmdArgs"
@@ -289,7 +285,7 @@ task postCommitIT(dependsOn: ['installGcpTest', 'sdist']) {
 task validatesRunnerBatchTests(dependsOn: ['installGcpTest', 'sdist']) {
   doLast {
     def testOpts = basicTestOpts + ["--attr=ValidatesRunner"]
-    def cmdArgs = mapToArgString(["test_opts": testOpts])
+    def cmdArgs = project.mapToArgString(["test_opts": testOpts])
     exec {
       executable 'sh'
       args '-c', ". ${project.ext.envdir}/bin/activate && ./scripts/run_integration_test.sh $cmdArgs"
@@ -308,7 +304,7 @@ task validatesRunnerStreamingTests(dependsOn: ['installGcpTest', 'sdist']) {
     def argMap = ["test_opts": testOpts,
                   "streaming": "true",
                   "worker_jar": dataflowWorkerJar]
-    def cmdArgs = mapToArgString(argMap)
+    def cmdArgs = project.mapToArgString(argMap)
     exec {
       executable 'sh'
       args '-c', ". ${project.ext.envdir}/bin/activate && ./scripts/run_integration_test.sh $cmdArgs"
@@ -334,6 +330,9 @@ class CompatibilityMatrixConfig {
   enum SDK_WORKER_TYPE {
     DOCKER, PROCESS, LOOPBACK
   }
+
+  // Whether to pre-optimize the pipeline with the Python optimizer.
+  boolean preOptimize = false
 }
 
 def flinkCompatibilityMatrix = {
@@ -341,7 +340,10 @@ def flinkCompatibilityMatrix = {
   def workerType = config.workerType.name()
   def streaming = config.streaming
   def environment_config = config.workerType == CompatibilityMatrixConfig.SDK_WORKER_TYPE.PROCESS ? "--environment_config='{\"command\": \"${project(":beam-sdks-python:").buildDir.absolutePath}/sdk_worker.sh\"}'" : ""
-  def name = "flinkCompatibilityMatrix${streaming ? 'Streaming' : 'Batch'}${workerType}"
+  def name = "flinkCompatibilityMatrix${streaming ? 'Streaming' : 'Batch'}${config.preOptimize ? 'PreOptimize' : ''}${workerType}"
+  def extra_experiments = []
+  if (config.preOptimize)
+    extra_experiments.add('pre_optimize=all')
   tasks.create(name: name) {
     dependsOn 'setupVirtualenv'
     dependsOn ':beam-runners-flink_2.11-job-server:shadowJar'
@@ -352,7 +354,7 @@ def flinkCompatibilityMatrix = {
     doLast {
       exec {
         executable 'sh'
-        args '-c', ". ${project.ext.envdir}/bin/activate && pip install -e .[test] && python -m apache_beam.runners.portability.flink_runner_test --flink_job_server_jar=${project(":beam-runners-flink_2.11-job-server:").shadowJar.archivePath} --environment_type=${workerType} ${environment_config} ${streaming ? '--streaming' : ''}"
+        args '-c', ". ${project.ext.envdir}/bin/activate && pip install -e .[test] && python -m apache_beam.runners.portability.flink_runner_test --flink_job_server_jar=${project(":beam-runners-flink_2.11-job-server:").shadowJar.archivePath} --environment_type=${workerType} ${environment_config} ${streaming ? '--streaming' : ''} ${extra_experiments ? '--extra_experiments=' + extra_experiments.join(',') : ''}"
       }
     }
   }
@@ -371,10 +373,25 @@ task flinkCompatibilityMatrixProcess() {
 task flinkCompatibilityMatrixLoopback() {
   dependsOn flinkCompatibilityMatrix(streaming: false, workerType: CompatibilityMatrixConfig.SDK_WORKER_TYPE.LOOPBACK)
   dependsOn flinkCompatibilityMatrix(streaming: true, workerType: CompatibilityMatrixConfig.SDK_WORKER_TYPE.LOOPBACK)
+  dependsOn flinkCompatibilityMatrix(streaming: true, workerType: CompatibilityMatrixConfig.SDK_WORKER_TYPE.LOOPBACK, preOptimize: true)
 }
 
 task flinkValidatesRunner() {
   dependsOn 'flinkCompatibilityMatrixLoopback'
+}
+
+// Run Python ValidatesRunner tests using the Java ReferenceRunner as a job server and Docker as
+// the SDK environment.
+task javaReferenceRunnerValidatesRunner() {
+  dependsOn 'setupVirtualenv'
+  dependsOn ':beam-runners-reference-job-server:shadowJar'
+  dependsOn ':beam-sdks-python-container:docker'
+  doLast {
+    exec {
+      executable 'sh'
+      args '-c', ". ${project.ext.envdir}/bin/activate && pip install -e .[test] && python -m apache_beam.runners.portability.java_reference_runner_test --job_server_jar=${project(":beam-runners-reference-job-server:").shadowJar.archivePath} --environment_type=DOCKER"
+    }
+  }
 }
 
 task postCommit() {
@@ -431,6 +448,18 @@ project.task('createProcessWorker') {
     }
     exec {
       commandLine('chmod', '+x', sdkWorkerFile)
+    }
+  }
+}
+
+project.task('crossLanguagePythonJava') {
+  dependsOn 'setupVirtualenv'
+  dependsOn ':beam-sdks-java-container:docker'
+  dependsOn ':beam-runners-core-construction-java:buildTestExpansionServiceJar'
+  doLast {
+    exec {
+      executable 'sh'
+      args '-c', ". ${project.ext.envdir}/bin/activate && pip install -e .[test] && python -m apache_beam.transforms.external_test --expansion_service_jar=${project(":beam-runners-core-construction-java:").buildTestExpansionServiceJar.archivePath}"
     }
   }
 }

@@ -109,7 +109,7 @@ class DataflowWorkUnitClient implements WorkUnitClient {
       return Optional.absent();
     }
     if (workItem.isPresent() && workItem.get().getId() == null) {
-      logger.warn("Discarding invalid work item {}", workItem.orNull());
+      logger.debug("Discarding invalid work item {}", workItem.orNull());
       return Optional.absent();
     }
 
@@ -237,7 +237,7 @@ class DataflowWorkUnitClient implements WorkUnitClient {
             .reportStatus(options.getProject(), options.getRegion(), options.getJobId(), request)
             .execute();
     if (result == null) {
-      logger.warn("Report work item status response: {}", result);
+      logger.warn("Report work item status response: null");
       throw new IOException("Got null work item status response");
     }
 

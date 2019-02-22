@@ -30,6 +30,7 @@ import decimal
 import json
 import logging
 import re
+import sys
 import time
 import uuid
 from builtins import object
@@ -107,7 +108,7 @@ def parse_table_schema_from_json(schema_string):
   return bigquery.TableSchema(fields=fields)
 
 
-def _parse_table_reference(table, dataset=None, project=None):
+def parse_table_reference(table, dataset=None, project=None):
   """Parses a table reference into a (project, dataset, table) tuple.
 
   Args:
@@ -126,8 +127,7 @@ def _parse_table_reference(table, dataset=None, project=None):
       argument.
 
   Returns:
-    A bigquery.TableReference object. The object has the following attributes:
-    projectId, datasetId, and tableId.
+    A bigquery.TableReference object.
 
   Raises:
     ValueError: if the table reference as a string does not match the expected
@@ -177,7 +177,8 @@ class BigQueryWrapper(object):
   def __init__(self, client=None):
     self.client = client or bigquery.BigqueryV2(
         http=get_new_http(),
-        credentials=auth.get_service_credentials())
+        credentials=auth.get_service_credentials(),
+        response_encoding=None if sys.version_info[0] < 3 else 'utf8')
     self._unique_row_id = 0
     # For testing scenarios where we pass in a client we do not want a
     # randomized prefix for row IDs.
@@ -200,7 +201,7 @@ class BigQueryWrapper(object):
     return '%s_%d' % (self._row_id_prefix, self._unique_row_id)
 
   def _get_temp_table(self, project_id):
-    return _parse_table_reference(
+    return parse_table_reference(
         table=BigQueryWrapper.TEMP_TABLE + self._temporary_table_suffix,
         dataset=BigQueryWrapper.TEMP_DATASET + self._temporary_table_suffix,
         project=project_id)
@@ -327,11 +328,21 @@ class BigQueryWrapper(object):
   @retry.with_exponential_backoff(
       num_retries=MAX_RETRIES,
       retry_filter=retry.retry_on_server_errors_and_timeout_filter)
-  def _get_table(self, project_id, dataset_id, table_id):
+  def get_table(self, project_id, dataset_id, table_id):
+    """Lookup a table's metadata object.
+
+    Args:
+      client: bigquery.BigqueryV2 instance
+      project_id, dataset_id, table_id: table lookup parameters
+
+    Returns:
+      bigquery.Table instance
+    Raises:
+      HttpError if lookup failed.
+    """
     request = bigquery.BigqueryTablesGetRequest(
         projectId=project_id, datasetId=dataset_id, tableId=table_id)
     response = self.client.tables.Get(request)
-    # The response is a bigquery.Table instance.
     return response
 
   def _create_table(self, project_id, dataset_id, table_id, schema):
@@ -418,7 +429,7 @@ class BigQueryWrapper(object):
       num_retries=MAX_RETRIES,
       retry_filter=retry.retry_on_server_errors_and_timeout_filter)
   def get_table_location(self, project_id, dataset_id, table_id):
-    table = self._get_table(project_id, dataset_id, table_id)
+    table = self.get_table(project_id, dataset_id, table_id)
     return table.location
 
   @retry.with_exponential_backoff(
@@ -494,7 +505,7 @@ class BigQueryWrapper(object):
 
     found_table = None
     try:
-      found_table = self._get_table(project_id, dataset_id, table_id)
+      found_table = self.get_table(project_id, dataset_id, table_id)
     except HttpError as exn:
       if exn.status_code == 404:
         if create_disposition == BigQueryDisposition.CREATE_NEVER:
@@ -695,7 +706,7 @@ class BigQueryReader(dataflow_io.NativeSourceReader):
   """A reader for a BigQuery source."""
 
   def __init__(self, source, test_bigquery_client=None, use_legacy_sql=True,
-               flatten_results=True):
+               flatten_results=True, kms_key=None):
     self.source = source
     self.test_bigquery_client = test_bigquery_client
     if auth.is_running_in_gce:
@@ -719,6 +730,7 @@ class BigQueryReader(dataflow_io.NativeSourceReader):
     self.schema = None
     self.use_legacy_sql = use_legacy_sql
     self.flatten_results = flatten_results
+    self.kms_key = kms_key
 
     if self.source.table_reference is not None:
       # If table schema did not define a project we default to executing
@@ -855,9 +867,9 @@ class RowAsDictJsonCoder(coders.Coder):
     # to the programmer that they have used NAN/INF values.
     try:
       return json.dumps(
-          table_row, allow_nan=False, default=default_encoder)
+          table_row, allow_nan=False, default=default_encoder).encode('utf-8')
     except ValueError as e:
       raise ValueError('%s. %s' % (e, JSON_COMPLIANCE_ERROR))
 
   def decode(self, encoded_table_row):
-    return json.loads(encoded_table_row)
+    return json.loads(encoded_table_row.decode('utf-8'))

@@ -29,24 +29,20 @@ import com.google.api.services.dataflow.model.ParDoInstruction;
 import com.google.api.services.dataflow.model.ParallelInstruction;
 import com.google.api.services.dataflow.model.ReadInstruction;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
 import javax.annotation.Nullable;
 import org.apache.beam.model.pipeline.v1.RunnerApi;
 import org.apache.beam.model.pipeline.v1.RunnerApi.Environment;
+import org.apache.beam.model.pipeline.v1.RunnerApi.ExecutableStagePayload.UserStateId;
 import org.apache.beam.model.pipeline.v1.RunnerApi.StandardPTransforms;
-import org.apache.beam.runners.core.construction.BeamUrns;
-import org.apache.beam.runners.core.construction.CoderTranslation;
-import org.apache.beam.runners.core.construction.Environments;
-import org.apache.beam.runners.core.construction.PTransformTranslation;
-import org.apache.beam.runners.core.construction.ParDoTranslation;
-import org.apache.beam.runners.core.construction.RehydratedComponents;
-import org.apache.beam.runners.core.construction.SdkComponents;
-import org.apache.beam.runners.core.construction.WindowingStrategyTranslation;
+import org.apache.beam.runners.core.construction.*;
 import org.apache.beam.runners.core.construction.graph.ExecutableStage;
 import org.apache.beam.runners.core.construction.graph.ImmutableExecutableStage;
 import org.apache.beam.runners.core.construction.graph.PipelineNode;
@@ -260,11 +256,13 @@ public class CreateExecutableStageNodeFunction
             e);
       }
 
+      // TODO(BEAM-6275): Set correct IsBounded on generated PCollections
       String pcollectionId = node.getPcollectionId();
       RunnerApi.PCollection pCollection =
           RunnerApi.PCollection.newBuilder()
               .setCoderId(coderId)
               .setWindowingStrategyId(windowingStrategyId)
+              .setIsBounded(RunnerApi.IsBounded.Enum.BOUNDED)
               .build();
       nodesToPCollections.put(node, pcollectionId);
       componentsBuilder.putPcollections(pcollectionId, pCollection);
@@ -282,6 +280,8 @@ public class CreateExecutableStageNodeFunction
 
     componentsBuilder.putAllCoders(sdkComponents.toComponents().getCodersMap());
     Set<PTransformNode> executableStageTransforms = new HashSet<>();
+    Set<TimerReference> executableStageTimers = new HashSet<>();
+    List<UserStateId> userStateIds = new ArrayList<>();
 
     for (ParallelInstructionNode node :
         Iterables.filter(input.nodes(), ParallelInstructionNode.class)) {
@@ -298,6 +298,7 @@ public class CreateExecutableStageNodeFunction
       RunnerApi.PTransform.Builder pTransform = RunnerApi.PTransform.newBuilder();
       RunnerApi.FunctionSpec.Builder transformSpec = RunnerApi.FunctionSpec.newBuilder();
 
+      List<String> timerIds = new ArrayList<>();
       if (parallelInstruction.getParDo() != null) {
         ParDoInstruction parDoInstruction = parallelInstruction.getParDo();
         CloudObject userFnSpec = CloudObject.fromSpec(parDoInstruction.getUserFn());
@@ -309,9 +310,7 @@ public class CreateExecutableStageNodeFunction
           String parDoPTransformId = getString(userFnSpec, PropertyNames.SERIALIZED_FN);
 
           RunnerApi.PTransform parDoPTransform =
-              pipeline == null
-                  ? null
-                  : pipeline.getComponents().getTransformsOrDefault(parDoPTransformId, null);
+              pipeline.getComponents().getTransformsOrDefault(parDoPTransformId, null);
 
           // TODO: only the non-null branch should exist; for migration ease only
           if (parDoPTransform != null) {
@@ -332,6 +331,20 @@ public class CreateExecutableStageNodeFunction
                   RunnerApi.ParDoPayload.parseFrom(parDoPTransform.getSpec().getPayload());
             } catch (InvalidProtocolBufferException exc) {
               throw new RuntimeException("ParDo did not have a ParDoPayload", exc);
+            }
+
+            // Build the necessary components to inform the SDK Harness of the pipeline's
+            // user timers and user state.
+            for (Map.Entry<String, RunnerApi.TimerSpec> entry :
+                parDoPayload.getTimerSpecsMap().entrySet()) {
+              timerIds.add(entry.getKey());
+            }
+            for (Map.Entry<String, RunnerApi.StateSpec> entry :
+                parDoPayload.getStateSpecsMap().entrySet()) {
+              UserStateId.Builder builder = UserStateId.newBuilder();
+              builder.setTransformId(parDoPTransformId);
+              builder.setLocalName(entry.getKey());
+              userStateIds.add(builder.build());
             }
 
             transformSpec
@@ -369,6 +382,8 @@ public class CreateExecutableStageNodeFunction
             String.format("Unknown type of ParallelInstruction %s", parallelInstruction));
       }
 
+      // Even though this is a for-loop, there is only going to be a single PCollection as the
+      // predecessor in a ParDo. This PCollection is called the "main input".
       for (Node predecessorOutput : input.predecessors(node)) {
         pTransform.putInputs(
             "generatedInput" + idGenerator.getId(), nodesToPCollections.get(predecessorOutput));
@@ -382,7 +397,12 @@ public class CreateExecutableStageNodeFunction
       }
 
       pTransform.setSpec(transformSpec);
-      executableStageTransforms.add(PipelineNode.pTransform(ptransformId, pTransform.build()));
+      PTransformNode pTransformNode = PipelineNode.pTransform(ptransformId, pTransform.build());
+      executableStageTransforms.add(pTransformNode);
+
+      for (String timerId : timerIds) {
+        executableStageTimers.add(TimerReference.of(pTransformNode, timerId));
+      }
     }
 
     if (executableStageInputs.size() != 1) {
@@ -400,8 +420,13 @@ public class CreateExecutableStageNodeFunction
     }
 
     Set<SideInputReference> executableStageSideInputs = new HashSet<>();
-    Set<TimerReference> executableStageTimers = new HashSet<>();
     Set<UserStateReference> executableStageUserStateReference = new HashSet<>();
+
+    for (UserStateId userStateId : userStateIds) {
+      executableStageUserStateReference.add(
+          UserStateReference.fromUserStateId(userStateId, executableStageComponents));
+    }
+
     ExecutableStage executableStage =
         ImmutableExecutableStage.ofFullComponents(
             executableStageComponents,

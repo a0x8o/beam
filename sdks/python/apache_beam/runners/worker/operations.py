@@ -24,6 +24,7 @@ from __future__ import absolute_import
 
 import collections
 import logging
+import sys
 from builtins import filter
 from builtins import object
 from builtins import zip
@@ -72,6 +73,14 @@ class ConsumerSet(Receiver):
   the other edge.
   ConsumerSet are attached to the outputting Operation.
   """
+  @staticmethod
+  def create(counter_factory, step_name, output_index, consumers, coder):
+    if len(consumers) == 1:
+      return SingletonConsumerSet(
+          counter_factory, step_name, output_index, consumers, coder)
+    else:
+      return ConsumerSet(
+          counter_factory, step_name, output_index, consumers, coder)
 
   def __init__(
       self, counter_factory, step_name, output_index, consumers, coder):
@@ -89,6 +98,14 @@ class ConsumerSet(Receiver):
       cython.cast(Operation, consumer).process(windowed_value)
     self.update_counters_finish()
 
+  def try_split(self, fraction_of_remainder):
+    # TODO(SDF): Consider supporting splitting each consumer individually.
+    # This would never come up in the existing SDF expansion, but might
+    # be useful to support fused SDF nodes.
+    # This would require dedicated delivery of the split results to each
+    # of the consumers separately.
+    return None
+
   def update_counters_start(self, windowed_value):
     self.opcounter.update_from(windowed_value)
 
@@ -99,6 +116,23 @@ class ConsumerSet(Receiver):
     return '%s[%s.out%s, coder=%s, len(consumers)=%s]' % (
         self.__class__.__name__, self.step_name, self.output_index, self.coder,
         len(self.consumers))
+
+
+class SingletonConsumerSet(ConsumerSet):
+  def __init__(
+      self, counter_factory, step_name, output_index, consumers, coder):
+    assert len(consumers) == 1
+    super(SingletonConsumerSet, self).__init__(
+        counter_factory, step_name, output_index, consumers, coder)
+    self.consumer = consumers[0]
+
+  def receive(self, windowed_value):
+    self.update_counters_start(windowed_value)
+    self.consumer.process(windowed_value)
+    self.update_counters_finish()
+
+  def try_split(self, fraction_of_remainder):
+    return self.consumer.try_split(fraction_of_remainder)
 
 
 class Operation(object):
@@ -128,6 +162,7 @@ class Operation(object):
 
     self.spec = spec
     self.counter_factory = counter_factory
+    self.execution_context = None
     self.consumers = collections.defaultdict(list)
 
     # These are overwritten in the legacy harness.
@@ -155,11 +190,13 @@ class Operation(object):
       # top-level operation, should have output_coders
       #TODO(pabloem): Define better what step name is used here.
       if getattr(self.spec, 'output_coders', None):
-        self.receivers = [ConsumerSet(self.counter_factory,
-                                      self.name_context.logging_name(),
-                                      i,
-                                      self.consumers[i], coder)
-                          for i, coder in enumerate(self.spec.output_coders)]
+        self.receivers = [
+            ConsumerSet.create(
+                self.counter_factory,
+                self.name_context.logging_name(),
+                i,
+                self.consumers[i], coder)
+            for i, coder in enumerate(self.spec.output_coders)]
     self.setup_done = True
 
   def start(self):
@@ -171,6 +208,9 @@ class Operation(object):
   def process(self, o):
     """Process element in operation."""
     pass
+
+  def try_split(self, fraction_of_remainder):
+    return None
 
   def finish(self):
     """Finish operation."""
@@ -325,7 +365,7 @@ class ImpulseReadOperation(Operation):
         name_context, None, counter_factory, state_sampler)
     self.source = source
     self.receivers = [
-        ConsumerSet(
+        ConsumerSet.create(
             self.counter_factory, self.name_context.step_name, 0,
             next(iter(consumers.values())), output_coder)]
 
@@ -495,7 +535,10 @@ class DoOperation(Operation):
 
   def process(self, o):
     with self.scoped_process_state:
-      self.dofn_receiver.receive(o)
+      delayed_application = self.dofn_receiver.receive(o)
+      if delayed_application:
+        self.execution_context.delayed_applications.append(
+            (self, delayed_application))
 
   def process_timer(self, tag, windowed_timer):
     key, timer_data = windowed_timer.value
@@ -537,6 +580,22 @@ class DoOperation(Operation):
         )
         infos[monitoring_infos.to_key(mi)] = mi
     return infos
+
+
+class SdfProcessElements(DoOperation):
+
+  def process(self, o):
+    with self.scoped_process_state:
+      delayed_application = self.dofn_runner.process_with_restriction(o)
+      if delayed_application:
+        self.execution_context.delayed_applications.append(
+            (self, delayed_application))
+
+  def try_split(self, fraction_of_remainder):
+    split = self.dofn_runner.try_split(fraction_of_remainder)
+    if split:
+      primary, residual = split
+      return (self, primary), (self, residual)
 
 
 class DoFnRunnerReceiver(Receiver):
@@ -634,6 +693,13 @@ class PGBKCVOperation(Operation):
     fn, args, kwargs = pickler.loads(self.spec.combine_fn)[:3]
     self.combine_fn = curry_combine_fn(fn, args, kwargs)
     self.combine_fn_add_input = self.combine_fn.add_input
+    base_compact = (
+        core.CombineFn.compact if sys.version_info >= (3,)
+        else core.CombineFn.compact.__func__)
+    if self.combine_fn.compact.__func__ is base_compact:
+      self.combine_fn_compact = None
+    else:
+      self.combine_fn_compact = self.combine_fn.compact
     # Optimization for the (known tiny accumulator, often wide keyspace)
     # combine functions.
     # TODO(b/36567833): Bound by in-memory size rather than key count.
@@ -682,8 +748,12 @@ class PGBKCVOperation(Operation):
     self.table = {}
     self.key_count = 0
 
-  def output_key(self, wkey, value):
+  def output_key(self, wkey, accumulator):
     windows, key = wkey
+    if self.combine_fn_compact is None:
+      value = accumulator
+    else:
+      value = self.combine_fn_compact(accumulator)
     if windows is 0:
       self.output(_globally_windowed_value.with_value((key, value)))
     else:

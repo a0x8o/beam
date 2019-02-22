@@ -410,6 +410,14 @@ class GoogleCloudOptions(PipelineOptions):
                         'Experimental. '
                         'See https://cloud.google.com/dataflow/pipelines/'
                         'updating-a-pipeline')
+    parser.add_argument('--enable_streaming_engine',
+                        default=False,
+                        action='store_true',
+                        help='Enable Windmill Service for this Dataflow job. ')
+    parser.add_argument('--dataflow_kms_key',
+                        default=None,
+                        help='Set a Google Cloud KMS key name to be used in '
+                        'Dataflow state operations (GBK, Streaming).')
 
   def validate(self, validator):
     errors = []
@@ -581,6 +589,22 @@ class DebugOptions(PipelineOptions):
         ('Runners may provide a number of experimental features that can be '
          'enabled with this flag. Please sync with the owners of the runner '
          'before enabling any experiments.'))
+
+  def add_experiment(self, experiment):
+    if self.experiments is None:
+      self.experiments = []
+    if experiment not in self.experiments:
+      self.experiments.append(experiment)
+
+  def lookup_experiment(self, key, default=None):
+    if not self.experiments:
+      return default
+    elif key in self.experiments:
+      return True
+    for experiment in self.experiments:
+      if experiment.startswith(key + '='):
+        return experiment.split('=', 1)[1]
+    return default
 
 
 class ProfilingOptions(PipelineOptions):

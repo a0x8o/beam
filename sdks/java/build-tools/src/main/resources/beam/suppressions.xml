@@ -93,4 +93,13 @@
   <suppress checks="JavadocMethod" files=".*flink.*wrappers.*ExecutableStageDoFnOperator\.java" lines="119"/>
   <!-- End of Suppression on JavadocMethod violations. -->
 
+  <!-- Guava use exceptions -->
+  <!-- Non-vendored guava imports are allowed for files that depend on libraries that expose guava in its public API -->
+  <suppress id="ForbidNonVendoredGuava" files=".*cassandra.*CassandraIO\.java" />
+  <suppress id="ForbidNonVendoredGuava" files=".*kinesis.*KinesisIO\.java" />
+  <suppress id="ForbidNonVendoredGuava" files=".*kinesis.*KinesisProducerMock\.java" />
+  <suppress id="ForbidNonVendoredGuava" files=".*bigtable.*BigtableServiceImpl\.java" />
+  <suppress id="ForbidNonVendoredGuava" files=".*bigtable.*BigtableServiceImplTest\.java" />
+  <suppress id="ForbidNonVendoredGuava" files=".*sql.*BeamValuesRel\.java" />
+  <suppress id="ForbidNonVendoredGuava" files=".*sql.*BeamEnumerableConverterTest\.java" />
 </suppressions>

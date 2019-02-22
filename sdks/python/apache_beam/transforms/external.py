@@ -24,15 +24,21 @@ import contextlib
 import copy
 import threading
 
-import grpc
-
 from apache_beam import pvalue
 from apache_beam.portability import common_urns
 from apache_beam.portability.api import beam_expansion_api_pb2
-from apache_beam.portability.api import beam_expansion_api_pb2_grpc
 from apache_beam.portability.api import beam_runner_api_pb2
 from apache_beam.runners import pipeline_context
 from apache_beam.transforms import ptransform
+
+# Protect against environments where grpc is not available.
+# pylint: disable=wrong-import-order, wrong-import-position, ungrouped-imports
+try:
+  import grpc
+  from apache_beam.portability.api import beam_expansion_api_pb2_grpc
+except ImportError:
+  grpc = None
+# pylint: enable=wrong-import-order, wrong-import-position, ungrouped-imports
 
 
 class ExternalTransform(ptransform.PTransform):
@@ -45,6 +51,8 @@ class ExternalTransform(ptransform.PTransform):
   _IMPULSE_PREFIX = 'impulse'
 
   def __init__(self, urn, payload, endpoint):
+    if grpc is None and isinstance(endpoint, str):
+      raise NotImplementedError('Grpc required for external transforms.')
     # TODO: Start an endpoint given an environment?
     self._urn = urn
     self._payload = payload
@@ -195,7 +203,14 @@ class ExternalTransform(ptransform.PTransform):
                    for tag, pcoll in proto.outputs.items()})
       context.transforms.put_proto(id, new_proto)
 
-    return self._expanded_transform
+    return beam_runner_api_pb2.PTransform(
+        unique_name=full_label,
+        spec=self._expanded_transform.spec,
+        subtransforms=self._expanded_transform.subtransforms,
+        inputs=self._expanded_transform.inputs,
+        outputs={
+            tag: pcoll_renames.get(pcoll, pcoll)
+            for tag, pcoll in self._expanded_transform.outputs.items()})
 
 
 def memoize(func):

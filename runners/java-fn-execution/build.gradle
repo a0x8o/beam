@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-apply plugin: org.apache.beam.gradle.BeamModulePlugin
+plugins { id 'org.apache.beam.module' }
 applyJavaNature()
 
 description = "Apache Beam :: Runners :: Java Fn Execution"
@@ -34,6 +34,7 @@ dependencies {
   shadow library.java.slf4j_api
   testCompile project(":beam-sdks-java-harness")
   testCompile project(path: ":beam-runners-core-construction-java", configuration: "shadow")
+  testCompile project(path: ":beam-runners-core-java", configuration: "shadowTest")
   testCompile project(path: ":beam-sdks-java-core", configuration: "shadowTest")
   testCompile library.java.junit
   testCompile library.java.hamcrest_core

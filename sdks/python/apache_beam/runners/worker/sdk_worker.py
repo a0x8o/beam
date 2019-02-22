@@ -197,7 +197,13 @@ class SdkHarness(object):
     logging.debug(
         "Currently using %s threads." % len(self._process_thread_pool._threads))
 
+  def _request_process_bundle_split(self, request):
+    self._request_process_bundle_action(request)
+
   def _request_process_bundle_progress(self, request):
+    self._request_process_bundle_action(request)
+
+  def _request_process_bundle_action(self, request):
 
     def task():
       instruction_reference = getattr(
@@ -272,10 +278,11 @@ class SdkWorker(object):
         instruction_id,
         request.process_bundle_descriptor_reference) as bundle_processor:
       with self.maybe_profile(instruction_id):
-        bundle_processor.process_bundle(instruction_id)
+        delayed_applications = bundle_processor.process_bundle(instruction_id)
       return beam_fn_api_pb2.InstructionResponse(
           instruction_id=instruction_id,
           process_bundle=beam_fn_api_pb2.ProcessBundleResponse(
+              residual_roots=delayed_applications,
               metrics=bundle_processor.metrics(),
               monitoring_infos=bundle_processor.monitoring_infos()))
 
@@ -302,6 +309,17 @@ class SdkWorker(object):
     # Outside the finally block as we only want to re-use on success.
     processor.reset()
     self.cached_bundle_processors[bundle_descriptor_id].append(processor)
+
+  def process_bundle_split(self, request, instruction_id):
+    processor = self.active_bundle_processors.get(request.instruction_reference)
+    if processor:
+      return beam_fn_api_pb2.InstructionResponse(
+          instruction_id=instruction_id,
+          process_bundle_split=processor.try_split(request))
+    else:
+      return beam_fn_api_pb2.InstructionResponse(
+          instruction_id=instruction_id,
+          error='Instruction not running: %s' % instruction_id)
 
   def process_bundle_progress(self, request, instruction_id):
     # It is an error to get progress for a not-in-flight bundle.

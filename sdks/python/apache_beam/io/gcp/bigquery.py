@@ -139,6 +139,7 @@ from apache_beam.transforms import DoFn
 from apache_beam.transforms import ParDo
 from apache_beam.transforms import PTransform
 from apache_beam.transforms.display import DisplayDataItem
+from apache_beam.utils.annotations import deprecated
 
 __all__ = [
     'TableRowJsonCoder',
@@ -149,52 +150,39 @@ __all__ = [
     ]
 
 
+@deprecated(since='2.11.0', current="bigquery_tools.parse_table_reference")
 def _parse_table_reference(table, dataset=None, project=None):
-  import warnings
-  warnings.warn("This function is deprecated and will be permanently moved "
-                "to the bigquery_tools module in a future version of beam")
-  return bigquery_tools._parse_table_reference(table, dataset, project)
+  return bigquery_tools.parse_table_reference(table, dataset, project)
 
 
+@deprecated(since='2.11.0',
+            current="bigquery_tools.parse_table_schema_from_json")
 def parse_table_schema_from_json(schema_string):
-  import warnings
-  warnings.warn("This function is deprecated and will be permanently moved "
-                "to the bigquery_tools module in a future version of beam")
   return bigquery_tools.parse_table_schema_from_json(schema_string)
 
 
+@deprecated(since='2.11.0', current="bigquery_tools.default_encoder")
 def default_encoder(obj):
-  import warnings
-  warnings.warn("This function is deprecated and will be permanently moved "
-                "to the bigquery_tools module in a future version of beam")
   return bigquery_tools.default_encoder(obj)
 
 
+@deprecated(since='2.11.0', current="bigquery_tools.RowAsDictJsonCoder")
 def RowAsDictJsonCoder(*args, **kwargs):
-  import warnings
-  warnings.warn("This class is deprecated and will be permanently moved "
-                "to the bigquery_tools module in a future version of beam")
   return bigquery_tools.RowAsDictJsonCoder(*args, **kwargs)
 
 
+@deprecated(since='2.11.0', current="bigquery_tools.BigQueryReader")
 def BigQueryReader(*args, **kwargs):
-  import warnings
-  warnings.warn("This class is deprecated and will be permanently moved "
-                "to the bigquery_tools module in a future version of beam")
   return bigquery_tools.BigQueryReader(*args, **kwargs)
 
 
+@deprecated(since='2.11.0', current="bigquery_tools.BigQueryWriter")
 def BigQueryWriter(*args, **kwargs):
-  import warnings
-  warnings.warn("This class is deprecated and will be permanently moved "
-                "to the bigquery_tools module in a future version of beam")
   return bigquery_tools.BigQueryWriter(*args, **kwargs)
 
 
+@deprecated(since='2.11.0', current="bigquery_tools.BigQueryWrapper")
 def BigQueryWrapper(*args, **kwargs):
-  import warnings
-  warnings.warn("This class is deprecated and will be permanently moved "
-                "to the bigquery_tools module in a future version of beam")
   return bigquery_tools.BigQueryWrapper(*args, **kwargs)
 
 
@@ -276,7 +264,7 @@ class BigQuerySource(dataflow_io.NativeSource):
 
   def __init__(self, table=None, dataset=None, project=None, query=None,
                validate=False, coder=None, use_standard_sql=False,
-               flatten_results=True):
+               flatten_results=True, kms_key=None):
     """Initialize a :class:`BigQuerySource`.
 
     Args:
@@ -313,6 +301,8 @@ class BigQuerySource(dataflow_io.NativeSource):
         This parameter is ignored for table inputs.
       flatten_results (bool): Flattens all nested and repeated fields in the
         query results. The default value is :data:`True`.
+      kms_key (str): Experimental. Optional Cloud KMS key name for use when
+        creating new tables.
 
     Raises:
       ~exceptions.ValueError: if any of the following is true:
@@ -337,7 +327,7 @@ class BigQuerySource(dataflow_io.NativeSource):
     elif table is None and query is None:
       raise ValueError('A BigQuery table or a query must be specified')
     elif table is not None:
-      self.table_reference = bigquery_tools._parse_table_reference(
+      self.table_reference = bigquery_tools.parse_table_reference(
           table, dataset, project)
       self.query = None
       self.use_legacy_sql = True
@@ -350,6 +340,7 @@ class BigQuerySource(dataflow_io.NativeSource):
     self.validate = validate
     self.flatten_results = flatten_results
     self.coder = coder or bigquery_tools.RowAsDictJsonCoder()
+    self.kms_key = kms_key
 
   def display_data(self):
     if self.query is not None:
@@ -378,7 +369,8 @@ class BigQuerySource(dataflow_io.NativeSource):
         source=self,
         test_bigquery_client=test_bigquery_client,
         use_legacy_sql=self.use_legacy_sql,
-        flatten_results=self.flatten_results)
+        flatten_results=self.flatten_results,
+        kms_key=self.kms_key)
 
 
 class BigQuerySink(dataflow_io.NativeSink):
@@ -393,7 +385,7 @@ class BigQuerySink(dataflow_io.NativeSink):
   def __init__(self, table, dataset=None, project=None, schema=None,
                create_disposition=BigQueryDisposition.CREATE_IF_NEEDED,
                write_disposition=BigQueryDisposition.WRITE_EMPTY,
-               validate=False, coder=None):
+               validate=False, coder=None, kms_key=None):
     """Initialize a BigQuerySink.
 
     Args:
@@ -446,6 +438,8 @@ bigquery_v2_messages.TableSchema` object or a single string  of the form
         that will be JSON serialized as a line in a file. This argument needs a
         value only in special cases when writing table rows as dictionaries is
         not desirable.
+      kms_key (str): Experimental. Optional Cloud KMS key name for use when
+        creating new tables.
 
     Raises:
       ~exceptions.TypeError: if the schema argument is not a :class:`str` or a
@@ -464,7 +458,7 @@ bigquery_v2_messages.TableSchema` object.
           'Google Cloud IO not available, '
           'please install apache_beam[gcp]')
 
-    self.table_reference = bigquery_tools._parse_table_reference(
+    self.table_reference = bigquery_tools.parse_table_reference(
         table, dataset, project)
     # Transform the table schema into a bigquery.TableSchema instance.
     if isinstance(schema, (str, unicode)):
@@ -493,6 +487,7 @@ bigquery_v2_messages.TableSchema` object.
         write_disposition)
     self.validate = validate
     self.coder = coder or bigquery_tools.RowAsDictJsonCoder()
+    self.kms_key = kms_key
 
   def display_data(self):
     res = {}
@@ -543,7 +538,7 @@ class BigQueryWriteFn(DoFn):
   """
 
   def __init__(self, table_id, dataset_id, project_id, batch_size, schema,
-               create_disposition, write_disposition, test_client):
+               create_disposition, write_disposition, kms_key, test_client):
     """Initialize a WriteToBigQuery transform.
 
     Args:
@@ -573,6 +568,8 @@ class BigQueryWriteFn(DoFn):
         -  BigQueryDisposition.WRITE_APPEND: add to existing rows.
         -  BigQueryDisposition.WRITE_EMPTY: fail the write if table not empty.
         For streaming pipelines WriteTruncate can not be used.
+      kms_key: Experimental. Optional Cloud KMS key name for use when creating
+        new tables.
       test_client: Override the default bigquery client used for testing.
     """
     self.table_id = table_id
@@ -585,6 +582,7 @@ class BigQueryWriteFn(DoFn):
     self._rows_buffer = []
     # The default batch size is 500
     self._max_batch_size = batch_size or 500
+    self.kms_key = kms_key
 
   def display_data(self):
     return {'table_id': self.table_id,
@@ -651,7 +649,7 @@ class WriteToBigQuery(PTransform):
   def __init__(self, table, dataset=None, project=None, schema=None,
                create_disposition=BigQueryDisposition.CREATE_IF_NEEDED,
                write_disposition=BigQueryDisposition.WRITE_APPEND,
-               batch_size=None, test_client=None):
+               batch_size=None, kms_key=None, test_client=None):
     """Initialize a WriteToBigQuery transform.
 
     Args:
@@ -696,9 +694,11 @@ bigquery_v2_messages.TableSchema`
 
       batch_size (int): Number of rows to be written to BQ per streaming API
         insert.
+      kms_key (str): Experimental. Optional Cloud KMS key name for use when
+        creating new tables.
       test_client: Override the default bigquery client used for testing.
     """
-    self.table_reference = bigquery_tools._parse_table_reference(
+    self.table_reference = bigquery_tools.parse_table_reference(
         table, dataset, project)
     self.create_disposition = BigQueryDisposition.validate_create(
         create_disposition)
@@ -706,6 +706,7 @@ bigquery_v2_messages.TableSchema`
         write_disposition)
     self.schema = schema
     self.batch_size = batch_size
+    self.kms_key = kms_key
     self.test_client = test_client
 
   @staticmethod
@@ -798,6 +799,7 @@ bigquery_v2_messages.TableSchema):
         schema=self.get_dict_table_schema(self.schema),
         create_disposition=self.create_disposition,
         write_disposition=self.write_disposition,
+        kms_key=self.kms_key,
         test_client=self.test_client)
     return pcoll | 'WriteToBigQuery' >> ParDo(bigquery_write_fn)
 

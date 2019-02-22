@@ -66,8 +66,8 @@ import org.apache.beam.vendor.guava.v20_0.com.google.common.collect.Maps;
  *
  * <p>The generated class corresponds to the following Java class:
  *
- * <pre>{@code
- * class SchemaRowCoder extends Coder<Row> {
+ * <pre><code>
+ * class SchemaRowCoder extends{@literal Coder<Row>} {
  *   // Generated array containing a coder for each field in the Schema.
  *   private static final Coder[] FIELD_CODERS;
  *
@@ -77,17 +77,19 @@ import org.apache.beam.vendor.guava.v20_0.com.google.common.collect.Maps;
  *     return schema;
  *   }
  *
- *   {@literal @}Override public void encode(T value, OutputStream outStream) {
+ *  {@literal @}Override
+ *   public void encode(T value, OutputStream outStream) {
  *     // Delegate to a method that evaluates each coder in the static array.
  *     encodeDelegate(FIELD_CODERS, value, outStream);
  *   }
  *
- *   {@literal @}Overide public abstract T decode(InputStream inStream) {
+ *  {@literal @}Overide
+ *   public abstract T decode(InputStream inStream) {
  *     // Delegate to a method that evaluates each coder in the static array.
  *     return decodeDelegate(FIELD_CODERS, inStream);
  *   }
  * }
- * }</pre>
+ * </code></pre>
  */
 public abstract class RowCoderGenerator {
   private static final ByteBuddy BYTE_BUDDY = new ByteBuddy();
@@ -95,6 +97,7 @@ public abstract class RowCoderGenerator {
   private static final ForLoadedType LIST_CODER_TYPE = new ForLoadedType(ListCoder.class);
   private static final ForLoadedType MAP_CODER_TYPE = new ForLoadedType(MapCoder.class);
   private static final BitSetCoder NULL_LIST_CODER = BitSetCoder.of();
+  private static final ForLoadedType NULLABLE_CODER = new ForLoadedType(NullableCoder.class);
 
   private static final String CODERS_FIELD_NAME = "FIELD_CODERS";
 
@@ -305,7 +308,9 @@ public abstract class RowCoderGenerator {
     List<StackManipulation> componentCoders =
         Lists.newArrayListWithCapacity(schema.getFieldCount());
     for (int i = 0; i < schema.getFieldCount(); i++) {
-      componentCoders.add(getCoder(schema.getField(i).getType()));
+      // We use withNullable(false) as nulls are handled by the RowCoder and the individual
+      // component coders therefore do not need to handle nulls.
+      componentCoders.add(getCoder(schema.getField(i).getType().withNullable(false)));
     }
 
     return builder
@@ -338,7 +343,9 @@ public abstract class RowCoderGenerator {
   }
 
   private static StackManipulation getCoder(Schema.FieldType fieldType) {
-    if (TypeName.ARRAY.equals(fieldType.getTypeName())) {
+    if (TypeName.LOGICAL_TYPE.equals(fieldType.getTypeName())) {
+      return getCoder(fieldType.getLogicalType().getBaseType());
+    } else if (TypeName.ARRAY.equals(fieldType.getTypeName())) {
       return listCoder(fieldType.getCollectionElementType());
     } else if (TypeName.MAP.equals(fieldType.getTypeName())) {
       return mapCoder(fieldType.getMapKeyType(), fieldType.getMapValueType());
@@ -346,7 +353,20 @@ public abstract class RowCoderGenerator {
       Coder<Row> nestedCoder = generate(fieldType.getRowSchema(), UUID.randomUUID());
       return rowCoder(nestedCoder.getClass());
     } else {
-      return coderForPrimitiveType(fieldType.getTypeName());
+      StackManipulation primitiveCoder = coderForPrimitiveType(fieldType.getTypeName());
+
+      if (fieldType.getNullable()) {
+        primitiveCoder =
+            new Compound(
+                primitiveCoder,
+                MethodInvocation.invoke(
+                    NULLABLE_CODER
+                        .getDeclaredMethods()
+                        .filter(ElementMatchers.named("of"))
+                        .getOnly()));
+      }
+
+      return primitiveCoder;
     }
   }
 
@@ -363,7 +383,7 @@ public abstract class RowCoderGenerator {
   }
 
   static StackManipulation mapCoder(Schema.FieldType keyType, Schema.FieldType valueType) {
-    StackManipulation keyCoder = coderForPrimitiveType(keyType.getTypeName());
+    StackManipulation keyCoder = getCoder(keyType);
     StackManipulation valueCoder = getCoder(valueType);
     return new Compound(
         keyCoder,
