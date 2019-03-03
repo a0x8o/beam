@@ -27,9 +27,9 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiFunction;
-import org.apache.beam.model.fnexecution.v1.BeamFnApi.MonitoringInfo;
-import org.apache.beam.runners.core.construction.metrics.MetricKey;
+import org.apache.beam.model.pipeline.v1.MetricsApi.MonitoringInfo;
 import org.apache.beam.runners.core.metrics.MetricUpdates.MetricUpdate;
+import org.apache.beam.sdk.metrics.MetricKey;
 import org.apache.beam.sdk.metrics.MetricResult;
 import org.apache.beam.sdk.metrics.MetricResults;
 
@@ -184,9 +184,7 @@ public class MetricsContainerStepMap implements Serializable {
       MetricKey key = metricUpdate.getKey();
       MetricResult<T> current = metricResultMap.get(key);
       if (current == null) {
-        metricResultMap.put(
-            key,
-            MetricResult.attempted(key.metricName(), key.stepName(), metricUpdate.getUpdate()));
+        metricResultMap.put(key, MetricResult.attempted(key, metricUpdate.getUpdate()));
       } else {
         metricResultMap.put(key, current.addAttempted(metricUpdate.getUpdate(), combine));
       }
