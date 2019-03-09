@@ -15,30 +15,25 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.beam.sdk.extensions.euphoria.core.client.io;
+package org.apache.beam.sdk.testutils.publishing;
 
-import org.apache.beam.sdk.extensions.euphoria.core.annotation.audience.Audience;
+import static java.lang.String.format;
 
-/**
- * Extends {@link Environment} with write capability. Used in user defined functors.
- *
- * @param <T> the type of elements collected through this context
- */
-@Audience(Audience.Type.CLIENT)
-public interface Collector<T> extends Environment {
+import java.util.List;
+import org.apache.beam.sdk.testutils.NamedTestResult;
 
-  /**
-   * Collects the given element to the output of this context.
-   *
-   * @param elem the element to collect
-   */
-  void collect(T elem);
+/** Writes load test metrics results to console. */
+public class ConsoleResultPublisher {
 
-  /**
-   * Returns {@link Context} view of the collector. Since {@link Collector} usually share the same
-   * methods as {@link Context} it can be safely cast.
-   *
-   * @return this instance as a context class
-   */
-  Context asContext();
+  public static void publish(List<NamedTestResult> results, String testId, String timestamp) {
+    final String textTemplate = "%24s  %24s";
+
+    System.out.println(
+        format("Load test results for test (ID): %s and timestamp: %s:", testId, timestamp));
+    System.out.println(format(textTemplate, "Metric:", "Value:"));
+
+    results.forEach(
+        (result) ->
+            System.out.println(format(textTemplate, result.getMetric(), result.getValue())));
+  }
 }

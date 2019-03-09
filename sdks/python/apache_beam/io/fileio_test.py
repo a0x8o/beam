@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 #
 # Licensed to the Apache Software Foundation (ASF) under one or more
 # contributor license agreements.  See the NOTICE file distributed with
@@ -16,286 +15,219 @@
 # limitations under the License.
 #
 
-"""Unit tests for file sinks."""
+"""Tests for transforms defined in apache_beam.io.fileio."""
 
-import glob
+from __future__ import absolute_import
+
+import csv
+import io
 import logging
-import os
-import shutil
-import tempfile
+import sys
 import unittest
 
-import hamcrest as hc
-import mock
+from nose.plugins.attrib import attr
 
 import apache_beam as beam
-from apache_beam import coders
 from apache_beam.io import fileio
-from apache_beam.test_pipeline import TestPipeline
-from apache_beam.transforms.display import DisplayData
-from apache_beam.transforms.display_test import DisplayDataItemMatcher
+from apache_beam.io.filebasedsink_test import _TestCaseWithTempDirCleanUp
+from apache_beam.testing.test_pipeline import TestPipeline
+from apache_beam.testing.test_utils import compute_hash
+from apache_beam.testing.util import assert_that
+from apache_beam.testing.util import equal_to
 
-from apache_beam.utils.value_provider import StaticValueProvider
+
+class MatchTest(_TestCaseWithTempDirCleanUp):
+
+  def test_basic_two_files(self):
+    files = []
+    tempdir = '%s/' % self._new_tempdir()
+
+    # Create a couple files to be matched
+    files.append(self._create_temp_file(dir=tempdir))
+    files.append(self._create_temp_file(dir=tempdir))
+
+    with TestPipeline() as p:
+      files_pc = p | fileio.MatchFiles(tempdir) | beam.Map(lambda x: x.path)
+
+      assert_that(files_pc, equal_to(files))
+
+  def test_match_all_two_directories(self):
+    files = []
+    directories = []
+
+    for _ in range(2):
+      # TODO: What about this having to append the ending slash?
+      d = '%s/' % self._new_tempdir()
+      directories.append(d)
+
+      files.append(self._create_temp_file(dir=d))
+      files.append(self._create_temp_file(dir=d))
+
+    with TestPipeline() as p:
+      files_pc = (p
+                  | beam.Create(directories)
+                  | fileio.MatchAll()
+                  | beam.Map(lambda x: x.path))
+
+      assert_that(files_pc, equal_to(files))
+
+  def test_match_files_one_directory_failure(self):
+    directories = [
+        '%s/' % self._new_tempdir(),
+        '%s/' % self._new_tempdir()]
+
+    files = list()
+    files.append(self._create_temp_file(dir=directories[0]))
+    files.append(self._create_temp_file(dir=directories[0]))
+
+    with self.assertRaises(beam.io.filesystem.BeamIOError):
+      with TestPipeline() as p:
+        files_pc = (
+            p
+            | beam.Create(directories)
+            | fileio.MatchAll(fileio.EmptyMatchTreatment.DISALLOW)
+            | beam.Map(lambda x: x.path))
+
+        assert_that(files_pc, equal_to(files))
+
+  def test_match_files_one_directory_failure(self):
+    directories = [
+        '%s/' % self._new_tempdir(),
+        '%s/' % self._new_tempdir()]
+
+    files = list()
+    files.append(self._create_temp_file(dir=directories[0]))
+    files.append(self._create_temp_file(dir=directories[0]))
+
+    with TestPipeline() as p:
+      files_pc = (
+          p
+          | beam.Create(['%s*' % d for d in directories])
+          | fileio.MatchAll(fileio.EmptyMatchTreatment.ALLOW_IF_WILDCARD)
+          | beam.Map(lambda x: x.path))
+
+      assert_that(files_pc, equal_to(files))
 
 
-# TODO: Refactor code so all io tests are using same library
-# TestCaseWithTempDirCleanup class.
-class _TestCaseWithTempDirCleanUp(unittest.TestCase):
-  """Base class for TestCases that deals with TempDir clean-up.
+class ReadTest(_TestCaseWithTempDirCleanUp):
 
-  Inherited test cases will call self._new_tempdir() to start a temporary dir
-  which will be deleted at the end of the tests (when tearDown() is called).
-  """
+  def test_basic_file_name_provided(self):
+    content = 'TestingMyContent\nIn multiple lines\nhaha!'
+    dir = '%s/' % self._new_tempdir()
+    self._create_temp_file(dir=dir, content=content)
+
+    with TestPipeline() as p:
+      content_pc = (p
+                    | beam.Create([dir])
+                    | fileio.MatchAll()
+                    | fileio.ReadMatches()
+                    | beam.Map(lambda f: f.read().decode('utf-8')))
+
+      assert_that(content_pc, equal_to([content]))
+
+  def test_csv_file_source(self):
+    content = 'name,year,place\ngoogle,1999,CA\nspotify,2006,sweden'
+    rows = [r.split(',') for r in content.split('\n')]
+
+    dir = '%s/' % self._new_tempdir()
+    self._create_temp_file(dir=dir, content=content)
+
+    def get_csv_reader(readable_file):
+      if sys.version_info >= (3, 0):
+        return csv.reader(io.TextIOWrapper(readable_file.open()))
+      else:
+        return csv.reader(readable_file.open())
+
+    with TestPipeline() as p:
+      content_pc = (p
+                    | beam.Create([dir])
+                    | fileio.MatchAll()
+                    | fileio.ReadMatches()
+                    | beam.FlatMap(get_csv_reader))
+
+      assert_that(content_pc, equal_to(rows))
+
+  def test_string_filenames_and_skip_directory(self):
+    content = 'thecontent\n'
+    files = []
+    tempdir = '%s/' % self._new_tempdir()
+
+    # Create a couple files to be matched
+    files.append(self._create_temp_file(dir=tempdir, content=content))
+    files.append(self._create_temp_file(dir=tempdir, content=content))
+
+    with TestPipeline() as p:
+      contents_pc = (p
+                     | beam.Create(files + [tempdir])
+                     | fileio.ReadMatches()
+                     | beam.Map(lambda x: x.read().decode('utf-8')))
+
+      assert_that(contents_pc, equal_to([content]*2))
+
+  def test_fail_on_directories(self):
+    content = 'thecontent\n'
+    files = []
+    tempdir = '%s/' % self._new_tempdir()
+
+    # Create a couple files to be matched
+    files.append(self._create_temp_file(dir=tempdir, content=content))
+    files.append(self._create_temp_file(dir=tempdir, content=content))
+
+    with self.assertRaises(beam.io.filesystem.BeamIOError):
+      with TestPipeline() as p:
+        _ = (p
+             | beam.Create(files + [tempdir])
+             | fileio.ReadMatches(skip_directories=False)
+             | beam.Map(lambda x: x.read_utf8()))
+
+
+class MatchIntegrationTest(unittest.TestCase):
+
+  INPUT_FILE = 'gs://dataflow-samples/shakespeare/kinglear.txt'
+  KINGLEAR_CHECKSUM = 'f418b25f1507f5a901257026b035ac2857a7ab87'
+  INPUT_FILE_LARGE = (
+      'gs://dataflow-samples/wikipedia_edits/wiki_data-00000000000*.json')
+
+  WIKI_FILES = [
+      'gs://dataflow-samples/wikipedia_edits/wiki_data-000000000000.json',
+      'gs://dataflow-samples/wikipedia_edits/wiki_data-000000000001.json',
+      'gs://dataflow-samples/wikipedia_edits/wiki_data-000000000002.json',
+      'gs://dataflow-samples/wikipedia_edits/wiki_data-000000000003.json',
+      'gs://dataflow-samples/wikipedia_edits/wiki_data-000000000004.json',
+      'gs://dataflow-samples/wikipedia_edits/wiki_data-000000000005.json',
+      'gs://dataflow-samples/wikipedia_edits/wiki_data-000000000006.json',
+      'gs://dataflow-samples/wikipedia_edits/wiki_data-000000000007.json',
+      'gs://dataflow-samples/wikipedia_edits/wiki_data-000000000008.json',
+      'gs://dataflow-samples/wikipedia_edits/wiki_data-000000000009.json',
+  ]
 
   def setUp(self):
-    self._tempdirs = []
+    self.test_pipeline = TestPipeline(is_integration_test=True)
 
-  def tearDown(self):
-    for path in self._tempdirs:
-      if os.path.exists(path):
-        shutil.rmtree(path)
-    self._tempdirs = []
+  @attr('IT')
+  def test_transform_on_gcs(self):
+    args = self.test_pipeline.get_full_options_as_args()
 
-  def _new_tempdir(self):
-    result = tempfile.mkdtemp()
-    self._tempdirs.append(result)
-    return result
+    with beam.Pipeline(argv=args) as p:
+      matches_pc = (p
+                    | beam.Create([self.INPUT_FILE, self.INPUT_FILE_LARGE])
+                    | fileio.MatchAll()
+                    | 'GetPath' >> beam.Map(lambda metadata: metadata.path))
 
-  def _create_temp_file(self, name='', suffix=''):
-    if not name:
-      name = tempfile.template
-    file_name = tempfile.NamedTemporaryFile(
-        delete=False, prefix=name,
-        dir=self._new_tempdir(), suffix=suffix).name
-    return file_name
+      assert_that(matches_pc,
+                  equal_to([self.INPUT_FILE] + self.WIKI_FILES),
+                  label='Matched Files')
 
+      checksum_pc = (p
+                     | 'SingleFile' >> beam.Create([self.INPUT_FILE])
+                     | 'MatchOneAll' >> fileio.MatchAll()
+                     | fileio.ReadMatches()
+                     | 'ReadIn' >> beam.Map(lambda x: x.read_utf8().split('\n'))
+                     | 'Checksums' >> beam.Map(compute_hash))
 
-class MyFileSink(fileio.FileSink):
-
-  def open(self, temp_path):
-    # TODO: Fix main session pickling.
-    # file_handle = super(MyFileSink, self).open(temp_path)
-    file_handle = fileio.FileSink.open(self, temp_path)
-    file_handle.write('[start]')
-    return file_handle
-
-  def write_encoded_record(self, file_handle, encoded_value):
-    file_handle.write('[')
-    file_handle.write(encoded_value)
-    file_handle.write(']')
-
-  def close(self, file_handle):
-    file_handle.write('[end]')
-    # TODO: Fix main session pickling.
-    # file_handle = super(MyFileSink, self).close(file_handle)
-    file_handle = fileio.FileSink.close(self, file_handle)
-
-
-class TestFileSink(_TestCaseWithTempDirCleanUp):
-
-  def test_file_sink_writing(self):
-    temp_path = os.path.join(self._new_tempdir(), 'filesink')
-    sink = MyFileSink(
-        temp_path, file_name_suffix='.output', coder=coders.ToStringCoder())
-
-    # Manually invoke the generic Sink API.
-    init_token = sink.initialize_write()
-
-    writer1 = sink.open_writer(init_token, '1')
-    writer1.write('a')
-    writer1.write('b')
-    res1 = writer1.close()
-
-    writer2 = sink.open_writer(init_token, '2')
-    writer2.write('x')
-    writer2.write('y')
-    writer2.write('z')
-    res2 = writer2.close()
-
-    _ = list(sink.finalize_write(init_token, [res1, res2]))
-    # Retry the finalize operation (as if the first attempt was lost).
-    res = list(sink.finalize_write(init_token, [res1, res2]))
-
-    # Check the results.
-    shard1 = temp_path + '-00000-of-00002.output'
-    shard2 = temp_path + '-00001-of-00002.output'
-    self.assertEqual(res, [shard1, shard2])
-    self.assertEqual(open(shard1).read(), '[start][a][b][end]')
-    self.assertEqual(open(shard2).read(), '[start][x][y][z][end]')
-
-    # Check that any temp files are deleted.
-    self.assertItemsEqual([shard1, shard2], glob.glob(temp_path + '*'))
-
-  def test_file_sink_display_data(self):
-    temp_path = os.path.join(self._new_tempdir(), 'display')
-    sink = MyFileSink(
-        temp_path, file_name_suffix='.output', coder=coders.ToStringCoder())
-    dd = DisplayData.create_from(sink)
-    expected_items = [
-        DisplayDataItemMatcher(
-            'compression', 'auto'),
-        DisplayDataItemMatcher(
-            'file_pattern',
-            '{}{}'.format(
-                temp_path,
-                '-%(shard_num)05d-of-%(num_shards)05d.output'))]
-    hc.assert_that(dd.items, hc.contains_inanyorder(*expected_items))
-
-  def test_empty_write(self):
-    temp_path = tempfile.NamedTemporaryFile().name
-    sink = MyFileSink(
-        temp_path, file_name_suffix='.output', coder=coders.ToStringCoder()
-    )
-    p = TestPipeline()
-    p | beam.Create([]) | beam.io.Write(sink)  # pylint: disable=expression-not-assigned
-    p.run()
-    self.assertEqual(
-        open(temp_path + '-00000-of-00001.output').read(), '[start][end]')
-
-  def test_static_value_provider_empty_write(self):
-    temp_path = StaticValueProvider(value_type=str,
-                                    value=tempfile.NamedTemporaryFile().name)
-    sink = MyFileSink(
-        temp_path,
-        file_name_suffix=StaticValueProvider(value_type=str, value='.output'),
-        coder=coders.ToStringCoder()
-    )
-    p = TestPipeline()
-    p | beam.Create([]) | beam.io.Write(sink)  # pylint: disable=expression-not-assigned
-    p.run()
-    self.assertEqual(
-        open(temp_path.get() + '-00000-of-00001.output').read(), '[start][end]')
-
-  def test_fixed_shard_write(self):
-    temp_path = os.path.join(self._new_tempdir(), 'empty')
-    sink = MyFileSink(
-        temp_path,
-        file_name_suffix='.output',
-        num_shards=3,
-        shard_name_template='_NN_SSS_',
-        coder=coders.ToStringCoder())
-    p = TestPipeline()
-    p | beam.Create(['a', 'b']) | beam.io.Write(sink)  # pylint: disable=expression-not-assigned
-
-    p.run()
-
-    concat = ''.join(
-        open(temp_path + '_03_%03d_.output' % shard_num).read()
-        for shard_num in range(3))
-    self.assertTrue('][a][' in concat, concat)
-    self.assertTrue('][b][' in concat, concat)
-
-  # Not using 'test' in name so that 'nose' doesn't pick this as a test.
-  def run_temp_dir_check(self, no_dir_path, dir_path, no_dir_root_path,
-                         dir_root_path, prefix, separator):
-    def _get_temp_dir(file_path_prefix):
-      sink = MyFileSink(
-          file_path_prefix, file_name_suffix='.output',
-          coder=coders.ToStringCoder())
-      return sink.initialize_write()
-
-    temp_dir = _get_temp_dir(no_dir_path)
-    self.assertTrue(temp_dir.startswith(prefix))
-    last_sep = temp_dir.rfind(separator)
-    self.assertTrue(temp_dir[last_sep + 1:].startswith('beam-temp'))
-
-    temp_dir = _get_temp_dir(dir_path)
-    self.assertTrue(temp_dir.startswith(prefix))
-    last_sep = temp_dir.rfind(separator)
-    self.assertTrue(temp_dir[last_sep + 1:].startswith('beam-temp'))
-
-    with self.assertRaises(ValueError):
-      _get_temp_dir(no_dir_root_path)
-
-    with self.assertRaises(ValueError):
-      _get_temp_dir(dir_root_path)
-
-  def test_temp_dir_gcs(self):
-    try:
-      self.run_temp_dir_check(
-          'gs://aaa/bbb', 'gs://aaa/bbb/', 'gs://aaa', 'gs://aaa/', 'gs://',
-          '/')
-    except ValueError:
-      logging.debug('Ignoring test since GCP module is not installed')
-
-  @mock.patch('apache_beam.io.localfilesystem.os')
-  def test_temp_dir_local(self, filesystem_os_mock):
-    # Here we test a unix-like mock file-system
-    # (not really testing Unix or Windows since we mock the function of 'os'
-    # module).
-
-    def _fake_unix_split(path):
-      sep = path.rfind('/')
-      if sep < 0:
-        raise ValueError('Path must contain a separator')
-      return (path[:sep], path[sep + 1:])
-
-    def _fake_unix_join(base, path):
-      return base + '/' + path
-
-    filesystem_os_mock.path.abspath = lambda a: a
-    filesystem_os_mock.path.split.side_effect = _fake_unix_split
-    filesystem_os_mock.path.join.side_effect = _fake_unix_join
-    self.run_temp_dir_check(
-        '/aaa/bbb', '/aaa/bbb/', '/', '/', '/', '/')
-
-  def test_file_sink_multi_shards(self):
-    temp_path = os.path.join(self._new_tempdir(), 'multishard')
-    sink = MyFileSink(
-        temp_path, file_name_suffix='.output', coder=coders.ToStringCoder())
-
-    # Manually invoke the generic Sink API.
-    init_token = sink.initialize_write()
-
-    num_shards = 1000
-    writer_results = []
-    for i in range(num_shards):
-      uuid = 'uuid-%05d' % i
-      writer = sink.open_writer(init_token, uuid)
-      writer.write('a')
-      writer.write('b')
-      writer.write(uuid)
-      writer_results.append(writer.close())
-
-    res_first = list(sink.finalize_write(init_token, writer_results))
-    # Retry the finalize operation (as if the first attempt was lost).
-    res_second = list(sink.finalize_write(init_token, writer_results))
-
-    self.assertItemsEqual(res_first, res_second)
-
-    res = sorted(res_second)
-    for i in range(num_shards):
-      shard_name = '%s-%05d-of-%05d.output' % (temp_path, i, num_shards)
-      uuid = 'uuid-%05d' % i
-      self.assertEqual(res[i], shard_name)
-      self.assertEqual(
-          open(shard_name).read(), ('[start][a][b][%s][end]' % uuid))
-
-    # Check that any temp files are deleted.
-    self.assertItemsEqual(res, glob.glob(temp_path + '*'))
-
-  def test_file_sink_io_error(self):
-    temp_path = os.path.join(self._new_tempdir(), 'ioerror')
-    sink = MyFileSink(
-        temp_path, file_name_suffix='.output', coder=coders.ToStringCoder())
-
-    # Manually invoke the generic Sink API.
-    init_token = sink.initialize_write()
-
-    writer1 = sink.open_writer(init_token, '1')
-    writer1.write('a')
-    writer1.write('b')
-    res1 = writer1.close()
-
-    writer2 = sink.open_writer(init_token, '2')
-    writer2.write('x')
-    writer2.write('y')
-    writer2.write('z')
-    res2 = writer2.close()
-
-    os.remove(res2)
-    with self.assertRaises(Exception):
-      list(sink.finalize_write(init_token, [res1, res2]))
+      assert_that(checksum_pc,
+                  equal_to([self.KINGLEAR_CHECKSUM]),
+                  label='Assert Checksums')
 
 
 if __name__ == '__main__':
