@@ -77,8 +77,8 @@ class BeamModulePlugin implements Plugin<Project> {
     /** Controls the JDK source language and target compatibility. */
     double javaVersion = 1.8
 
-    /** Controls whether the findbugs plugin is enabled and configured. */
-    boolean enableFindbugs = true
+    /** Controls whether the spotbugs plugin is enabled and configured. */
+    boolean enableSpotbugs = true
 
     /** Controls whether the dependency analysis plugin is enabled. */
     boolean enableStrictDependencies = false
@@ -592,7 +592,7 @@ class BeamModulePlugin implements Plugin<Project> {
     //  * propdeps-maven
     //  * propdeps-idea
     //  * checkstyle
-    //  * findbugs
+    //  * spotbugs
     //  * shadow
     //  * com.diffplug.gradle.spotless (code style plugin)
     //
@@ -790,10 +790,10 @@ class BeamModulePlugin implements Plugin<Project> {
 
       // Enables a plugin which performs code analysis for common bugs.
       // This plugin is configured to only analyze the "main" source set.
-      if (configuration.enableFindbugs) {
+      if (configuration.enableSpotbugs) {
         project.apply plugin: 'com.github.spotbugs'
         project.spotbugs {
-          excludeFilter = project.rootProject.file('sdks/java/build-tools/src/main/resources/beam/findbugs-filter.xml')
+          excludeFilter = project.rootProject.file('sdks/java/build-tools/src/main/resources/beam/spotbugs-filter.xml')
           sourceSets = [sourceSets.main]
         }
         project.tasks.withType(com.github.spotbugs.SpotBugsTask) {
@@ -1432,7 +1432,7 @@ class BeamModulePlugin implements Plugin<Project> {
 
       project.ext.applyJavaNature(
               exportJavadoc: false,
-              enableFindbugs: false,
+              enableSpotbugs: false,
               shadowJarValidationExcludes: it.shadowJarValidationExcludes,
               shadowClosure: GrpcVendoring.shadowClosure() << {
                 // We perform all the code relocations but don't include
@@ -1618,16 +1618,38 @@ class BeamModulePlugin implements Plugin<Project> {
         outputs.dirs(project.ext.envdir)
       }
 
+      def pythonSdkDeps = project.files(
+              project.fileTree(
+              dir: "${project.rootDir}",
+              include: ['model/**', 'sdks/python/**'],
+              // Exclude temporary directories used in build and test.
+              exclude: [
+                '**/build/**',
+                '**/dist/**',
+                '**/target/**',
+                'sdks/python/test-suites/**',
+              ])
+              )
+      def copiedSrcRoot = "${project.buildDir}/srcs"
+
       project.configurations { distConfig }
 
       project.task('sdist', dependsOn: 'setupVirtualenv') {
         doLast {
+          // Copy sdk sources to an isolated directory
+          project.copy {
+            from pythonSdkDeps
+            into copiedSrcRoot
+          }
+
+          // Build artifact
           project.exec {
             executable 'sh'
-            args '-c', ". ${project.ext.envdir}/bin/activate && cd ${pythonRootDir} && python setup.py sdist --keep-temp --formats zip,gztar --dist-dir ${project.buildDir}"
+            args '-c', ". ${project.ext.envdir}/bin/activate && cd ${copiedSrcRoot}/sdks/python && python setup.py sdist --formats zip,gztar --dist-dir ${project.buildDir}"
           }
-          def collection = project.fileTree("${project.buildDir}"){ include '**/*.tar.gz' exclude '**/apache-beam.tar.gz'}
+          def collection = project.fileTree("${project.buildDir}"){ include '**/*.tar.gz' exclude '**/apache-beam.tar.gz', 'srcs/**'}
           println "sdist archive name: ${collection.singleFile}"
+
           // we need a fixed name for the artifact
           project.copy { from collection.singleFile; into "${project.buildDir}"; rename { 'apache-beam.tar.gz' } }
         }
@@ -1653,7 +1675,7 @@ class BeamModulePlugin implements Plugin<Project> {
           project.exec {
             executable 'sh'
             args '-c', "if [ -e ${activate} ]; then " +
-                    ". ${activate} && python ${pythonRootDir}/setup.py clean; " +
+                    ". ${activate} && cd ${pythonRootDir} && python setup.py clean; " +
                     "fi"
           }
           project.delete project.buildDir     // Gradle build directory
@@ -1679,6 +1701,21 @@ class BeamModulePlugin implements Plugin<Project> {
           argList.add("--$k $v")
         }
         return argList.join(' ')
+      }
+
+      project.ext.toxTask = { name, tox_env ->
+        project.tasks.create(name) {
+          dependsOn = ['sdist']
+          doLast {
+            def copiedPyRoot = "${copiedSrcRoot}/sdks/python"
+            project.exec {
+              executable 'sh'
+              args '-c', ". ${project.ext.envdir}/bin/activate && cd ${copiedPyRoot} && scripts/run_tox.sh $tox_env ${project.buildDir}/apache-beam.tar.gz"
+            }
+          }
+          inputs.files pythonSdkDeps
+          outputs.files project.fileTree(dir: "${pythonRootDir}/target/.tox/${tox_env}/log/")
+        }
       }
     }
   }
