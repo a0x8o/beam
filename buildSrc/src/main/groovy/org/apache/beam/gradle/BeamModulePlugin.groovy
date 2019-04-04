@@ -454,6 +454,7 @@ class BeamModulePlugin implements Plugin<Project> {
         hamcrest_core                               : "org.hamcrest:hamcrest-core:$hamcrest_version",
         hamcrest_library                            : "org.hamcrest:hamcrest-library:$hamcrest_version",
         jackson_annotations                         : "com.fasterxml.jackson.core:jackson-annotations:$jackson_version",
+        jackson_jaxb_annotations                    : "com.fasterxml.jackson.module:jackson-module-jaxb-annotations:$jackson_version",
         jackson_core                                : "com.fasterxml.jackson.core:jackson-core:$jackson_version",
         jackson_databind                            : "com.fasterxml.jackson.core:jackson-databind:$jackson_version",
         jackson_dataformat_cbor                     : "com.fasterxml.jackson.dataformat:jackson-dataformat-cbor:$jackson_version",
@@ -461,7 +462,7 @@ class BeamModulePlugin implements Plugin<Project> {
         jackson_datatype_joda                       : "com.fasterxml.jackson.datatype:jackson-datatype-joda:$jackson_version",
         jackson_module_scala                        : "com.fasterxml.jackson.module:jackson-module-scala_2.11:$jackson_version",
         jaxb_api                                    : "javax.xml.bind:jaxb-api:$jaxb_api_version",
-        joda_time                                   : "joda-time:joda-time:2.4",
+        joda_time                                   : "joda-time:joda-time:2.10.1",
         junit                                       : "junit:junit:4.13-beta-1",
         kafka_2_11                                  : "org.apache.kafka:kafka_2.11:$kafka_version",
         kafka_clients                               : "org.apache.kafka:kafka-clients:$kafka_version",
@@ -1593,19 +1594,20 @@ class BeamModulePlugin implements Plugin<Project> {
       project.ext.envdir = "${project.rootProject.buildDir}/gradleenv/${project.name.hashCode()}"
       def pythonRootDir = "${project.rootDir}/sdks/python"
 
-      // This is current supported Python3 version. It should match the one in
-      // sdks/python/container/py3/Dockerfile
-      final PYTHON3_VERSION = '3.5'
+      // Python interpreter version for virtualenv setup and test run. This value can be
+      // set from commandline with -PpythonVersion, or in build script of certain project.
+      // If none of them applied, version set here will be used as default value.
+      if(!project.hasProperty('pythonVersion')) {
+        project.ext.pythonVersion = '2.7'
+      }
 
       project.task('setupVirtualenv')  {
         doLast {
           def virtualenvCmd = [
             'virtualenv',
             "${project.ext.envdir}",
+            "--python=python${project.ext.pythonVersion}",
           ]
-          if (project.hasProperty('python3')) {
-            virtualenvCmd += '--python=python' + PYTHON3_VERSION
-          }
           project.exec { commandLine virtualenvCmd }
           project.exec {
             executable 'sh'
