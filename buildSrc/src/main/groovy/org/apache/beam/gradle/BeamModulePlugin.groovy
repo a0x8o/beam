@@ -21,6 +21,7 @@ package org.apache.beam.gradle
 import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
 import groovy.json.JsonOutput
 import groovy.json.JsonSlurper
+import java.util.concurrent.atomic.AtomicInteger
 import org.gradle.api.GradleException
 import org.gradle.api.Plugin
 import org.gradle.api.Project
@@ -71,6 +72,7 @@ class BeamModulePlugin implements Plugin<Project> {
  * limitations under the License.
  */
 """
+  static AtomicInteger startingExpansionPortNumber = new AtomicInteger(18091)
 
   /** A class defining the set of configurable properties accepted by applyJavaNature. */
   class JavaNatureConfiguration {
@@ -263,6 +265,8 @@ class BeamModulePlugin implements Plugin<Project> {
     }
     // Configuration for the classpath when running the test.
     Configuration testClasspathConfiguration
+    // Additional system properties.
+    Properties systemProperties = []
 
     enum Environment {
       DOCKER,   // Docker-based Harness execution
@@ -354,7 +358,7 @@ class BeamModulePlugin implements Plugin<Project> {
     def grpc_version = "1.17.1"
     def guava_version = "20.0"
     def hadoop_version = "2.7.3"
-    def hamcrest_version = "1.3"
+    def hamcrest_version = "2.1"
     def jackson_version = "2.9.8"
     def jaxb_api_version = "2.2.12"
     def kafka_version = "1.0.0"
@@ -1545,6 +1549,7 @@ class BeamModulePlugin implements Plugin<Project> {
        */
       project.evaluationDependsOn(":beam-sdks-java-core")
       project.evaluationDependsOn(":beam-runners-core-java")
+      project.evaluationDependsOn(":beam-runners-core-construction-java")
       def config = it ? it as PortableValidatesRunnerConfiguration : new PortableValidatesRunnerConfiguration()
       def name = config.name
       def beamTestPipelineOptions = [
@@ -1552,6 +1557,8 @@ class BeamModulePlugin implements Plugin<Project> {
         "--jobServerDriver=${config.jobServerDriver}",
         "--environmentCacheMillis=10000"
       ]
+      def expansionPort = startingExpansionPortNumber.getAndDecrement()
+      config.systemProperties.put("expansionPort", expansionPort)
       beamTestPipelineOptions.addAll(config.pipelineOpts)
       if (config.environment == PortableValidatesRunnerConfiguration.Environment.EMBEDDED) {
         beamTestPipelineOptions += "--defaultEnvironmentType=EMBEDDED"
@@ -1559,12 +1566,13 @@ class BeamModulePlugin implements Plugin<Project> {
       if (config.jobServerConfig) {
         beamTestPipelineOptions.add("--jobServerConfig=${config.jobServerConfig}")
       }
+      config.systemProperties.put("beamTestPipelineOptions", JsonOutput.toJson(beamTestPipelineOptions))
       project.tasks.create(name: name, type: Test) {
         group = "Verification"
         description = "Validates the PortableRunner with JobServer ${config.jobServerDriver}"
-        systemProperty "beamTestPipelineOptions", JsonOutput.toJson(beamTestPipelineOptions)
+        systemProperties config.systemProperties
         classpath = config.testClasspathConfiguration
-        testClassesDirs = project.files(project.project(":beam-sdks-java-core").sourceSets.test.output.classesDirs, project.project(":beam-runners-core-java").sourceSets.test.output.classesDirs)
+        testClassesDirs = project.files(project.project(":beam-sdks-java-core").sourceSets.test.output.classesDirs, project.project(":beam-runners-core-java").sourceSets.test.output.classesDirs, project.project(":beam-runners-core-construction-java").sourceSets.test.output.classesDirs)
         maxParallelForks config.numParallelTests
         useJUnit(config.testCategories)
         // increase maxHeapSize as this is directly correlated to direct memory,
