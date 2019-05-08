@@ -422,7 +422,11 @@ class FnApiRunnerTest(unittest.TestCase):
   def test_sdf(self):
 
     class ExpandingStringsDoFn(beam.DoFn):
-      def process(self, element, restriction_tracker=ExpandStringsProvider()):
+      def process(
+          self,
+          element,
+          restriction_tracker=beam.DoFn.RestrictionParam(
+              ExpandStringsProvider())):
         assert isinstance(
             restriction_tracker,
             restriction_trackers.OffsetRestrictionTracker), restriction_tracker
@@ -442,7 +446,11 @@ class FnApiRunnerTest(unittest.TestCase):
     counter = beam.metrics.Metrics.counter('ns', 'my_counter')
 
     class ExpandStringsDoFn(beam.DoFn):
-      def process(self, element, restriction_tracker=ExpandStringsProvider()):
+      def process(
+          self,
+          element,
+          restriction_tracker=beam.DoFn.RestrictionParam(
+              ExpandStringsProvider())):
         assert isinstance(
             restriction_tracker,
             restriction_trackers.OffsetRestrictionTracker), restriction_tracker
@@ -673,6 +681,34 @@ class FnApiRunnerTest(unittest.TestCase):
     results = event_recorder.events()
     event_recorder.cleanup()
     self.assertEqual(results, sorted(elements_list))
+
+  def test_sdf_synthetic_source(self):
+    common_attrs = {
+        'key_size': 1,
+        'value_size': 1,
+        'initial_splitting_num_bundles': 2,
+        'initial_splitting_desired_bundle_size': 2,
+        'sleep_per_input_record_sec': 0,
+        'initial_splitting': 'const'
+    }
+    num_source_description = 5
+    min_num_record = 10
+    max_num_record = 20
+
+    # pylint: disable=unused-variable
+    source_descriptions = ([dict(
+        {'num_records': random.randint(min_num_record, max_num_record)},
+        **common_attrs) for i in range(0, num_source_description)])
+    total_num_records = 0
+    for source in source_descriptions:
+      total_num_records += source['num_records']
+
+    with self.create_pipeline() as p:
+      res = (p
+             | beam.Create(source_descriptions)
+             | beam.ParDo(SyntheticSDFAsSource())
+             | beam.combiners.Count.Globally())
+      assert_that(res, equal_to([total_num_records]))
 
 
 # These tests are kept in a separate group so that they are
@@ -1051,34 +1087,6 @@ class FnApiRunnerMetricsTest(unittest.TestCase):
       print(res._monitoring_infos_by_stage)
       raise
 
-  def test_sdf_synthetic_source(self):
-    common_attrs = {
-        'key_size': 1,
-        'value_size': 1,
-        'initial_splitting_num_bundles': 2,
-        'initial_splitting_desired_bundle_size': 2,
-        'sleep_per_input_record_sec': 0,
-        'initial_splitting': 'const'
-    }
-    num_source_description = 5
-    min_num_record = 10
-    max_num_record = 20
-
-    # pylint: disable=unused-variable
-    source_descriptions = ([dict(
-        {'num_records': random.randint(min_num_record, max_num_record)},
-        **common_attrs) for i in range(0, num_source_description)])
-    total_num_records = 0
-    for source in source_descriptions:
-      total_num_records += source['num_records']
-
-    with self.create_pipeline() as p:
-      res = (p
-             | beam.Create(source_descriptions)
-             | beam.ParDo(SyntheticSDFAsSource())
-             | beam.combiners.Count.Globally())
-      assert_that(res, equal_to([total_num_records]))
-
 
 class FnApiRunnerTestWithGrpc(FnApiRunnerTest):
 
@@ -1271,7 +1279,10 @@ class FnApiRunnerSplitTest(unittest.TestCase):
         return restriction[1] - restriction[0]
 
     class EnumerateSdf(beam.DoFn):
-      def process(self, element, restriction_tracker=EnumerateProvider()):
+      def process(
+          self,
+          element,
+          restriction_tracker=beam.DoFn.RestrictionParam(EnumerateProvider())):
         to_emit = []
         for k in range(*restriction_tracker.current_restriction()):
           if restriction_tracker.try_claim(k):
