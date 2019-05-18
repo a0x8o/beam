@@ -133,6 +133,11 @@ import org.slf4j.LoggerFactory;
  * );
  * }</pre>
  *
+ * By default, the provided function instantiates a DataSource per execution thread. In some
+ * circumstances, such as DataSources that have a pool of connections, this can quickly overwhelm
+ * the database by requesting too many connections. In that case you should make the DataSource a
+ * static singleton so it gets instantiated only once per JVM.
+ *
  * <h3>Writing to JDBC datasource</h3>
  *
  * <p>JDBC sink supports writing records into a database. It writes a {@link PCollection} to the
@@ -429,6 +434,8 @@ public class JdbcIO {
   /** Implementation of {@link #read}. */
   @AutoValue
   public abstract static class Read<T> extends PTransform<PBegin, PCollection<T>> {
+    /** @deprecated It is not needed anymore. It will be removed in a future version of Beam. */
+    @Deprecated
     @Nullable
     abstract DataSourceConfiguration getDataSourceConfiguration();
 
@@ -455,6 +462,8 @@ public class JdbcIO {
 
     @AutoValue.Builder
     abstract static class Builder<T> {
+      /** @deprecated It is not needed anymore. It will be removed in a future version of Beam. */
+      @Deprecated
       abstract Builder<T> setDataSourceConfiguration(DataSourceConfiguration config);
 
       abstract Builder<T> setDataSourceProviderFn(
@@ -572,6 +581,8 @@ public class JdbcIO {
   @AutoValue
   public abstract static class ReadAll<ParameterT, OutputT>
       extends PTransform<PCollection<ParameterT>, PCollection<OutputT>> {
+    /** @deprecated It is not needed anymore. It will be removed in a future version of Beam. */
+    @Deprecated
     @Nullable
     abstract DataSourceConfiguration getDataSourceConfiguration();
 
@@ -598,6 +609,8 @@ public class JdbcIO {
 
     @AutoValue.Builder
     abstract static class Builder<ParameterT, OutputT> {
+      /** @deprecated It is not needed anymore. It will be removed in a future version of Beam. */
+      @Deprecated
       abstract Builder<ParameterT, OutputT> setDataSourceConfiguration(
           DataSourceConfiguration config);
 
@@ -761,9 +774,6 @@ public class JdbcIO {
     @Teardown
     public void teardown() throws Exception {
       connection.close();
-      if (dataSource instanceof AutoCloseable) {
-        ((AutoCloseable) dataSource).close();
-      }
     }
   }
 
@@ -870,6 +880,8 @@ public class JdbcIO {
   /** A {@link PTransform} to write to a JDBC datasource. */
   @AutoValue
   public abstract static class WriteVoid<T> extends PTransform<PCollection<T>, PCollection<Void>> {
+    /** @deprecated It is not needed anymore. It will be removed in a future version of Beam. */
+    @Deprecated
     @Nullable
     abstract DataSourceConfiguration getDataSourceConfiguration();
 
@@ -891,6 +903,8 @@ public class JdbcIO {
 
     @AutoValue.Builder
     abstract static class Builder<T> {
+      /** @deprecated It is not needed anymore. It will be removed in a future version of Beam. */
+      @Deprecated
       abstract Builder<T> setDataSourceConfiguration(DataSourceConfiguration config);
 
       abstract Builder<T> setDataSourceProviderFn(
@@ -1062,13 +1076,6 @@ public class JdbcIO {
           }
         }
         records.clear();
-      }
-
-      @Teardown
-      public void teardown() throws Exception {
-        if (dataSource instanceof AutoCloseable) {
-          ((AutoCloseable) dataSource).close();
-        }
       }
     }
   }
