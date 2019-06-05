@@ -18,6 +18,7 @@
 
 apply plugin: org.apache.beam.gradle.BeamModulePlugin
 applyPythonNature()
+enablePythonPerformanceTest()
 
 // Required to setup a Python 3 virtualenv.
 pythonVersion = '3.6'
@@ -63,6 +64,26 @@ task validatesRunnerBatchTests(dependsOn: ['installGcpTest', 'sdist']) {
         "sdk_location": "${project.buildDir}/apache-beam.tar.gz",
         "worker_jar": dataflowWorkerJar
     ])
+    exec {
+      executable 'sh'
+      args '-c', ". ${project.ext.envdir}/bin/activate && ${runScriptsDir}/run_integration_test.sh $cmdArgs"
+    }
+  }
+}
+
+task validatesRunnerStreamingTests(dependsOn: ['installGcpTest', 'sdist']) {
+  dependsOn ":runners:google-cloud-dataflow-java:worker:shadowJar"
+
+  def dataflowWorkerJar = project(":runners:google-cloud-dataflow-java:worker").shadowJar.archivePath
+
+  doLast {
+    // TODO(BEAM-3544,BEAM-5025): Disable tests with 'sickbay-streaming' tag.
+    def testOpts = basicTestOpts + ["--attr=ValidatesRunner,!sickbay-streaming"]
+    def argMap = ["test_opts": testOpts,
+                  "streaming": "true",
+                  "sdk_location": "${project.buildDir}/apache-beam.tar.gz",
+                  "worker_jar": dataflowWorkerJar]
+    def cmdArgs = project.mapToArgString(argMap)
     exec {
       executable 'sh'
       args '-c', ". ${project.ext.envdir}/bin/activate && ${runScriptsDir}/run_integration_test.sh $cmdArgs"

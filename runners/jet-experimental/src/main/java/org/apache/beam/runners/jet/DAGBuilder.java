@@ -32,10 +32,13 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import org.apache.beam.sdk.coders.Coder;
+import org.apache.beam.sdk.coders.KvCoder;
 import org.apache.beam.sdk.util.CoderUtils;
 import org.apache.beam.sdk.util.WindowedValue;
 import org.apache.beam.sdk.values.KV;
+import org.apache.beam.sdk.values.PCollectionView;
 
 /** Utility class for wiring up Jet DAGs based on Beam pipelines. */
 public class DAGBuilder {
@@ -47,13 +50,14 @@ public class DAGBuilder {
   private final Map<String, List<Vertex>> edgeEndPoints = new HashMap<>();
   private final Map<String, Coder> edgeCoders = new HashMap<>();
   private final Map<String, String> pCollsOfEdges = new HashMap<>();
+  private final Set<String> sideInputCollections = new HashSet<>();
 
   private final List<WiringListener> listeners = new ArrayList<>();
 
   private int vertexId = 0;
 
   DAGBuilder(JetPipelineOptions options) {
-    this.localParallelism = options.getJetLocalParallelism();
+    this.localParallelism = options.getJetDefaultParallelism();
   }
 
   DAG getDag() {
@@ -94,6 +98,10 @@ public class DAGBuilder {
 
   void registerEdgeEndPoint(String edgeId, Vertex vertex) {
     edgeEndPoints.computeIfAbsent(edgeId, x -> new ArrayList<>()).add(vertex);
+  }
+
+  void registerSideInput(PCollectionView<?> view) {
+    sideInputCollections.add(view.getTagInternal().getId());
   }
 
   Vertex addVertex(String id, ProcessorMetaSupplier processorMetaSupplier) {
@@ -147,7 +155,7 @@ public class DAGBuilder {
 
         List<Vertex> destinationVertices =
             edgeEndPoints.getOrDefault(edgeId, Collections.emptyList());
-        boolean sideInputEdge = edgeId.contains("PCollectionView"); // todo: this is a hack!
+        boolean sideInputEdge = sideInputCollections.contains(pCollId);
         for (Vertex destinationVertex : destinationVertices) {
           addEdge(sourceVertex, destinationVertex, edgeCoder, edgeId, pCollId, sideInputEdge);
         }
@@ -161,20 +169,15 @@ public class DAGBuilder {
         String edgeId,
         String pCollId,
         boolean sideInputEdge) {
-      // todo: set up the edges properly, including other aspects too, like parallelism
-
       try {
         Edge edge =
             Edge.from(sourceVertex, getNextFreeOrdinal(sourceVertex, false))
-                .to(destinationVertex, getNextFreeOrdinal(destinationVertex, true))
-                .distributed(); // todo: why is it always distributed?
+                .to(destinationVertex, getNextFreeOrdinal(destinationVertex, true));
+        edge = edge.distributed();
         if (sideInputEdge) {
           edge = edge.broadcast();
         } else {
-          edge =
-              edge.partitioned(
-                  new PartitionedKeyExtractor(
-                      coder)); // todo: we likely don't need to partition everything
+          edge = edge.partitioned(new PartitionedKeyExtractor(coder));
         }
         dag.edge(edge);
 
@@ -197,24 +200,27 @@ public class DAGBuilder {
     }
   }
 
-  private static class PartitionedKeyExtractor implements FunctionEx<byte[], Object> {
-    private final Coder coder;
+  private static class PartitionedKeyExtractor<K, V> implements FunctionEx<byte[], Object> {
+    private final WindowedValue.WindowedValueCoder<KV<K, V>> coder;
 
     PartitionedKeyExtractor(Coder coder) {
-      this.coder = coder;
+      this.coder =
+          Utils.isKeyedValueCoder(coder)
+              ? (WindowedValue.WindowedValueCoder<KV<K, V>>) coder
+              : null;
     }
 
     @Override
     public Object applyEx(byte[] b) throws Exception {
-      Object t = CoderUtils.decodeFromByteArray(coder, b); // todo: decoding twice....
-      Object key = null;
-      if (t instanceof WindowedValue) {
-        t = ((WindowedValue) t).getValue();
+      if (coder == null) {
+        return "ALL";
+      } else {
+        WindowedValue<KV<K, V>> windowedValue =
+            CoderUtils.decodeFromByteArray(coder, b); // todo: decoding twice....
+        KvCoder<K, V> kvCoder = (KvCoder<K, V>) coder.getValueCoder();
+        return CoderUtils.encodeToByteArray(
+            kvCoder.getKeyCoder(), windowedValue.getValue().getKey());
       }
-      if (t instanceof KV) {
-        key = ((KV) t).getKey();
-      }
-      return key == null ? "all" : key; // todo: why "all"?
     }
   }
 }
