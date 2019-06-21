@@ -314,7 +314,7 @@ class BeamModulePlugin implements Plugin<Project> {
 
     // Automatically use the official release version if we are performing a release
     // otherwise append '-SNAPSHOT'
-    project.version = '2.14.0'
+    project.version = '2.15.0'
     if (!isRelease(project)) {
       project.version += '-SNAPSHOT'
     }
@@ -1127,17 +1127,26 @@ class BeamModulePlugin implements Plugin<Project> {
                 def generateDependenciesFromConfiguration = { param ->
                   project.configurations."${param.configuration}".allDependencies.each {
                     def dependencyNode = dependenciesNode.appendNode('dependency')
+                    def appendClassifier = { dep ->
+                      dep.artifacts.each { art ->
+                        if (art.hasProperty('classifier')) {
+                          dependencyNode.appendNode('classifier', art.classifier)
+                        }
+                      }
+                    }
 
                     if (it instanceof ProjectDependency) {
                       dependencyNode.appendNode('groupId', it.getDependencyProject().mavenGroupId)
                       dependencyNode.appendNode('artifactId', it.getDependencyProject().archivesBaseName)
                       dependencyNode.appendNode('version', it.version)
                       dependencyNode.appendNode('scope', param.scope)
+                      appendClassifier(it)
                     } else {
                       dependencyNode.appendNode('groupId', it.group)
                       dependencyNode.appendNode('artifactId', it.name)
                       dependencyNode.appendNode('version', it.version)
                       dependencyNode.appendNode('scope', param.scope)
+                      appendClassifier(it)
                     }
 
                     // Start with any exclusions that were added via configuration exclude rules.

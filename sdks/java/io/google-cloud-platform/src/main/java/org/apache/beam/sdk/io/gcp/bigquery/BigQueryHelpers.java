@@ -546,11 +546,7 @@ public class BigQueryHelpers {
   /**
    * It returns the number of rows for a given table.
    *
-   * @param options
-   * @param tableRef
-   * @return The number of rows in the table.
-   * @throws InterruptedException
-   * @throws IOException
+   * @return The number of rows in the table or null if it cannot get any estimate.
    */
   @Nullable
   public static BigInteger getNumRows(BigQueryOptions options, TableReference tableRef)
