@@ -460,7 +460,7 @@ class BeamModulePlugin implements Plugin<Project> {
         google_api_services_bigquery                : "com.google.apis:google-api-services-bigquery:v2-rev20181104-$google_clients_version",
         google_api_services_clouddebugger           : "com.google.apis:google-api-services-clouddebugger:v2-rev20180801-$google_clients_version",
         google_api_services_cloudresourcemanager    : "com.google.apis:google-api-services-cloudresourcemanager:v1-rev20181015-$google_clients_version",
-        google_api_services_dataflow                : "com.google.apis:google-api-services-dataflow:v1b3-rev20190322-$google_clients_version",
+        google_api_services_dataflow                : "com.google.apis:google-api-services-dataflow:v1b3-rev20190607-$google_clients_version",
         google_api_services_pubsub                  : "com.google.apis:google-api-services-pubsub:v1-rev20181105-$google_clients_version",
         google_api_services_storage                 : "com.google.apis:google-api-services-storage:v1-rev20181013-$google_clients_version",
         google_auth_library_credentials             : "com.google.auth:google-auth-library-credentials:$google_auth_version",
@@ -708,6 +708,9 @@ class BeamModulePlugin implements Plugin<Project> {
         include "**/*Test.class"
         include "**/*Tests.class"
         include "**/*TestCase.class"
+        // fixes issues with test filtering on multi-module project
+        // see https://discuss.gradle.org/t/multi-module-build-fails-with-tests-filter/25835
+        filter { setFailOnNoMatchingTests(false) }
       }
 
       project.tasks.withType(Test) {
@@ -1404,7 +1407,7 @@ class BeamModulePlugin implements Plugin<Project> {
       project.apply plugin: 'base'
 
       project.apply plugin: "com.github.blindpirate.gogradle"
-      project.golang { goVersion = '1.10' }
+      project.golang { goVersion = '1.12' }
 
       project.repositories {
         golang {
