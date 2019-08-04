@@ -23,6 +23,7 @@ import java.util.Map;
 import org.apache.beam.sdk.extensions.sql.BeamSqlTable;
 import org.apache.beam.sdk.extensions.sql.impl.BeamCalciteTable;
 import org.apache.beam.sdk.extensions.sql.impl.BeamTableStatistics;
+import org.apache.beam.sdk.extensions.sql.impl.planner.NodeStats;
 import org.apache.beam.sdk.transforms.PTransform;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.PCollectionList;
@@ -36,7 +37,7 @@ import org.apache.calcite.rel.metadata.RelMetadataQuery;
 
 /** BeamRelNode to replace a {@code TableScan} node. */
 public class BeamIOSourceRel extends TableScan implements BeamRelNode {
-
+  public static final double CONSTANT_WINDOW_SIZE = 10d;
   private final BeamSqlTable beamTable;
   private final BeamCalciteTable calciteTable;
   private final Map<String, String> pipelineOptions;
@@ -61,6 +62,16 @@ public class BeamIOSourceRel extends TableScan implements BeamRelNode {
     } else {
       return rowCountStatistics.getRate();
     }
+  }
+
+  @Override
+  public NodeStats estimateNodeStats(RelMetadataQuery mq) {
+    BeamTableStatistics rowCountStatistics = calciteTable.getStatistic();
+    double window =
+        (beamTable.isBounded() == PCollection.IsBounded.BOUNDED)
+            ? rowCountStatistics.getRowCount()
+            : CONSTANT_WINDOW_SIZE;
+    return NodeStats.create(rowCountStatistics.getRowCount(), rowCountStatistics.getRate(), window);
   }
 
   @Override

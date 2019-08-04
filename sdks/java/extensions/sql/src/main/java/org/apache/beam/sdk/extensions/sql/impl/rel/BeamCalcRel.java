@@ -34,6 +34,7 @@ import java.util.Map;
 import java.util.Set;
 import javax.annotation.Nullable;
 import org.apache.beam.sdk.extensions.sql.impl.planner.BeamJavaTypeFactory;
+import org.apache.beam.sdk.extensions.sql.impl.planner.NodeStats;
 import org.apache.beam.sdk.extensions.sql.impl.utils.CalciteUtils;
 import org.apache.beam.sdk.extensions.sql.impl.utils.CalciteUtils.CharType;
 import org.apache.beam.sdk.extensions.sql.impl.utils.CalciteUtils.DateType;
@@ -72,6 +73,8 @@ import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.core.Calc;
 import org.apache.calcite.rel.metadata.RelMetadataQuery;
 import org.apache.calcite.rex.RexBuilder;
+import org.apache.calcite.rex.RexLocalRef;
+import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.rex.RexProgram;
 import org.apache.calcite.rex.RexSimplify;
 import org.apache.calcite.rex.RexUtil;
@@ -211,6 +214,29 @@ public class BeamCalcRel extends Calc implements BeamRelNode {
     }
 
     throw new RuntimeException("Could not get the limit count from a non BeamSortRel input.");
+  }
+
+  @Override
+  public NodeStats estimateNodeStats(RelMetadataQuery mq) {
+    NodeStats inputStat = BeamSqlRelUtils.getNodeStats(this.input, mq);
+    double selectivity = estimateFilterSelectivity(getInput(), program, mq);
+
+    return inputStat.multiply(selectivity);
+  }
+
+  private static double estimateFilterSelectivity(
+      RelNode child, RexProgram program, RelMetadataQuery mq) {
+    // Similar to calcite, if the calc node is representing filter operation we estimate the filter
+    // selectivity based on the number of equality conditions, number of inequality conditions, ....
+    RexLocalRef programCondition = program.getCondition();
+    RexNode condition;
+    if (programCondition == null) {
+      condition = null;
+    } else {
+      condition = program.expandLocalRef(programCondition);
+    }
+    // Currently this gets the selectivity based on Calcite's Selectivity Handler (RelMdSelectivity)
+    return mq.getSelectivity(child, condition);
   }
 
   public boolean isInputSortRelAndLimitOnly() {
