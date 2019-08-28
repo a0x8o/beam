@@ -53,13 +53,14 @@ import org.apache.beam.sdk.transforms.SimpleFunction;
 import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.Row;
-import org.apache.beam.vendor.grpc.v1p21p0.com.google.common.base.MoreObjects;
+import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.MoreObjects;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableSet;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.junit.Assert;
 import org.junit.BeforeClass;
+import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
 
@@ -67,6 +68,7 @@ import org.junit.Test;
  * This is an integration test for KafkaCSVTable. There should be a kafka server running and the
  * address should be passed to it. (https://issues.apache.org/jira/projects/BEAM/issues/BEAM-7523)
  */
+@Ignore("https://issues.apache.org/jira/projects/BEAM/issues/BEAM-7523")
 public class KafkaCSVTableIT {
 
   @Rule public transient TestPipeline pipeline = TestPipeline.create();

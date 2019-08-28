@@ -627,6 +627,11 @@ message StateKey {
   message Runner {
     // (Required) Opaque information supplied by the runner. Used to support
     // remote references.
+    // https://s.apache.org/beam-fn-api-send-and-receive-data
+    //
+    // Used by state backed iterable. And in this use case, request type can
+    // only be of type get. Details see:
+    // https://s.apache.org/beam-fn-api-state-backed-iterables
     bytes key = 1;
   }
 
@@ -804,7 +809,7 @@ service BeamFnLogging {
           stream LogControl) {}
 }
 
-message NotifyRunnerAvailableRequest {
+message StartWorkerRequest {
   string worker_id = 1;
   org.apache.beam.model.pipeline.v1.ApiServiceDescriptor control_endpoint = 2;
   org.apache.beam.model.pipeline.v1.ApiServiceDescriptor logging_endpoint = 3;
@@ -813,11 +818,21 @@ message NotifyRunnerAvailableRequest {
   map<string, string> params = 10;
 }
 
-message NotifyRunnerAvailableResponse {
+message StartWorkerResponse {
+  string error = 1;
+}
+
+message StopWorkerRequest {
+  string worker_id = 1;
+}
+
+message StopWorkerResponse {
   string error = 1;
 }
 
 service BeamFnExternalWorkerPool {
-  rpc NotifyRunnerAvailable(NotifyRunnerAvailableRequest)
-      returns (NotifyRunnerAvailableResponse) {}
+  // Start the SDK worker with the given ID.
+  rpc StartWorker (StartWorkerRequest) returns (StartWorkerResponse) {}
+  // Stop the SDK worker.
+  rpc StopWorker (StopWorkerRequest) returns (StopWorkerResponse) {}
 }

@@ -375,7 +375,7 @@ class BeamModulePlugin implements Plugin<Project> {
     // non-declared dependency, since these can break users (as in BEAM-6558)
     //
     // Though this is Java-specific, it is required to be applied to the root
-    // project due to implemeentation-details of the plugin. It can be enabled/disabled
+    // project due to implementation-details of the plugin. It can be enabled/disabled
     // via JavaNatureConfiguration per project. It is disabled by default until we can
     // make all of our deps good.
     project.apply plugin: "ca.cutterslade.analyze"
@@ -421,6 +421,7 @@ class BeamModulePlugin implements Plugin<Project> {
     def nemo_version = "0.1"
     def netty_version = "4.1.30.Final"
     def postgres_version = "42.2.2"
+    def powermock_version = "2.0.2"
     def proto_google_common_protos_version = "1.12.0"
     def protobuf_version = "3.6.0"
     def quickcheck_version = "0.8"
@@ -460,9 +461,6 @@ class BeamModulePlugin implements Plugin<Project> {
         aws_java_sdk2_sdk_core                      : "software.amazon.awssdk:sdk-core:$aws_java_sdk2_version",
         bigdataoss_gcsio                            : "com.google.cloud.bigdataoss:gcsio:$google_cloud_bigdataoss_version",
         bigdataoss_util                             : "com.google.cloud.bigdataoss:util:$google_cloud_bigdataoss_version",
-        bigtable_client_core                        : "com.google.cloud.bigtable:bigtable-client-core:1.8.0",
-        bigtable_protos                             : "com.google.api.grpc:grpc-google-cloud-bigtable-v2:$generated_grpc_beta_version",
-        byte_buddy                                  : "net.bytebuddy:byte-buddy:1.9.3",
         cassandra_driver_core                       : "com.datastax.cassandra:cassandra-driver-core:$cassandra_driver_version",
         cassandra_driver_mapping                    : "com.datastax.cassandra:cassandra-driver-mapping:$cassandra_driver_version",
         commons_codec                               : "commons-codec:commons-codec:1.10",
@@ -472,8 +470,6 @@ class BeamModulePlugin implements Plugin<Project> {
         commons_io_2x                               : "commons-io:commons-io:2.5",
         commons_lang3                               : "org.apache.commons:commons-lang3:3.6",
         commons_math3                               : "org.apache.commons:commons-math3:3.6.1",
-        datastore_v1_proto_client                   : "com.google.cloud.datastore:datastore-v1-proto-client:1.6.0",
-        datastore_v1_protos                         : "com.google.api.grpc:proto-google-cloud-datastore-v1:$generated_grpc_beta_version",
         error_prone_annotations                     : "com.google.errorprone:error_prone_annotations:2.0.15",
         gax_grpc                                    : "com.google.api:gax-grpc:1.38.0",
         google_api_client                           : "com.google.api-client:google-api-client:$google_clients_version",
@@ -490,10 +486,11 @@ class BeamModulePlugin implements Plugin<Project> {
         google_auth_library_oauth2_http             : "com.google.auth:google-auth-library-oauth2-http:$google_auth_version",
         google_cloud_bigquery                       : "com.google.cloud:google-cloud-bigquery:$google_clients_version",
         google_cloud_bigquery_storage               : "com.google.cloud:google-cloud-bigquerystorage:0.79.0-alpha",
-        google_cloud_bigquery_storage_proto         : "com.google.api.grpc:proto-google-cloud-bigquerystorage-v1beta1:$generated_grpc_beta_version",
+        google_cloud_bigtable_client_core           : "com.google.cloud.bigtable:bigtable-client-core:1.8.0",
         google_cloud_core                           : "com.google.cloud:google-cloud-core:$google_cloud_core_version",
         google_cloud_core_grpc                      : "com.google.cloud:google-cloud-core-grpc:$google_cloud_core_version",
         google_cloud_dataflow_java_proto_library_all: "com.google.cloud.dataflow:google-cloud-dataflow-java-proto-library-all:0.5.160304",
+        google_cloud_datastore_v1_proto_client      : "com.google.cloud.datastore:datastore-v1-proto-client:1.6.0",
         google_cloud_spanner                        : "com.google.cloud:google-cloud-spanner:$google_cloud_spanner_version",
         google_http_client                          : "com.google.http-client:google-http-client:$google_clients_version",
         google_http_client_jackson                  : "com.google.http-client:google-http-client-jackson:$google_clients_version",
@@ -530,20 +527,24 @@ class BeamModulePlugin implements Plugin<Project> {
         jackson_module_scala                        : "com.fasterxml.jackson.module:jackson-module-scala_2.11:$jackson_version",
         jaxb_api                                    : "javax.xml.bind:jaxb-api:$jaxb_api_version",
         joda_time                                   : "joda-time:joda-time:2.10.1",
-        junit                                       : "junit:junit:4.13-beta-1",
+        junit                                       : "junit:junit:4.13-beta-3",
         kafka                                       : "org.apache.kafka:kafka_2.11:$kafka_version",
         kafka_clients                               : "org.apache.kafka:kafka-clients:$kafka_version",
         malhar_library                              : "org.apache.apex:malhar-library:$apex_malhar_version",
-        mockito_core                                : "org.mockito:mockito-core:1.10.19",
+        mockito_core                                : "org.mockito:mockito-core:3.0.0",
         nemo_compiler_frontend_beam                 : "org.apache.nemo:nemo-compiler-frontend-beam:$nemo_version",
         netty_handler                               : "io.netty:netty-handler:$netty_version",
         netty_tcnative_boringssl_static             : "io.netty:netty-tcnative-boringssl-static:2.0.17.Final",
         netty_transport_native_epoll                : "io.netty:netty-transport-native-epoll:$netty_version",
         postgres                                    : "org.postgresql:postgresql:$postgres_version",
-        powermock                                   : "org.powermock:powermock-mockito-release-full:1.6.4",
+        powermock                                   : "org.powermock:powermock-module-junit4:$powermock_version",
+        powermock_mockito                           : "org.powermock:powermock-api-mockito2:$powermock_version",
         protobuf_java                               : "com.google.protobuf:protobuf-java:$protobuf_version",
         protobuf_java_util                          : "com.google.protobuf:protobuf-java-util:$protobuf_version",
+        proto_google_cloud_bigquery_storage_v1beta1 : "com.google.api.grpc:proto-google-cloud-bigquerystorage-v1beta1:$generated_grpc_beta_version",
+        proto_google_cloud_bigtable_v2              : "com.google.api.grpc:proto-google-cloud-bigtable-v2:$generated_grpc_beta_version",
         proto_google_cloud_datacatalog_v1beta1      : "com.google.api.grpc:proto-google-cloud-datacatalog-v1beta1:$generated_grpc_dc_beta_version",
+        proto_google_cloud_datastore_v1             : "com.google.api.grpc:proto-google-cloud-datastore-v1:$generated_grpc_beta_version",
         proto_google_cloud_pubsub_v1                : "com.google.api.grpc:proto-google-cloud-pubsub-v1:$generated_grpc_ga_version",
         proto_google_cloud_spanner_admin_database_v1: "com.google.api.grpc:proto-google-cloud-spanner-admin-database-v1:$google_cloud_spanner_version",
         proto_google_common_protos                  : "com.google.api.grpc:proto-google-common-protos:$proto_google_common_protos_version",
@@ -772,7 +773,7 @@ class BeamModulePlugin implements Plugin<Project> {
         // spotbugs-annotations artifact is licensed under LGPL and cannot be included in the
         // Apache Beam distribution, but may be relied on during build.
         // See: https://www.apache.org/legal/resolved.html#prohibited
-        "com.github.spotbugs:spotbugs-annotations:3.1.11",
+        "com.github.spotbugs:spotbugs-annotations:3.1.12",
         "net.jcip:jcip-annotations:1.0",
       ]
 
@@ -815,7 +816,7 @@ class BeamModulePlugin implements Plugin<Project> {
         showViolations = true
         maxErrors = 0
       }
-      project.checkstyle { toolVersion = "8.7" }
+      project.checkstyle { toolVersion = "8.23" }
 
       // Configures javadoc plugin and ensure check runs javadoc.
       project.tasks.withType(Javadoc) {
@@ -832,7 +833,6 @@ class BeamModulePlugin implements Plugin<Project> {
       project.apply plugin: "net.ltgt.apt-eclipse"
 
       // Enables a plugin which can apply code formatting to source.
-      // TODO(https://issues.apache.org/jira/browse/BEAM-4394): Should this plugin be enabled for all projects?
       project.apply plugin: "com.diffplug.gradle.spotless"
       // scan CVE
       project.apply plugin: "net.ossindex.audit"
@@ -855,7 +855,7 @@ class BeamModulePlugin implements Plugin<Project> {
       if (configuration.enableSpotbugs) {
         project.apply plugin: 'com.github.spotbugs'
         project.dependencies {
-          spotbugs "com.github.spotbugs:spotbugs:3.1.10"
+          spotbugs "com.github.spotbugs:spotbugs:3.1.12"
           spotbugs "com.google.auto.value:auto-value:1.6.3"
           compileOnlyAnnotationDeps.each { dep -> spotbugs dep }
         }
@@ -1258,7 +1258,6 @@ class BeamModulePlugin implements Plugin<Project> {
         // test libraries classes causing version conflicts. Users should rely
         // on using the yyy-core package instead of the yyy-all package.
         exclude group: "org.hamcrest", module: "hamcrest-all"
-        exclude group: "org.mockito", module: "mockito-all"
       }
 
       // Force usage of the libraries defined within our common set found in the root
@@ -1510,7 +1509,8 @@ class BeamModulePlugin implements Plugin<Project> {
     project.ext.applyGrpcNature = {
       project.apply plugin: "com.google.protobuf"
       project.protobuf {
-        protoc { // The artifact spec for the Protobuf Compiler
+        protoc {
+          // The artifact spec for the Protobuf Compiler
           artifact = "com.google.protobuf:protoc:3.6.0" }
 
         // Configure the codegen plugins
@@ -1585,7 +1585,8 @@ class BeamModulePlugin implements Plugin<Project> {
 
       project.apply plugin: "com.google.protobuf"
       project.protobuf {
-        protoc { // The artifact spec for the Protobuf Compiler
+        protoc {
+          // The artifact spec for the Protobuf Compiler
           artifact = "com.google.protobuf:protoc:3.7.1" }
 
         // Configure the codegen plugins
