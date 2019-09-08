@@ -425,7 +425,7 @@ class BeamModulePlugin implements Plugin<Project> {
     def proto_google_common_protos_version = "1.12.0"
     def protobuf_version = "3.6.0"
     def quickcheck_version = "0.8"
-    def spark_version = "2.4.3"
+    def spark_version = "2.4.4"
 
     // A map of maps containing common libraries used per language. To use:
     // dependencies {
@@ -464,7 +464,7 @@ class BeamModulePlugin implements Plugin<Project> {
         cassandra_driver_core                       : "com.datastax.cassandra:cassandra-driver-core:$cassandra_driver_version",
         cassandra_driver_mapping                    : "com.datastax.cassandra:cassandra-driver-mapping:$cassandra_driver_version",
         commons_codec                               : "commons-codec:commons-codec:1.10",
-        commons_compress                            : "org.apache.commons:commons-compress:1.18",
+        commons_compress                            : "org.apache.commons:commons-compress:1.19",
         commons_csv                                 : "org.apache.commons:commons-csv:1.4",
         commons_io_1x                               : "commons-io:commons-io:1.3.2",
         commons_io_2x                               : "commons-io:commons-io:2.5",
@@ -526,7 +526,7 @@ class BeamModulePlugin implements Plugin<Project> {
         jackson_datatype_joda                       : "com.fasterxml.jackson.datatype:jackson-datatype-joda:$jackson_version",
         jackson_module_scala                        : "com.fasterxml.jackson.module:jackson-module-scala_2.11:$jackson_version",
         jaxb_api                                    : "javax.xml.bind:jaxb-api:$jaxb_api_version",
-        joda_time                                   : "joda-time:joda-time:2.10.1",
+        joda_time                                   : "joda-time:joda-time:2.10.3",
         junit                                       : "junit:junit:4.13-beta-3",
         kafka                                       : "org.apache.kafka:kafka_2.11:$kafka_version",
         kafka_clients                               : "org.apache.kafka:kafka-clients:$kafka_version",
@@ -1735,7 +1735,7 @@ class BeamModulePlugin implements Plugin<Project> {
       def serviceArgs = project.project(':sdks:python').mapToArgString(expansionServiceOpts)
       def setupTask = project.tasks.create(name: config.name+"Setup", type: Exec) {
         dependsOn ':sdks:java:container:docker'
-        dependsOn ':sdks:python:container:docker'
+        dependsOn ':sdks:python:container:buildAll'
         dependsOn ':sdks:java:testing:expansion-service:buildTestExpansionServiceJar'
         dependsOn ":sdks:python:installGcpTest"
         // setup test env
@@ -1990,8 +1990,10 @@ class BeamModulePlugin implements Plugin<Project> {
           dependsOn = ['installGcpTest']
           mustRunAfter = [
             ':runners:flink:1.5:job-server-container:docker',
-            ':sdks:python:container:docker',
-            ':sdks:python:container:py3:docker'
+            ':sdks:python:container:py2:docker',
+            ':sdks:python:container:py35:docker',
+            ':sdks:python:container:py36:docker',
+            ':sdks:python:container:py37:docker'
           ]
           doLast {
             // TODO: Figure out GCS credentials and use real GCS input and output.
@@ -2002,6 +2004,7 @@ class BeamModulePlugin implements Plugin<Project> {
               "--experiments=worker_threads=100",
               "--parallelism=2",
               "--shutdown_sources_on_final_watermark",
+              "--sdk_worker_parallelism=1",
             ]
             if (isStreaming)
               options += [
