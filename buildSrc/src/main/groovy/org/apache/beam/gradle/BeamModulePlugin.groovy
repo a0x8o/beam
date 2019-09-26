@@ -130,6 +130,14 @@ class BeamModulePlugin implements Plugin<Project> {
 
     /** Controls whether javadoc is exported for this project. */
     boolean exportJavadoc = true
+
+    /**
+     * Automatic-Module-Name Header value to be set in MANFIEST.MF file.
+     * This is a required parameter unless publishing to Maven is disabled for this project.
+     *
+     * @see: https://github.com/GoogleCloudPlatform/cloud-opensource-java/blob/master/library-best-practices/JLBP-20.md
+     */
+    String automaticModuleName = null
   }
 
   /** A class defining the set of configurable properties accepted by applyPortabilityNature. */
@@ -144,6 +152,17 @@ class BeamModulePlugin implements Plugin<Project> {
 
     /** Override the default "beam-" + `dash separated path` archivesBaseName. */
     String archivesBaseName = null;
+
+    /** Controls whether this project is published to Maven. */
+    boolean publish = true
+
+    /**
+     * Automatic-Module-Name Header value to be set in MANFIEST.MF file.
+     * This is a required parameter unless publishing to Maven is disabled for this project.
+     *
+     * @see: https://github.com/GoogleCloudPlatform/cloud-opensource-java/blob/master/library-best-practices/JLBP-20.md
+     */
+    String automaticModuleName
   }
 
   // A class defining the set of configurable properties for createJavaExamplesArchetypeValidationTask
@@ -171,72 +190,16 @@ class BeamModulePlugin implements Plugin<Project> {
 
   // Reads and contains all necessary performance test parameters
   class JavaPerformanceTestConfiguration {
-
-    /* Optional properties (set only if needed in your case): */
-
-    // Path to PerfKitBenchmarker application (pkb.py).
-    // It is only required when running Performance Tests with PerfKitBenchmarker
-    String pkbLocation = System.getProperty('pkbLocation')
-
-    // Data Processing Backend's log level.
-    String logLevel = System.getProperty('logLevel', 'INFO')
-
-    // Path to gradle binary.
-    String gradleBinary = System.getProperty('gradleBinary', './gradlew')
-
-    // If benchmark is official or not.
-    // Official benchmark results are meant to be displayed on PerfKitExplorer dashboards.
-    String isOfficial = System.getProperty('official', 'false')
-
-    // Specifies names of benchmarks to be run by PerfKitBenchmarker.
-    String benchmarks = System.getProperty('benchmarks', 'beam_integration_benchmark')
-
-    // If beam is not "prebuilt" then PerfKitBenchmarker runs the build task before running the tests.
-    String beamPrebuilt = System.getProperty('beamPrebuilt', 'true')
-
-    // Beam's sdk to be used by PerfKitBenchmarker.
-    String beamSdk = System.getProperty('beamSdk', 'java')
-
-    // Timeout (in seconds) after which PerfKitBenchmarker will stop executing the benchmark (and will fail).
-    String timeout = System.getProperty('itTimeout', '1200')
-
-    // Path to kubernetes configuration file.
-    String kubeconfig = System.getProperty('kubeconfig', System.getProperty('user.home') + '/.kube/config')
-
-    // Path to kubernetes executable.
-    String kubectl = System.getProperty('kubectl', 'kubectl')
-
-    // Paths to files with kubernetes infrastructure to setup before the test runs.
-    // PerfKitBenchmarker will have trouble reading 'null' path. It expects empty string if no scripts are expected.
-    String kubernetesScripts = System.getProperty('kubernetesScripts', '')
-
-    // Path to file with 'dynamic' and 'static' pipeline options.
-    // that will be appended by PerfKitBenchmarker to the test running command.
-    // PerfKitBenchmarker will have trouble reading 'null' path. It expects empty string if no config file is expected.
-    String optionsConfigFile = System.getProperty('beamITOptions', '')
-
-    // Any additional properties to be appended to benchmark execution command.
-    String extraProperties = System.getProperty('beamExtraProperties', '')
-
-    // Runner which will be used for running the tests. Possible values: dataflow/direct.
+    // Optional. Runner which will be used for running the tests. Possible values: dataflow/direct.
     // PerfKitBenchmarker will have trouble reading 'null' value. It expects empty string if no config file is expected.
     String runner = System.getProperty('integrationTestRunner', '')
 
-    // Filesystem which will be used for running the tests. Possible values: hdfs.
+    // Optional. Filesystem which will be used for running the tests. Possible values: hdfs.
     // if not specified runner's local filesystem will be used.
     String filesystem = System.getProperty('filesystem')
 
-    /* Always required properties: */
-
-    // Pipeline options to be used by the tested pipeline.
+    // Required. Pipeline options to be used by the tested pipeline.
     String integrationTestPipelineOptions = System.getProperty('integrationTestPipelineOptions')
-
-    // Fully qualified name of the test to be run, eg:
-    // 'org.apache.beam.sdks.java.io.jdbc.JdbcIOIT'.
-    String integrationTest = System.getProperty('integrationTest')
-
-    // Relative path to module where the test is, eg. 'sdks/java/io/jdbc.
-    String itModule = System.getProperty('itModule')
   }
 
   // Reads and contains all necessary performance test parameters
@@ -415,7 +378,7 @@ class BeamModulePlugin implements Plugin<Project> {
     def guava_version = "20.0"
     def hadoop_version = "2.7.3"
     def hamcrest_version = "2.1"
-    def jackson_version = "2.9.9"
+    def jackson_version = "2.9.10"
     def jaxb_api_version = "2.2.12"
     def kafka_version = "1.0.0"
     def nemo_version = "0.1"
@@ -520,7 +483,7 @@ class BeamModulePlugin implements Plugin<Project> {
         jackson_annotations                         : "com.fasterxml.jackson.core:jackson-annotations:$jackson_version",
         jackson_jaxb_annotations                    : "com.fasterxml.jackson.module:jackson-module-jaxb-annotations:$jackson_version",
         jackson_core                                : "com.fasterxml.jackson.core:jackson-core:$jackson_version",
-        jackson_databind                            : "com.fasterxml.jackson.core:jackson-databind:2.9.9.3",
+        jackson_databind                            : "com.fasterxml.jackson.core:jackson-databind:$jackson_version",
         jackson_dataformat_cbor                     : "com.fasterxml.jackson.dataformat:jackson-dataformat-cbor:$jackson_version",
         jackson_dataformat_yaml                     : "com.fasterxml.jackson.dataformat:jackson-dataformat-yaml:$jackson_version",
         jackson_datatype_joda                       : "com.fasterxml.jackson.datatype:jackson-datatype-joda:$jackson_version",
@@ -560,6 +523,7 @@ class BeamModulePlugin implements Plugin<Project> {
         vendored_bytebuddy_1_9_3                    : "org.apache.beam:beam-vendor-bytebuddy-1_9_3:0.1",
         vendored_grpc_1_21_0                        : "org.apache.beam:beam-vendor-grpc-1_21_0:0.1",
         vendored_guava_26_0_jre                     : "org.apache.beam:beam-vendor-guava-26_0-jre:0.1",
+        vendored_calcite_1_20_0                     : "org.apache.beam:beam-vendor-calcite-1_20_0:0.1",
         woodstox_core_asl                           : "org.codehaus.woodstox:woodstox-core-asl:4.4.1",
         zstd_jni                                    : "com.github.luben:zstd-jni:1.3.8-3",
         quickcheck_core                             : "com.pholser:junit-quickcheck-core:$quickcheck_version",
@@ -917,6 +881,8 @@ class BeamModulePlugin implements Plugin<Project> {
       }
 
       project.jar {
+        setAutomaticModuleNameHeader(configuration, project)
+
         zip64 true
         into("META-INF/") {
           from "${project.rootProject.projectDir}/LICENSE"
@@ -1278,7 +1244,7 @@ class BeamModulePlugin implements Plugin<Project> {
     }
 
     // When applied in a module's build.gradle file, this closure provides task for running
-    // IO integration tests (manually, without PerfKitBenchmarker).
+    // IO integration tests.
     project.ext.enableJavaPerformanceTesting = {
 
       // Use the implicit it parameter of the closure to handle zero argument or one argument map calls.
@@ -1336,7 +1302,7 @@ class BeamModulePlugin implements Plugin<Project> {
         }
 
         if (runner?.equalsIgnoreCase('flink')) {
-          testRuntime it.project(path: ":runners:flink:1.5", configuration: 'testRuntime')
+          testRuntime it.project(path: ":runners:flink:1.8", configuration: 'testRuntime')
         }
 
         if (runner?.equalsIgnoreCase('spark')) {
@@ -1361,60 +1327,7 @@ class BeamModulePlugin implements Plugin<Project> {
           testRuntime it.project(path: ":sdks:java:io:amazon-web-services", configuration: 'testRuntime')
         }
       }
-
       project.task('packageIntegrationTests', type: Jar)
-    }
-
-    // When applied in a module's build gradle file, this closure provides a task
-    // that will involve PerfKitBenchmarker for running integrationTests.
-    project.ext.createPerformanceTestHarness = {
-
-      // Use the implicit it parameter of the closure to handle zero argument or one argument map calls.
-      // See: http://groovy-lang.org/closures.html#implicit-it
-      JavaPerformanceTestConfiguration configuration = it ? it as JavaPerformanceTestConfiguration : new JavaPerformanceTestConfiguration()
-
-      // This task runs PerfKitBenchmarker, which does benchmarking of the IO ITs.
-      // The arguments passed to it allows it to invoke gradle again with the desired benchmark.
-      //
-      // To invoke this, run:
-      //
-      // ./gradlew performanceTest \
-      //  -DpkbLocation="<path to pkb.py>"
-      //  -DintegrationTestPipelineOptions='["--numberOfRecords=1000", "<more options>"]' \
-      //  -DintegrationTest=<io test, eg. org.apache.beam.sdk.io.text.TextIOIT> \
-      //  -DitModule=<directory containing desired test, eg. sdks/java/io/file-based-io-tests> \
-      //  -DintegrationTestRunner=<runner to be used for testing, eg. dataflow>
-      //
-      // There are more options with default values that can be tweaked if needed (see below).
-      project.task('performanceTest', type: Exec) {
-
-        // PerfKitBenchmarker needs to work in the Beam's root directory,
-        // otherwise it requires absolute paths ./gradlew, kubernetes scripts etc.
-        commandLine "${configuration.pkbLocation}",
-                "--dpb_log_level=${configuration.logLevel}",
-                "--gradle_binary=${configuration.gradleBinary}",
-                "--official=${configuration.isOfficial}",
-                "--benchmarks=${configuration.benchmarks}",
-                "--beam_location=${project.rootProject.projectDir}",
-
-                "--beam_prebuilt=${configuration.beamPrebuilt}",
-                "--beam_sdk=${configuration.beamSdk}",
-
-                "--beam_it_timeout=${configuration.timeout}",
-
-                "--kubeconfig=${configuration.kubeconfig}",
-                "--kubectl=${configuration.kubectl}",
-                "--beam_kubernetes_scripts=${configuration.kubernetesScripts}",
-
-                "--beam_it_options=${configuration.integrationTestPipelineOptions}",
-                "--beam_options_config_file=${configuration.optionsConfigFile}",
-
-                "--beam_it_class=${configuration.integrationTest}",
-                "--beam_it_module=${configuration.itModule}",
-
-                "--beam_extra_properties=${configuration.extraProperties}",
-                "--beam_runner=${configuration.runner}"
-      }
     }
 
     /** ***********************************************************************************************/
@@ -1492,7 +1405,7 @@ class BeamModulePlugin implements Plugin<Project> {
         if (project.rootProject.hasProperty(["docker-repository-root"])) {
           configuration.root = project.rootProject["docker-repository-root"]
         } else {
-          configuration.root = "apachebeam"
+          configuration.root = "${System.properties["user.name"]}-docker-apache.bintray.io/beam"
         }
       }
       if (configuration.tag == null) {
@@ -1566,7 +1479,9 @@ class BeamModulePlugin implements Plugin<Project> {
       project.ext.applyJavaNature(
               exportJavadoc: false,
               enableSpotbugs: false,
+              publish: configuration.publish,
               archivesBaseName: configuration.archivesBaseName,
+              automaticModuleName: configuration.automaticModuleName,
               shadowJarValidationExcludes: it.shadowJarValidationExcludes,
               shadowClosure: GrpcVendoring.shadowClosure() << {
                 // We perform all the code relocations but don't include
@@ -1808,7 +1723,7 @@ class BeamModulePlugin implements Plugin<Project> {
           dependsOn setupTask
           // We need flink-job-server-container dependency since Python PortableRunner automatically
           // brings the flink-job-server-container up when --job_endpoint is not specified.
-          dependsOn ':runners:flink:1.5:job-server-container:docker'
+          dependsOn ':runners:flink:1.8:job-server-container:docker'
         }
         mainTask.dependsOn pythonTask
         cleanupTask.mustRunAfter pythonTask
@@ -1990,7 +1905,7 @@ class BeamModulePlugin implements Plugin<Project> {
         project.task('portableWordCount' + (isStreaming ? 'Streaming' : 'Batch')) {
           dependsOn = ['installGcpTest']
           mustRunAfter = [
-            ':runners:flink:1.5:job-server-container:docker',
+            ':runners:flink:1.8:job-server-container:docker',
             ':sdks:python:container:py2:docker',
             ':sdks:python:container:py35:docker',
             ':sdks:python:container:py36:docker',
@@ -2042,6 +1957,16 @@ class BeamModulePlugin implements Plugin<Project> {
         ->
         addPortableWordCountTask(false)
         addPortableWordCountTask(true)
+      }
+    }
+  }
+
+  private void setAutomaticModuleNameHeader(JavaNatureConfiguration configuration, Project project) {
+    if (configuration.publish && !configuration.automaticModuleName) {
+      throw new GradleException("Expected automaticModuleName to be set for the module that is published to maven repository.")
+    } else if (configuration.automaticModuleName) {
+      project.jar.manifest {
+        attributes 'Automatic-Module-Name': configuration.automaticModuleName
       }
     }
   }

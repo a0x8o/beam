@@ -24,17 +24,7 @@ limitations under the License.
 localStorage.setItem('language', 'language-py')
 </script>
 
-<table>
-  <td>
-    <a class="button" target="_blank"
-        href="https://beam.apache.org/releases/pydoc/current/apache_beam.transforms.core.html#apache_beam.transforms.core.Filter">
-      <img src="https://beam.apache.org/images/logos/sdks/python.png"
-          width="20px" height="20px" alt="Pydoc" />
-      Pydoc
-    </a>
-  </td>
-</table>
-<br>
+{% include button-pydoc.md path="apache_beam.transforms.core" class="Filter" %}
 
 Given a predicate, filter out all elements that don't satisfy that predicate.
 May also be used to filter based on an inequality with a given value based
@@ -54,22 +44,17 @@ We define a function `is_perennial` which returns `True` if the element's durati
 ```py
 {% github_sample /apache/beam/blob/master/sdks/python/apache_beam/examples/snippets/transforms/element_wise/filter.py tag:filter_function %}```
 
+{:.notebook-skip}
 Output `PCollection` after `Filter`:
 
+{:.notebook-skip}
 ```
 {% github_sample /apache/beam/blob/master/sdks/python/apache_beam/examples/snippets/transforms/element_wise/filter_test.py tag:perennials %}```
 
-<table>
-  <td>
-    <a class="button" target="_blank"
-        href="https://github.com/apache/beam/blob/master/sdks/python/apache_beam/examples/snippets/transforms/element_wise/filter.py">
-      <img src="https://www.tensorflow.org/images/GitHub-Mark-32px.png"
-        width="20px" height="20px" alt="View on GitHub" />
-      View on GitHub
-    </a>
-  </td>
-</table>
-<br>
+{% include buttons-code-snippet.md
+  notebook="examples/notebooks/documentation/transforms/python/element-wise/filter-py.ipynb"
+  code="sdks/python/apache_beam/examples/snippets/transforms/element_wise/filter.py"
+%}
 
 ### Example 2: Filtering with a lambda function
 
@@ -78,22 +63,17 @@ We can also use lambda functions to simplify **Example 1**.
 ```py
 {% github_sample /apache/beam/blob/master/sdks/python/apache_beam/examples/snippets/transforms/element_wise/filter.py tag:filter_lambda %}```
 
+{:.notebook-skip}
 Output `PCollection` after `Filter`:
 
+{:.notebook-skip}
 ```
 {% github_sample /apache/beam/blob/master/sdks/python/apache_beam/examples/snippets/transforms/element_wise/filter_test.py tag:perennials %}```
 
-<table>
-  <td>
-    <a class="button" target="_blank"
-        href="https://github.com/apache/beam/blob/master/sdks/python/apache_beam/examples/snippets/transforms/element_wise/filter.py">
-      <img src="https://www.tensorflow.org/images/GitHub-Mark-32px.png"
-        width="20px" height="20px" alt="View on GitHub" />
-      View on GitHub
-    </a>
-  </td>
-</table>
-<br>
+{% include buttons-code-snippet.md
+  notebook="examples/notebooks/documentation/transforms/python/element-wise/filter-py.ipynb"
+  code="sdks/python/apache_beam/examples/snippets/transforms/element_wise/filter.py"
+%}
 
 ### Example 3: Filtering with multiple arguments
 
@@ -105,22 +85,17 @@ In this example, `has_duration` takes `plant` and `duration` as arguments.
 ```py
 {% github_sample /apache/beam/blob/master/sdks/python/apache_beam/examples/snippets/transforms/element_wise/filter.py tag:filter_multiple_arguments %}```
 
+{:.notebook-skip}
 Output `PCollection` after `Filter`:
 
+{:.notebook-skip}
 ```
 {% github_sample /apache/beam/blob/master/sdks/python/apache_beam/examples/snippets/transforms/element_wise/filter_test.py tag:perennials %}```
 
-<table>
-  <td>
-    <a class="button" target="_blank"
-        href="https://github.com/apache/beam/blob/master/sdks/python/apache_beam/examples/snippets/transforms/element_wise/filter.py">
-      <img src="https://www.tensorflow.org/images/GitHub-Mark-32px.png"
-        width="20px" height="20px" alt="View on GitHub" />
-      View on GitHub
-    </a>
-  </td>
-</table>
-<br>
+{% include buttons-code-snippet.md
+  notebook="examples/notebooks/documentation/transforms/python/element-wise/filter-py.ipynb"
+  code="sdks/python/apache_beam/examples/snippets/transforms/element_wise/filter.py"
+%}
 
 ### Example 4: Filtering with side inputs as singletons
 
@@ -133,22 +108,17 @@ We then use that value to filter out perennials.
 ```py
 {% github_sample /apache/beam/blob/master/sdks/python/apache_beam/examples/snippets/transforms/element_wise/filter.py tag:filter_side_inputs_singleton %}```
 
+{:.notebook-skip}
 Output `PCollection` after `Filter`:
 
+{:.notebook-skip}
 ```
 {% github_sample /apache/beam/blob/master/sdks/python/apache_beam/examples/snippets/transforms/element_wise/filter_test.py tag:perennials %}```
 
-<table>
-  <td>
-    <a class="button" target="_blank"
-        href="https://github.com/apache/beam/blob/master/sdks/python/apache_beam/examples/snippets/transforms/element_wise/filter.py">
-      <img src="https://www.tensorflow.org/images/GitHub-Mark-32px.png"
-        width="20px" height="20px" alt="View on GitHub" />
-      View on GitHub
-    </a>
-  </td>
-</table>
-<br>
+{% include buttons-code-snippet.md
+  notebook="examples/notebooks/documentation/transforms/python/element-wise/filter-py.ipynb"
+  code="sdks/python/apache_beam/examples/snippets/transforms/element_wise/filter.py"
+%}
 
 ### Example 5: Filtering with side inputs as iterators
 
@@ -159,22 +129,17 @@ so it is possible to iterate over large `PCollection`s that won't fit into memor
 ```py
 {% github_sample /apache/beam/blob/master/sdks/python/apache_beam/examples/snippets/transforms/element_wise/filter.py tag:filter_side_inputs_iter %}```
 
+{:.notebook-skip}
 Output `PCollection` after `Filter`:
 
+{:.notebook-skip}
 ```
 {% github_sample /apache/beam/blob/master/sdks/python/apache_beam/examples/snippets/transforms/element_wise/filter_test.py tag:valid_plants %}```
 
-<table>
-  <td>
-    <a class="button" target="_blank"
-        href="https://github.com/apache/beam/blob/master/sdks/python/apache_beam/examples/snippets/transforms/element_wise/filter.py">
-      <img src="https://www.tensorflow.org/images/GitHub-Mark-32px.png"
-        width="20px" height="20px" alt="View on GitHub" />
-      View on GitHub
-    </a>
-  </td>
-</table>
-<br>
+{% include buttons-code-snippet.md
+  notebook="examples/notebooks/documentation/transforms/python/element-wise/filter-py.ipynb"
+  code="sdks/python/apache_beam/examples/snippets/transforms/element_wise/filter.py"
+%}
 
 > **Note**: You can pass the `PCollection` as a *list* with `beam.pvalue.AsList(pcollection)`,
 > but this requires that all the elements fit into memory.
@@ -189,22 +154,17 @@ If the `PCollection` won't fit into memory, use `beam.pvalue.AsIter(pcollection)
 ```py
 {% github_sample /apache/beam/blob/master/sdks/python/apache_beam/examples/snippets/transforms/element_wise/filter.py tag:filter_side_inputs_dict %}```
 
+{:.notebook-skip}
 Output `PCollection` after `Filter`:
 
+{:.notebook-skip}
 ```
 {% github_sample /apache/beam/blob/master/sdks/python/apache_beam/examples/snippets/transforms/element_wise/filter_test.py tag:perennials %}```
 
-<table>
-  <td>
-    <a class="button" target="_blank"
-        href="https://github.com/apache/beam/blob/master/sdks/python/apache_beam/examples/snippets/transforms/element_wise/filter.py">
-      <img src="https://www.tensorflow.org/images/GitHub-Mark-32px.png"
-        width="20px" height="20px" alt="View on GitHub" />
-      View on GitHub
-    </a>
-  </td>
-</table>
-<br>
+{% include buttons-code-snippet.md
+  notebook="examples/notebooks/documentation/transforms/python/element-wise/filter-py.ipynb"
+  code="sdks/python/apache_beam/examples/snippets/transforms/element_wise/filter.py"
+%}
 
 ## Related transforms
 
@@ -213,14 +173,4 @@ Output `PCollection` after `Filter`:
 * [ParDo]({{ site.baseurl }}/documentation/transforms/python/elementwise/pardo) is the most general element-wise mapping
   operation, and includes other abilities such as multiple output collections and side-inputs.
 
-<table>
-  <td>
-    <a class="button" target="_blank"
-        href="https://beam.apache.org/releases/pydoc/current/apache_beam.transforms.core.html#apache_beam.transforms.core.Filter">
-      <img src="https://beam.apache.org/images/logos/sdks/python.png"
-          width="20px" height="20px" alt="Pydoc" />
-      Pydoc
-    </a>
-  </td>
-</table>
-<br>
+{% include button-pydoc.md path="apache_beam.transforms.core" class="Filter" %}

@@ -121,6 +121,8 @@ _MethodDescriptorType = type(str.upper)
 
 _ANY_VAR_POSITIONAL = typehints.Tuple[typehints.Any, ...]
 _ANY_VAR_KEYWORD = typehints.Dict[typehints.Any, typehints.Any]
+# TODO(BEAM-8280): Remove this when from_callable is ready to be enabled.
+_enable_from_callable = False
 
 try:
   _original_getfullargspec = inspect.getfullargspec
@@ -231,6 +233,8 @@ class IOTypeHints(object):
     Returns:
       A new IOTypeHints or None if no annotations found.
     """
+    if not _enable_from_callable:
+      return None
     signature = get_signature(fn)
     if (all(param.annotation == param.empty
             for param in signature.parameters.values())
@@ -553,7 +557,7 @@ def getcallargs_forhints_impl_py3(func, type_args, type_kwargs):
         bound_args[param.name] = _ANY_VAR_POSITIONAL
       elif param.kind == param.VAR_KEYWORD:
         bound_args[param.name] = _ANY_VAR_KEYWORD
-      elif param.default != param.empty:
+      elif param.default is not param.empty:
         # Declare unbound parameters with defaults to be Any.
         bound_args[param.name] = typehints.Any
       else:

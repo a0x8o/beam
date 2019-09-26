@@ -24,17 +24,7 @@ limitations under the License.
 localStorage.setItem('language', 'language-py')
 </script>
 
-<table>
-  <td>
-    <a class="button" target="_blank"
-        href="https://beam.apache.org/releases/pydoc/current/apache_beam.transforms.core.html#apache_beam.transforms.core.FlatMap">
-      <img src="https://beam.apache.org/images/logos/sdks/python.png"
-          width="20px" height="20px" alt="Pydoc" />
-      Pydoc
-    </a>
-  </td>
-</table>
-<br>
+{% include button-pydoc.md path="apache_beam.transforms.core" class="FlatMap" %}
 
 Applies a simple 1-to-many mapping function over each element in the collection.
 The many elements are flattened into the resulting collection.
@@ -55,22 +45,17 @@ This pipeline splits the input element using whitespaces, creating a list of zer
 ```py
 {% github_sample /apache/beam/blob/master/sdks/python/apache_beam/examples/snippets/transforms/element_wise/flat_map.py tag:flat_map_simple %}```
 
+{:.notebook-skip}
 Output `PCollection` after `FlatMap`:
 
+{:.notebook-skip}
 ```
 {% github_sample /apache/beam/blob/master/sdks/python/apache_beam/examples/snippets/transforms/element_wise/flat_map_test.py tag:plants %}```
 
-<table>
-  <td>
-    <a class="button" target="_blank"
-        href="https://github.com/apache/beam/blob/master/sdks/python/apache_beam/examples/snippets/transforms/element_wise/flat_map.py">
-      <img src="https://www.tensorflow.org/images/GitHub-Mark-32px.png"
-        width="20px" height="20px" alt="View on GitHub" />
-      View on GitHub
-    </a>
-  </td>
-</table>
-<br>
+{% include buttons-code-snippet.md
+  notebook="examples/notebooks/documentation/transforms/python/element-wise/flatmap-py.ipynb"
+  code="sdks/python/apache_beam/examples/snippets/transforms/element_wise/flat_map.py"
+%}
 
 ### Example 2: FlatMap with a function
 
@@ -79,22 +64,17 @@ We define a function `split_words` which splits an input `str` element using the
 ```py
 {% github_sample /apache/beam/blob/master/sdks/python/apache_beam/examples/snippets/transforms/element_wise/flat_map.py tag:flat_map_function %}```
 
+{:.notebook-skip}
 Output `PCollection` after `FlatMap`:
 
+{:.notebook-skip}
 ```
 {% github_sample /apache/beam/blob/master/sdks/python/apache_beam/examples/snippets/transforms/element_wise/flat_map_test.py tag:plants %}```
 
-<table>
-  <td>
-    <a class="button" target="_blank"
-        href="https://github.com/apache/beam/blob/master/sdks/python/apache_beam/examples/snippets/transforms/element_wise/flat_map.py">
-      <img src="https://www.tensorflow.org/images/GitHub-Mark-32px.png"
-        width="20px" height="20px" alt="View on GitHub" />
-      View on GitHub
-    </a>
-  </td>
-</table>
-<br>
+{% include buttons-code-snippet.md
+  notebook="examples/notebooks/documentation/transforms/python/element-wise/flatmap-py.ipynb"
+  code="sdks/python/apache_beam/examples/snippets/transforms/element_wise/flat_map.py"
+%}
 
 ### Example 3: FlatMap with a lambda function
 
@@ -105,22 +85,17 @@ We use a lambda function that returns the same input element it received.
 ```py
 {% github_sample /apache/beam/blob/master/sdks/python/apache_beam/examples/snippets/transforms/element_wise/flat_map.py tag:flat_map_lambda %}```
 
+{:.notebook-skip}
 Output `PCollection` after `FlatMap`:
 
+{:.notebook-skip}
 ```
 {% github_sample /apache/beam/blob/master/sdks/python/apache_beam/examples/snippets/transforms/element_wise/flat_map_test.py tag:plants %}```
 
-<table>
-  <td>
-    <a class="button" target="_blank"
-        href="https://github.com/apache/beam/blob/master/sdks/python/apache_beam/examples/snippets/transforms/element_wise/flat_map.py">
-      <img src="https://www.tensorflow.org/images/GitHub-Mark-32px.png"
-        width="20px" height="20px" alt="View on GitHub" />
-      View on GitHub
-    </a>
-  </td>
-</table>
-<br>
+{% include buttons-code-snippet.md
+  notebook="examples/notebooks/documentation/transforms/python/element-wise/flatmap-py.ipynb"
+  code="sdks/python/apache_beam/examples/snippets/transforms/element_wise/flat_map.py"
+%}
 
 ### Example 4: FlatMap with a generator
 
@@ -131,22 +106,17 @@ Each yielded result in the generator is an element in the resulting `PCollection
 ```py
 {% github_sample /apache/beam/blob/master/sdks/python/apache_beam/examples/snippets/transforms/element_wise/flat_map.py tag:flat_map_generator %}```
 
+{:.notebook-skip}
 Output `PCollection` after `FlatMap`:
 
+{:.notebook-skip}
 ```
 {% github_sample /apache/beam/blob/master/sdks/python/apache_beam/examples/snippets/transforms/element_wise/flat_map_test.py tag:plants %}```
 
-<table>
-  <td>
-    <a class="button" target="_blank"
-        href="https://github.com/apache/beam/blob/master/sdks/python/apache_beam/examples/snippets/transforms/element_wise/flat_map.py">
-      <img src="https://www.tensorflow.org/images/GitHub-Mark-32px.png"
-        width="20px" height="20px" alt="View on GitHub" />
-      View on GitHub
-    </a>
-  </td>
-</table>
-<br>
+{% include buttons-code-snippet.md
+  notebook="examples/notebooks/documentation/transforms/python/element-wise/flatmap-py.ipynb"
+  code="sdks/python/apache_beam/examples/snippets/transforms/element_wise/flat_map.py"
+%}
 
 ### Example 5: FlatMapTuple for key-value pairs
 
@@ -156,22 +126,17 @@ you can use `FlatMapTuple` to unpack them into different function arguments.
 ```py
 {% github_sample /apache/beam/blob/master/sdks/python/apache_beam/examples/snippets/transforms/element_wise/flat_map.py tag:flat_map_tuple %}```
 
+{:.notebook-skip}
 Output `PCollection` after `FlatMapTuple`:
 
+{:.notebook-skip}
 ```
 {% github_sample /apache/beam/blob/master/sdks/python/apache_beam/examples/snippets/transforms/element_wise/flat_map_test.py tag:plants %}```
 
-<table>
-  <td>
-    <a class="button" target="_blank"
-        href="https://github.com/apache/beam/blob/master/sdks/python/apache_beam/examples/snippets/transforms/element_wise/flat_map.py">
-      <img src="https://www.tensorflow.org/images/GitHub-Mark-32px.png"
-        width="20px" height="20px" alt="View on GitHub" />
-      View on GitHub
-    </a>
-  </td>
-</table>
-<br>
+{% include buttons-code-snippet.md
+  notebook="examples/notebooks/documentation/transforms/python/element-wise/flatmap-py.ipynb"
+  code="sdks/python/apache_beam/examples/snippets/transforms/element_wise/flat_map.py"
+%}
 
 ### Example 6: FlatMap with multiple arguments
 
@@ -183,22 +148,17 @@ In this example, `split_words` takes `text` and `delimiter` as arguments.
 ```py
 {% github_sample /apache/beam/blob/master/sdks/python/apache_beam/examples/snippets/transforms/element_wise/flat_map.py tag:flat_map_multiple_arguments %}```
 
+{:.notebook-skip}
 Output `PCollection` after `FlatMap`:
 
+{:.notebook-skip}
 ```
 {% github_sample /apache/beam/blob/master/sdks/python/apache_beam/examples/snippets/transforms/element_wise/flat_map_test.py tag:plants %}```
 
-<table>
-  <td>
-    <a class="button" target="_blank"
-        href="https://github.com/apache/beam/blob/master/sdks/python/apache_beam/examples/snippets/transforms/element_wise/flat_map.py">
-      <img src="https://www.tensorflow.org/images/GitHub-Mark-32px.png"
-        width="20px" height="20px" alt="View on GitHub" />
-      View on GitHub
-    </a>
-  </td>
-</table>
-<br>
+{% include buttons-code-snippet.md
+  notebook="examples/notebooks/documentation/transforms/python/element-wise/flatmap-py.ipynb"
+  code="sdks/python/apache_beam/examples/snippets/transforms/element_wise/flat_map.py"
+%}
 
 ### Example 7: FlatMap with side inputs as singletons
 
@@ -211,22 +171,17 @@ We then use that value as the delimiter for the `str.split` method.
 ```py
 {% github_sample /apache/beam/blob/master/sdks/python/apache_beam/examples/snippets/transforms/element_wise/flat_map.py tag:flat_map_side_inputs_singleton %}```
 
+{:.notebook-skip}
 Output `PCollection` after `FlatMap`:
 
+{:.notebook-skip}
 ```
 {% github_sample /apache/beam/blob/master/sdks/python/apache_beam/examples/snippets/transforms/element_wise/flat_map_test.py tag:plants %}```
 
-<table>
-  <td>
-    <a class="button" target="_blank"
-        href="https://github.com/apache/beam/blob/master/sdks/python/apache_beam/examples/snippets/transforms/element_wise/flat_map.py">
-      <img src="https://www.tensorflow.org/images/GitHub-Mark-32px.png"
-        width="20px" height="20px" alt="View on GitHub" />
-      View on GitHub
-    </a>
-  </td>
-</table>
-<br>
+{% include buttons-code-snippet.md
+  notebook="examples/notebooks/documentation/transforms/python/element-wise/flatmap-py.ipynb"
+  code="sdks/python/apache_beam/examples/snippets/transforms/element_wise/flat_map.py"
+%}
 
 ### Example 8: FlatMap with side inputs as iterators
 
@@ -237,22 +192,17 @@ so it is possible to iterate over large `PCollection`s that won't fit into memor
 ```py
 {% github_sample /apache/beam/blob/master/sdks/python/apache_beam/examples/snippets/transforms/element_wise/flat_map.py tag:flat_map_side_inputs_iter %}```
 
+{:.notebook-skip}
 Output `PCollection` after `FlatMap`:
 
+{:.notebook-skip}
 ```
 {% github_sample /apache/beam/blob/master/sdks/python/apache_beam/examples/snippets/transforms/element_wise/flat_map_test.py tag:valid_plants %}```
 
-<table>
-  <td>
-    <a class="button" target="_blank"
-        href="https://github.com/apache/beam/blob/master/sdks/python/apache_beam/examples/snippets/transforms/element_wise/flat_map.py">
-      <img src="https://www.tensorflow.org/images/GitHub-Mark-32px.png"
-        width="20px" height="20px" alt="View on GitHub" />
-      View on GitHub
-    </a>
-  </td>
-</table>
-<br>
+{% include buttons-code-snippet.md
+  notebook="examples/notebooks/documentation/transforms/python/element-wise/flatmap-py.ipynb"
+  code="sdks/python/apache_beam/examples/snippets/transforms/element_wise/flat_map.py"
+%}
 
 > **Note**: You can pass the `PCollection` as a *list* with `beam.pvalue.AsList(pcollection)`,
 > but this requires that all the elements fit into memory.
@@ -267,22 +217,17 @@ If the `PCollection` won't fit into memory, use `beam.pvalue.AsIter(pcollection)
 ```py
 {% github_sample /apache/beam/blob/master/sdks/python/apache_beam/examples/snippets/transforms/element_wise/flat_map.py tag:flat_map_side_inputs_dict %}```
 
+{:.notebook-skip}
 Output `PCollection` after `FlatMap`:
 
+{:.notebook-skip}
 ```
 {% github_sample /apache/beam/blob/master/sdks/python/apache_beam/examples/snippets/transforms/element_wise/flat_map_test.py tag:valid_plants %}```
 
-<table>
-  <td>
-    <a class="button" target="_blank"
-        href="https://github.com/apache/beam/blob/master/sdks/python/apache_beam/examples/snippets/transforms/element_wise/flat_map.py">
-      <img src="https://www.tensorflow.org/images/GitHub-Mark-32px.png"
-        width="20px" height="20px" alt="View on GitHub" />
-      View on GitHub
-    </a>
-  </td>
-</table>
-<br>
+{% include buttons-code-snippet.md
+  notebook="examples/notebooks/documentation/transforms/python/element-wise/flatmap-py.ipynb"
+  code="sdks/python/apache_beam/examples/snippets/transforms/element_wise/flat_map.py"
+%}
 
 ## Related transforms
 
@@ -292,14 +237,4 @@ Output `PCollection` after `FlatMap`:
   operation, and includes other abilities such as multiple output collections and side-inputs. 
 * [Map]({{ site.baseurl }}/documentation/transforms/python/elementwise/map) behaves the same, but produces exactly one output for each input.
 
-<table>
-  <td>
-    <a class="button" target="_blank"
-        href="https://beam.apache.org/releases/pydoc/current/apache_beam.transforms.core.html#apache_beam.transforms.core.FlatMap">
-      <img src="https://beam.apache.org/images/logos/sdks/python.png"
-          width="20px" height="20px" alt="Pydoc" />
-      Pydoc
-    </a>
-  </td>
-</table>
-<br>
+{% include button-pydoc.md path="apache_beam.transforms.core" class="FlatMap" %}
