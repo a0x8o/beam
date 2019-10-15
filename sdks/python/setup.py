@@ -119,7 +119,10 @@ REQUIRED_PACKAGES = [
     'oauth2client>=2.0.1,<4',
     'protobuf>=3.5.0.post1,<4',
     # [BEAM-6287] pyarrow is not supported on Windows for Python 2
-    ('pyarrow>=0.11.1,<0.15.0; python_version >= "3.0" or '
+    # [BEAM-8392] pyarrow 0.14.0 and 0.15.0 triggers an exception when importing
+    # apache_beam on macOS 10.15. Update version bounds as soon as the fix is
+    # ready
+    ('pyarrow>=0.11.1,<0.14.0; python_version >= "3.0" or '
      'platform_system != "Windows"'),
     'pydot>=1.2.0,<2',
     'python-dateutil>=2.8.0,<3',
@@ -143,6 +146,7 @@ REQUIRED_TEST_PACKAGES = [
     'parameterized>=0.6.0,<0.7.0',
     'pyhamcrest>=1.9,<2.0',
     'pyyaml>=3.12,<6.0.0',
+    'requests_mock>=1.7,<2.0',
     'tenacity>=5.0.2,<6.0',
     ]
 
