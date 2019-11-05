@@ -120,10 +120,7 @@ REQUIRED_PACKAGES = [
     'oauth2client>=2.0.1,<4',
     'protobuf>=3.5.0.post1,<4',
     # [BEAM-6287] pyarrow is not supported on Windows for Python 2
-    # [BEAM-8392] pyarrow 0.14.0 and 0.15.0 triggers an exception when importing
-    # apache_beam on macOS 10.15. Update version bounds as soon as the fix is
-    # ready
-    ('pyarrow>=0.11.1,<0.14.0; python_version >= "3.0" or '
+    ('pyarrow>=0.15.1,<0.16.0; python_version >= "3.0" or '
      'platform_system != "Windows"'),
     'pydot>=1.2.0,<2',
     'python-dateutil>=2.8.0,<3',
@@ -149,13 +146,13 @@ REQUIRED_TEST_PACKAGES = [
     'pyyaml>=3.12,<6.0.0',
     'requests_mock>=1.7,<2.0',
     'tenacity>=5.0.2,<6.0',
+    'pytest>=4.4.0,<5.0',
+    'pytest-xdist>=1.29.0,<2',
     ]
 
 GCP_REQUIREMENTS = [
     'cachetools>=3.1.0,<4',
     'google-apitools>=0.5.28,<0.5.29',
-    # [BEAM-4543] googledatastore is not supported in Python 3.
-    'proto-google-cloud-datastore-v1>=0.90.0,<=0.90.4; python_version < "3.0"',
     # [BEAM-4543] googledatastore is not supported in Python 3.
     'googledatastore>=7.0.1,<7.1; python_version < "3.0"',
     'google-cloud-datastore>=1.7.1,<1.8.0',
@@ -164,8 +161,17 @@ GCP_REQUIREMENTS = [
     'google-cloud-bigquery>=1.6.0,<1.18.0',
     'google-cloud-core>=0.28.1,<2',
     'google-cloud-bigtable>=0.31.1,<1.1.0',
+    # [BEAM-4543] googledatastore is not supported in Python 3.
+    'proto-google-cloud-datastore-v1>=0.90.0,<=0.90.4; python_version < "3.0"',
 ]
 
+INTERACTIVE_BEAM = [
+    'facets-overview>=1.0.0,<2',
+    'ipython>=5.8.0,<6',
+    # jsons is supported by Python 3.5.3+.
+    'jsons>=1.0.0,<2; python_version >= "3.5.3"',
+    'timeloop>=1.0.2,<2',
+]
 
 # We must generate protos after setup_requires are installed.
 def generate_protos_first(original_cmd):
@@ -219,11 +225,13 @@ setuptools.setup(
     install_requires=REQUIRED_PACKAGES,
     python_requires=python_requires,
     test_suite='nose.collector',
+    setup_requires=['pytest_runner'],
     tests_require=REQUIRED_TEST_PACKAGES,
     extras_require={
         'docs': ['Sphinx>=1.5.2,<2.0'],
         'test': REQUIRED_TEST_PACKAGES,
         'gcp': GCP_REQUIREMENTS,
+        'interactive': INTERACTIVE_BEAM,
     },
     zip_safe=False,
     # PyPI package information.

@@ -1592,7 +1592,7 @@ class BeamModulePlugin implements Plugin<Project> {
       def config = it ? it as PortableValidatesRunnerConfiguration : new PortableValidatesRunnerConfiguration()
       def name = config.name
       def beamTestPipelineOptions = [
-        "--runner=org.apache.beam.runners.reference.testing.TestPortableRunner",
+        "--runner=org.apache.beam.runners.portability.testing.TestPortableRunner",
         "--jobServerDriver=${config.jobServerDriver}",
         "--environmentCacheMillis=10000"
       ]
@@ -1649,7 +1649,7 @@ class BeamModulePlugin implements Plugin<Project> {
       def serviceArgs = project.project(':sdks:python').mapToArgString(expansionServiceOpts)
       def setupTask = project.tasks.create(name: config.name+"Setup", type: Exec) {
         dependsOn ':sdks:java:container:docker'
-        dependsOn ':sdks:python:container:buildAll'
+        dependsOn ':sdks:python:container:py2:docker'
         dependsOn ':sdks:java:testing:expansion-service:buildTestExpansionServiceJar'
         dependsOn ":sdks:python:installGcpTest"
         // setup test env
@@ -1671,7 +1671,7 @@ class BeamModulePlugin implements Plugin<Project> {
 
       // Task for running testcases in Java SDK
       def beamJavaTestPipelineOptions = [
-        "--runner=org.apache.beam.runners.reference.testing.TestPortableRunner",
+        "--runner=org.apache.beam.runners.portability.testing.TestPortableRunner",
         "--jobServerDriver=${config.jobServerDriver}",
         "--environmentCacheMillis=10000"
       ]
