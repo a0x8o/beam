@@ -58,6 +58,7 @@ from apache_beam.runners.runner import PipelineResult
 from apache_beam.runners.runner import PipelineRunner
 from apache_beam.runners.runner import PipelineState
 from apache_beam.runners.runner import PValueCache
+from apache_beam.runners.utils import is_interactive
 from apache_beam.transforms import window
 from apache_beam.transforms.display import DisplayData
 from apache_beam.typehints import typehints
@@ -364,6 +365,16 @@ class DataflowRunner(PipelineRunner):
 
   def run_pipeline(self, pipeline, options):
     """Remotely executes entire pipeline or parts reachable from node."""
+    # Label goog-dataflow-notebook if job is started from notebook.
+    _, is_in_notebook = is_interactive()
+    if is_in_notebook:
+      notebook_version = ('goog-dataflow-notebook=' +
+                          beam.version.__version__.replace('.', '_'))
+      if options.view_as(GoogleCloudOptions).labels:
+        options.view_as(GoogleCloudOptions).labels.append(notebook_version)
+      else:
+        options.view_as(GoogleCloudOptions).labels = [notebook_version]
+
     # Import here to avoid adding the dependency for local running scenarios.
     try:
       # pylint: disable=wrong-import-order, wrong-import-position
@@ -622,9 +633,15 @@ class DataflowRunner(PipelineRunner):
     debug_options = options.view_as(DebugOptions)
     use_fn_api = (debug_options.experiments and
                   'beam_fn_api' in debug_options.experiments)
+    use_streaming_engine = (
+        debug_options.experiments and
+        'enable_streaming_engine' in debug_options.experiments and
+        'enable_windmill_service' in debug_options.experiments)
+
     step = self._add_step(
         TransformNames.READ, transform_node.full_label, transform_node)
-    if standard_options.streaming and not use_fn_api:
+    if (standard_options.streaming and
+        (not use_fn_api or not use_streaming_engine)):
       step.add_property(PropertyNames.FORMAT, 'pubsub')
       step.add_property(PropertyNames.PUBSUB_SUBSCRIPTION, '_starting_signal/')
     else:
