@@ -17,13 +17,17 @@
  */
 package org.apache.beam.runners.fnexecution.control;
 
-import java.util.concurrent.CompletionStage;
-import org.apache.beam.model.fnexecution.v1.BeamFnApi;
+import org.apache.beam.model.fnexecution.v1.BeamFnApi.ProcessBundleResponse;
 
 /**
- * Interface for any function that can handle a Fn API {@link BeamFnApi.InstructionRequest}. Any
- * error responses will be converted to exceptionally completed futures.
+ * A handler for the runner when a finalization request has been received.
+ *
+ * <p>The runner is responsible for finalizing the bundle when all output from the bundle has been
+ * durably persisted.
+ *
+ * <p>See <a href="https://s.apache.org/beam-finalizing-bundles">finalizing bundles</a> for further
+ * details.
  */
-public interface InstructionRequestHandler extends AutoCloseable {
-  CompletionStage<BeamFnApi.InstructionResponse> handle(BeamFnApi.InstructionRequest request);
+public interface BundleFinalizationHandler {
+  void requestsFinalization(ProcessBundleResponse response);
 }

@@ -58,7 +58,7 @@ MESSAGE_LOG_LEVELS = {
 
 TERMINAL_STATES = [
     beam_job_api_pb2.JobState.DONE,
-    beam_job_api_pb2.JobState.STOPPED,
+    beam_job_api_pb2.JobState.DRAINED,
     beam_job_api_pb2.JobState.FAILED,
     beam_job_api_pb2.JobState.CANCELLED,
 ]
@@ -178,10 +178,9 @@ class PortableRunner(runner.PipelineRunner):
         del transform_proto.subtransforms[:]
 
     # Preemptively apply combiner lifting, until all runners support it.
-    # Also apply sdf expansion.
     # These optimizations commute and are idempotent.
     pre_optimize = options.view_as(DebugOptions).lookup_experiment(
-        'pre_optimize', 'lift_combiners,expand_sdf').lower()
+        'pre_optimize', 'lift_combiners').lower()
     if not options.view_as(StandardOptions).streaming:
       flink_known_urns = frozenset([
           common_urns.composites.RESHUFFLE.urn,
@@ -210,7 +209,7 @@ class PortableRunner(runner.PipelineRunner):
         phases = []
         for phase_name in pre_optimize.split(','):
           # For now, these are all we allow.
-          if phase_name in ('lift_combiners', 'expand_sdf'):
+          if phase_name in 'lift_combiners':
             phases.append(getattr(fn_api_runner_transforms, phase_name))
           else:
             raise ValueError(
@@ -274,10 +273,12 @@ class PortableRunner(runner.PipelineRunner):
                  for k, v in all_options.items()
                  if v is not None}
 
+    prepare_request = beam_job_api_pb2.PrepareJobRequest(
+        job_name='job', pipeline=proto_pipeline,
+        pipeline_options=job_utils.dict_to_struct(p_options))
+    logging.debug('PrepareJobRequest: %s', prepare_request)
     prepare_response = job_service.Prepare(
-        beam_job_api_pb2.PrepareJobRequest(
-            job_name='job', pipeline=proto_pipeline,
-            pipeline_options=job_utils.dict_to_struct(p_options)),
+        prepare_request,
         timeout=portable_options.job_server_timeout)
     if prepare_response.artifact_staging_endpoint.url:
       stager = portable_stager.PortableStager(

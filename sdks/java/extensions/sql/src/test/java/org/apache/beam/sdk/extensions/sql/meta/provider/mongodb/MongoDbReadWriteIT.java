@@ -48,10 +48,9 @@ import org.apache.beam.sdk.values.Row;
 import org.bson.Document;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
+import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
 
 /**
  * A test of {@link org.apache.beam.sdk.extensions.sql.meta.provider.mongodb.MongoDbTable} on an
@@ -76,7 +75,7 @@ import org.junit.runners.JUnit4;
  * <p>Please see 'build_rules.gradle' file for instructions regarding running this test using Beam
  * performance testing framework.
  */
-@RunWith(JUnit4.class)
+@Ignore("https://issues.apache.org/jira/browse/BEAM-8586")
 public class MongoDbReadWriteIT {
   private static final Schema SOURCE_SCHEMA =
       Schema.builder()

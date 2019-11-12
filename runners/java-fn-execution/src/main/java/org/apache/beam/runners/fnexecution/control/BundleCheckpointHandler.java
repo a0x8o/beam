@@ -17,13 +17,17 @@
  */
 package org.apache.beam.runners.fnexecution.control;
 
-import java.util.concurrent.CompletionStage;
 import org.apache.beam.model.fnexecution.v1.BeamFnApi;
 
 /**
- * Interface for any function that can handle a Fn API {@link BeamFnApi.InstructionRequest}. Any
- * error responses will be converted to exceptionally completed futures.
+ * A handler which is invoked when the SDK returns {@link BeamFnApi.DelayedBundleApplication}s as
+ * part of the bundle completion.
+ *
+ * <p>These bundle applications must be resumed otherwise data loss will occur.
+ *
+ * <p>See <a href="https://s.apache.org/beam-breaking-fusion">breaking the fusion barrier</a> for
+ * further details.
  */
-public interface InstructionRequestHandler extends AutoCloseable {
-  CompletionStage<BeamFnApi.InstructionResponse> handle(BeamFnApi.InstructionRequest request);
+public interface BundleCheckpointHandler {
+  void onCheckpoint(BeamFnApi.ProcessBundleResponse response);
 }
