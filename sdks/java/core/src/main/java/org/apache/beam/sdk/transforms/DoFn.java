@@ -592,6 +592,8 @@ public abstract class DoFn<InputT, OutputT> implements Serializable, HasDisplayD
    * <ul>
    *   <li>If one of the parameters is of type {@link DoFn.StartBundleContext}, then it will be
    *       passed a context object for the current execution.
+   *   <li>If one of the parameters is of type {@link PipelineOptions}, then it will be passed the
+   *       options for the current pipeline.
    *   <li>If one of the parameters is of type {@link BundleFinalizer}, then it will be passed a
    *       mechanism to register a callback that will be invoked after the runner successfully
    *       commits the output of this bundle. See <a
@@ -599,7 +601,6 @@ public abstract class DoFn<InputT, OutputT> implements Serializable, HasDisplayD
    *       Finalize Bundles</a> for further details.
    * </ul>
    */
-  // TODO: Add support for bundle finalization parameter.
   @Documented
   @Retention(RetentionPolicy.RUNTIME)
   @Target(ElementType.METHOD)
@@ -811,11 +812,15 @@ public abstract class DoFn<InputT, OutputT> implements Serializable, HasDisplayD
    * <ul>
    *   <li>If one of the parameters is of type {@link DoFn.FinishBundleContext}, then it will be
    *       passed a context object for the current execution.
+   *   <li>If one of the parameters is of type {@link PipelineOptions}, then it will be passed the
+   *       options for the current pipeline.
    *   <li>If one of the parameters is of type {@link BundleFinalizer}, then it will be passed a
    *       mechanism to register a callback that will be invoked after the runner successfully
    *       commits the output of this bundle. See <a
    *       href="https://s.apache.org/beam-finalizing-bundles">Apache Beam Portability API: How to
    *       Finalize Bundles</a> for further details.
+   *   <li>TODO(BEAM-1287): Add support for an {@link OutputReceiver} and {@link
+   *       MultiOutputReceiver} that can output to a window.
    * </ul>
    *
    * <p>Note that {@link FinishBundle @FinishBundle} is invoked before the runner commits the output
@@ -1165,8 +1170,7 @@ public abstract class DoFn<InputT, OutputT> implements Serializable, HasDisplayD
    * consumers without waiting for finalization to succeed. For pipelines that are sensitive to
    * duplicate messages, they must perform output deduplication in the pipeline.
    */
-  // TODO: Add support for a deduplication PTransform.
-  @Experimental(Kind.SPLITTABLE_DO_FN)
+  @Experimental(Kind.PORTABILITY)
   public interface BundleFinalizer {
     /**
      * The provided function will be called after the runner successfully commits the output of a

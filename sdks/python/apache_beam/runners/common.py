@@ -41,17 +41,21 @@ from typing import Tuple
 from future.utils import raise_with_traceback
 from past.builtins import unicode
 
+from apache_beam.coders import TupleCoder
 from apache_beam.internal import util
 from apache_beam.options.value_provider import RuntimeValueProvider
 from apache_beam.pvalue import TaggedOutput
+from apache_beam.runners.sdf_utils import NoOpWatermarkEstimatorProvider
 from apache_beam.runners.sdf_utils import RestrictionTrackerView
 from apache_beam.runners.sdf_utils import SplitResultPrimary
 from apache_beam.runners.sdf_utils import SplitResultResidual
 from apache_beam.runners.sdf_utils import ThreadsafeRestrictionTracker
+from apache_beam.runners.sdf_utils import ThreadsafeWatermarkEstimator
 from apache_beam.transforms import DoFn
 from apache_beam.transforms import core
 from apache_beam.transforms import userstate
 from apache_beam.transforms.core import RestrictionProvider
+from apache_beam.transforms.core import WatermarkEstimatorProvider
 from apache_beam.transforms.window import GlobalWindow
 from apache_beam.transforms.window import TimestampedValue
 from apache_beam.transforms.window import WindowFn
@@ -63,6 +67,9 @@ from apache_beam.utils.windowed_value import WindowedValue
 if TYPE_CHECKING:
   from apache_beam.transforms import sideinputs
   from apache_beam.transforms.core import TimerSpec
+  from apache_beam.io.iobase import RestrictionProgress
+  from apache_beam.iobase import RestrictionTracker
+  from apache_beam.iobase import WatermarkEstimator
 
 
 class NameContext(object):
@@ -166,7 +173,8 @@ class MethodWrapper(object):
       method_name: name of the method as a string.
     """
 
-    if not isinstance(obj_to_invoke, (DoFn, RestrictionProvider)):
+    if not isinstance(obj_to_invoke,
+                      (DoFn, RestrictionProvider, WatermarkEstimatorProvider)):
       raise ValueError(
           '\'obj_to_invoke\' has to be either a \'DoFn\' or '
           'a \'RestrictionProvider\'. Received %r instead.' % obj_to_invoke)
@@ -185,8 +193,8 @@ class MethodWrapper(object):
     self.key_arg_name = None  # type: Optional[str]
     self.restriction_provider = None
     self.restriction_provider_arg_name = None
-    self.watermark_estimator = None
-    self.watermark_estimator_arg_name = None
+    self.watermark_estimator_provider = None
+    self.watermark_estimator_provider_arg_name = None
 
     for kw, v in zip(self.args[-len(self.defaults):], self.defaults):
       if isinstance(v, core.DoFn.StateParam):
@@ -205,8 +213,13 @@ class MethodWrapper(object):
         self.restriction_provider = v.restriction_provider
         self.restriction_provider_arg_name = kw
       elif isinstance(v, core.DoFn.WatermarkEstimatorParam):
-        self.watermark_estimator = v.watermark_estimator
-        self.watermark_estimator_arg_name = kw
+        self.watermark_estimator_provider = v.watermark_estimator_provider
+        self.watermark_estimator_provider_arg_name = kw
+
+    # Create NoOpWatermarkEstimatorProvider if there is no
+    # WatermarkEstimatorParam provided.
+    if self.watermark_estimator_provider is None:
+      self.watermark_estimator_provider = NoOpWatermarkEstimatorProvider()
 
   def invoke_timer_callback(self, user_state_context, key, window, timestamp):
     # TODO(ccy): support side inputs.
@@ -255,11 +268,12 @@ class DoFnSignature(object):
     self.teardown_lifecycle_method = MethodWrapper(do_fn, 'teardown')
 
     restriction_provider = self.get_restriction_provider()
+    watermark_estimator_provider = self.get_watermark_estimator_provider()
+    self.create_watermark_estimator_method = (
+        MethodWrapper(
+            watermark_estimator_provider, 'create_watermark_estimator'))
     self.initial_restriction_method = (
         MethodWrapper(restriction_provider, 'initial_restriction')
-        if restriction_provider else None)
-    self.restriction_coder_method = (
-        MethodWrapper(restriction_provider, 'restriction_coder')
         if restriction_provider else None)
     self.create_tracker_method = (
         MethodWrapper(restriction_provider, 'create_tracker')
@@ -284,16 +298,20 @@ class DoFnSignature(object):
     # type: () -> RestrictionProvider
     return self.process_method.restriction_provider
 
-  def get_watermark_estimator(self):
-    return self.process_method.watermark_estimator
+  def get_watermark_estimator_provider(self):
+    # type: () -> WatermarkEstimatorProvider
+    return self.process_method.watermark_estimator_provider
 
   def _validate(self):
+    # type: () -> None
     self._validate_process()
     self._validate_bundle_method(self.start_bundle_method)
     self._validate_bundle_method(self.finish_bundle_method)
     self._validate_stateful_dofn()
 
   def _validate_process(self):
+    # type: () -> None
+
     """Validate that none of the DoFnParameters are repeated in the function
     """
     param_ids = [
@@ -315,11 +333,24 @@ class DoFnSignature(object):
             (param, method_wrapper))
 
   def _validate_stateful_dofn(self):
+    # type: () -> None
     userstate.validate_stateful_dofn(self.do_fn)
 
   def is_splittable_dofn(self):
     # type: () -> bool
     return self.get_restriction_provider() is not None
+
+  def get_restriction_coder(self):
+    # type: () -> Optional[TupleCoder]
+
+    """Get coder for a restriction when processing an SDF. """
+    if self.is_splittable_dofn():
+      return TupleCoder([
+          (self.get_restriction_provider().restriction_coder()),
+          (self.get_watermark_estimator_provider().estimator_state_coder())
+      ])
+    else:
+      return None
 
   def is_stateful_dofn(self):
     # type: () -> bool
@@ -329,6 +360,19 @@ class DoFnSignature(object):
     # type: () -> bool
     _, all_timer_specs = userstate.get_dofn_specs(self.do_fn)
     return bool(all_timer_specs)
+
+  def has_bundle_finalization(self):
+    for sig in (self.start_bundle_method,
+                self.process_method,
+                self.finish_bundle_method):
+      for d in sig.defaults:
+        try:
+          if d == DoFn.BundleFinalizerParam:
+            return True
+        except Exception:  # pylint: disable=broad-except
+          # Default value might be incomparable.
+          pass
+    return False
 
 
 class DoFnInvoker(object):
@@ -358,7 +402,7 @@ class DoFnInvoker(object):
   @staticmethod
   def create_invoker(
       signature,  # type: DoFnSignature
-      output_processor,  # type: OutputProcessor
+      output_processor,  # type: _OutputProcessor
       context=None,  # type: Optional[DoFnContext]
       side_inputs=None,   # type: Optional[List[sideinputs.SideInputMap]]
       input_args=None, input_kwargs=None,
@@ -415,10 +459,11 @@ class DoFnInvoker(object):
   def invoke_process(self,
                      windowed_value,  # type: WindowedValue
                      restriction_tracker=None,  # type: Optional[RestrictionTracker]
+                     watermark_estimator=None,  # type: Optional[WatermarkEstimator]
                      additional_args=None,
                      additional_kwargs=None
                     ):
-    # type: (...) -> Optional[SplitResultType]
+    # type: (...) -> Optional[SplitResultResidual]
 
     """Invokes the DoFn.process() function.
 
@@ -426,7 +471,6 @@ class DoFnInvoker(object):
       windowed_value: a WindowedValue object that gives the element for which
                       process() method should be invoked along with the window
                       the element belongs to.
-      output_processor: if provided given OutputProcessor will be used.
       additional_args: additional arguments to be passed to the current
                       `DoFn.process()` invocation, usually as side inputs.
       additional_kwargs: additional keyword arguments to be passed to the
@@ -446,8 +490,7 @@ class DoFnInvoker(object):
 
     """Invokes the DoFn.start_bundle() method.
     """
-    # self.output_processor is Optional, but in practice it won't be None here
-    self.output_processor.start_bundle_outputs(  # type: ignore[union-attr]
+    self.output_processor.start_bundle_outputs(
         self.signature.start_bundle_method.method_value())
 
   def invoke_finish_bundle(self):
@@ -455,8 +498,7 @@ class DoFnInvoker(object):
 
     """Invokes the DoFn.finish_bundle() method.
     """
-    # self.output_processor is Optional, but in practice it won't be None here
-    self.output_processor.finish_bundle_outputs(  # type: ignore[union-attr]
+    self.output_processor.finish_bundle_outputs(
         self.signature.finish_bundle_method.method_value())
 
   def invoke_teardown(self):
@@ -468,19 +510,20 @@ class DoFnInvoker(object):
 
   def invoke_user_timer(self, timer_spec, key, window, timestamp):
     # self.output_processor is Optional, but in practice it won't be None here
-    self.output_processor.process_outputs(  # type: ignore[union-attr]
-        WindowedValue(None, timestamp, (window,)),
+    self.output_processor.process_outputs(
+        WindowedValue(None, timestamp, (window, )),
         self.signature.timer_methods[timer_spec].invoke_timer_callback(
             self.user_state_context, key, window, timestamp))
+
+  def invoke_create_watermark_estimator(self, estimator_state):
+    return self.signature.create_watermark_estimator_method.method_value(
+        estimator_state)
 
   def invoke_split(self, element, restriction):
     return self.signature.split_method.method_value(element, restriction)
 
   def invoke_initial_restriction(self, element):
     return self.signature.initial_restriction_method.method_value(element)
-
-  def invoke_restriction_coder(self):
-    return self.signature.restriction_coder_method.method_value()
 
   def invoke_create_tracker(self, restriction):
     return self.signature.create_tracker_method.method_value(restriction)
@@ -500,6 +543,7 @@ class SimpleInvoker(DoFnInvoker):
   def invoke_process(self,
                      windowed_value,  # type: WindowedValue
                      restriction_tracker=None,  # type: Optional[RestrictionTracker]
+                     watermark_estimator=None, # type: Optional[WatermarkEstimator]
                      additional_args=None,
                      additional_kwargs=None
                     ):
@@ -512,7 +556,7 @@ class PerWindowInvoker(DoFnInvoker):
   """An invoker that processes elements considering windowing information."""
 
   def __init__(self,
-               output_processor,  # type: OutputProcessor
+               output_processor,  # type: _OutputProcessor
                signature,  # type: DoFnSignature
                context,  # type: DoFnContext
                side_inputs,  # type: Iterable[sideinputs.SideInputMap]
@@ -532,11 +576,8 @@ class PerWindowInvoker(DoFnInvoker):
         signature.is_stateful_dofn())
     self.user_state_context = user_state_context
     self.is_splittable = signature.is_splittable_dofn()
-    self.watermark_estimator = self.signature.get_watermark_estimator()
-    self.watermark_estimator_param = (
-        self.signature.process_method.watermark_estimator_arg_name
-        if self.watermark_estimator else None)
     self.threadsafe_restriction_tracker = None  # type: Optional[ThreadsafeRestrictionTracker]
+    self.threadsafe_watermark_estimator = None  # type: Optional[ThreadsafeWatermarkEstimator]
     self.current_windowed_value = None  # type: Optional[WindowedValue]
     self.bundle_finalizer_param = bundle_finalizer_param
     self.is_key_param_required = False
@@ -618,11 +659,12 @@ class PerWindowInvoker(DoFnInvoker):
 
   def invoke_process(self,
                      windowed_value,  # type: WindowedValue
-                     restriction_tracker=None,
+                     restriction_tracker=None, # type: Optional[RestrictionTracker]
+                     watermark_estimator=None, # type: Optional[WatermarkEstimator]
                      additional_args=None,
                      additional_kwargs=None
                     ):
-    # type: (...) -> Optional[SplitResultType]
+    # type: (...) -> Optional[SplitResultResidual]
     if not additional_args:
       additional_args = []
     if not additional_kwargs:
@@ -637,7 +679,7 @@ class PerWindowInvoker(DoFnInvoker):
       restriction = self.invoke_initial_restriction(windowed_value.value)
       restriction_tracker = self.invoke_create_tracker(restriction)
 
-    if restriction_tracker:
+    if restriction_tracker is not None:
       if len(windowed_value.windows) > 1 and self.has_windowed_inputs:
         # Should never get here due to window explosion in
         # the upstream pair-with-restriction.
@@ -654,17 +696,21 @@ class PerWindowInvoker(DoFnInvoker):
       additional_kwargs[restriction_tracker_param] = (
           RestrictionTrackerView(self.threadsafe_restriction_tracker))
 
-      if self.watermark_estimator:
-        # The watermark estimator needs to be reset for every element.
-        self.watermark_estimator.reset()
-        additional_kwargs[self.watermark_estimator_param] = (
-            self.watermark_estimator)
+      self.threadsafe_watermark_estimator = (
+          ThreadsafeWatermarkEstimator(watermark_estimator))
+      watermark_param = (
+          self.signature.process_method.watermark_estimator_provider_arg_name)
+      # When the watermark_estimator is a NoOpWatermarkEstimator, the system
+      # will not add watermark_param into the DoFn param list.
+      if watermark_param is not None:
+        additional_kwargs[watermark_param] = self.threadsafe_watermark_estimator
       try:
         self.current_windowed_value = windowed_value
         return self._invoke_process_per_window(
             windowed_value, additional_args, additional_kwargs)
       finally:
         self.threadsafe_restriction_tracker = None
+        self.threadsafe_watermark_estimator = None
         self.current_windowed_value = windowed_value
 
     elif self.has_windowed_inputs and len(windowed_value.windows) != 1:
@@ -753,27 +799,29 @@ class PerWindowInvoker(DoFnInvoker):
     if kwargs_for_process:
       self.output_processor.process_outputs(
           windowed_value,
-          self.process_method(*args_for_process, **kwargs_for_process))
+          self.process_method(*args_for_process, **kwargs_for_process),
+          self.threadsafe_watermark_estimator)
     else:
       self.output_processor.process_outputs(
-          windowed_value, self.process_method(*args_for_process))
+          windowed_value,
+          self.process_method(*args_for_process),
+          self.threadsafe_watermark_estimator)
 
     if self.is_splittable:
       assert self.threadsafe_restriction_tracker is not None
-      # TODO: Consider calling check_done right after SDF.Process() finishing.
-      # In order to do this, we need to know that current invoking dofn is
-      # ProcessSizedElementAndRestriction.
       self.threadsafe_restriction_tracker.check_done()
       deferred_status = self.threadsafe_restriction_tracker.deferred_status()
-      current_watermark = None
-      if self.watermark_estimator:
-        current_watermark = self.watermark_estimator.current_watermark()
       if deferred_status:
         deferred_restriction, deferred_timestamp = deferred_status
         element = windowed_value.value
         size = self.signature.get_restriction_provider().restriction_size(
             element, deferred_restriction)
-        residual_value = ((element, deferred_restriction), size)
+        current_watermark = (
+            self.threadsafe_watermark_estimator.current_watermark())
+        estimator_state = (
+            self.threadsafe_watermark_estimator.get_estimator_state())
+        residual_value = ((element, (deferred_restriction, estimator_state)),
+                          size)
         return SplitResultResidual(
             residual_value=windowed_value.with_value(residual_value),
             current_watermark=current_watermark,
@@ -786,19 +834,19 @@ class PerWindowInvoker(DoFnInvoker):
       # Temporary workaround for [BEAM-7473]: get current_watermark before
       # split, in case watermark gets advanced before getting split results.
       # In worst case, current_watermark is always stale, which is ok.
-      if self.watermark_estimator:
-        current_watermark = self.watermark_estimator.current_watermark()
-      else:
-        current_watermark = None
       split = self.threadsafe_restriction_tracker.try_split(fraction)
+      current_watermark = (
+          self.threadsafe_watermark_estimator.current_watermark())
+      estimator_state = (
+          self.threadsafe_watermark_estimator.get_estimator_state())
       if split:
         primary, residual = split
         element = self.current_windowed_value.value
         restriction_provider = self.signature.get_restriction_provider()
         primary_size = restriction_provider.restriction_size(element, primary)
         residual_size = restriction_provider.restriction_size(element, residual)
-        primary_value = ((element, primary), primary_size)
-        residual_value = ((element, residual), residual_size)
+        primary_value = ((element, (primary, None)), primary_size)
+        residual_value = ((element, (residual, estimator_state)), residual_size)
         return (
             SplitResultPrimary(
                 primary_value=self.current_windowed_value.with_value(
@@ -910,11 +958,14 @@ class DoFnRunner:
 
   def process_with_sized_restriction(self, windowed_value):
     # type: (WindowedValue) -> Optional[SplitResultResidual]
-    (element, restriction), _ = windowed_value.value
+    (element, (restriction, estimator_state)), _ = windowed_value.value
+    watermark_estimator = (
+        self.do_fn_invoker.invoke_create_watermark_estimator(estimator_state))
     return self.do_fn_invoker.invoke_process(
         windowed_value.with_value(element),
         restriction_tracker=self.do_fn_invoker.invoke_create_tracker(
-            restriction))
+            restriction),
+        watermark_estimator=watermark_estimator)
 
   def try_split(self, fraction):
     # type: (...) -> Optional[Tuple[SplitResultPrimary, SplitResultResidual]]
@@ -947,18 +998,23 @@ class DoFnRunner:
       self._reraise_augmented(exn)
 
   def setup(self):
+    # type: () -> None
     self._invoke_lifecycle_method(self.do_fn_invoker.invoke_setup)
 
   def start(self):
+    # type: () -> None
     self._invoke_bundle_method(self.do_fn_invoker.invoke_start_bundle)
 
   def finish(self):
+    # type: () -> None
     self._invoke_bundle_method(self.do_fn_invoker.invoke_finish_bundle)
 
   def teardown(self):
+    # type: () -> None
     self._invoke_lifecycle_method(self.do_fn_invoker.invoke_teardown)
 
   def finalize(self):
+    # type: () -> None
     self.bundle_finalizer_param.finalize_bundle()
 
   def _reraise_augmented(self, exn):
@@ -982,8 +1038,9 @@ class DoFnRunner:
 
 
 class OutputProcessor(object):
-  def process_outputs(self, windowed_input_element, results):
-    # type: (WindowedValue, Iterable[Any]) -> None
+  def process_outputs(
+      self, windowed_input_element, results, watermark_estimator=None):
+    # type: (WindowedValue, Iterable[Any], Optional[WatermarkEstimator]) -> None
     raise NotImplementedError
 
 
@@ -1009,8 +1066,9 @@ class _OutputProcessor(OutputProcessor):
     self.tagged_receivers = tagged_receivers
     self.per_element_output_counter = per_element_output_counter
 
-  def process_outputs(self, windowed_input_element, results):
-    # type: (WindowedValue, Iterable[Any]) -> None
+  def process_outputs(
+      self, windowed_input_element, results, watermark_estimator=None):
+    # type: (WindowedValue, Iterable[Any], Optional[WatermarkEstimator]) -> None
 
     """Dispatch the result of process computation to the appropriate receivers.
 
@@ -1050,6 +1108,8 @@ class _OutputProcessor(OutputProcessor):
           windowed_value.windows *= len(windowed_input_element.windows)
       else:
         windowed_value = windowed_input_element.with_value(result)
+      if watermark_estimator is not None:
+        watermark_estimator.observe_timestamp(windowed_value.timestamp)
       if tag is None:
         self.main_receivers.receive(windowed_value)
       else:

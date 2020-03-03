@@ -24,7 +24,6 @@ import os
 import platform
 import sys
 import warnings
-from distutils import log
 from distutils.errors import DistutilsError
 from distutils.version import StrictVersion
 
@@ -136,8 +135,8 @@ else:
 
 REQUIRED_PACKAGES = [
     # Apache Avro does not follow semantic versioning, so we should not auto
-    # upgrade on minor versions. However, due to an issue on Dataflow we need
-    # to still include the previous version (1.8.x).
+    # upgrade on minor versions. Due to AVRO-2429, Dataflow still
+    # requires Avro 1.8.x.
     'avro>=1.8.1,<1.10.0; python_version < "3.0"',
     # Avro 1.9.2 for python3 was broken. The issue was fixed in version 1.9.2.1
     'avro-python3>=1.8.1,!=1.9.2,<1.10.0; python_version >= "3.0"',
@@ -204,13 +203,18 @@ GCP_REQUIREMENTS = [
     'google-cloud-datastore>=1.7.1,<1.8.0',
     'google-cloud-pubsub>=0.39.0,<1.1.0',
     # GCP packages required by tests
-    'google-cloud-bigquery>=1.6.0,<1.18.0',
+    'google-cloud-bigquery>=1.6.0,<=1.24.0',
     'google-cloud-core>=0.28.1,<2',
     'google-cloud-bigtable>=0.31.1,<1.1.0',
     # [BEAM-4543] googledatastore is not supported in Python 3.
     'proto-google-cloud-datastore-v1>=0.90.0,<=0.90.4; python_version < "3.0"',
     'google-cloud-spanner>=1.13.0,<1.14.0',
     'grpcio-gcp>=0.2.2,<1',
+    # GCP Packages required by ML functionality
+    'google-cloud-dlp>=0.12.0,<=0.13.0',
+    'google-cloud-language>=1.3.0,<2',
+    'google-cloud-videointelligence>=1.8.0,<1.14.0',
+    'google-cloud-vision>=0.38.0,<0.43.0',
 ]
 
 INTERACTIVE_BEAM = [
@@ -234,7 +238,7 @@ def generate_protos_first(original_cmd):
 
     class cmd(original_cmd, object):
       def run(self):
-        gen_protos.generate_proto_files(log=log)
+        gen_protos.generate_proto_files()
         super(cmd, self).run()
     return cmd
   except ImportError:

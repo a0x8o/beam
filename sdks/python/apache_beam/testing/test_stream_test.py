@@ -24,8 +24,10 @@ from __future__ import absolute_import
 import unittest
 
 import apache_beam as beam
+from apache_beam.options.pipeline_options import DebugOptions
 from apache_beam.options.pipeline_options import PipelineOptions
 from apache_beam.options.pipeline_options import StandardOptions
+from apache_beam.portability import common_urns
 from apache_beam.testing.test_pipeline import TestPipeline
 from apache_beam.testing.test_stream import ElementEvent
 from apache_beam.testing.test_stream import ProcessingTimeEvent
@@ -132,11 +134,12 @@ class TestStreamTest(unittest.TestCase):
         TimestampedValue('2', 12),
         TimestampedValue('3', 13),
     ]
-    test_stream = (
-        TestStream().advance_watermark_to(5, tag='letters').add_elements(
-            letters_elements,
-            tag='letters').advance_watermark_to(10, tag='numbers').add_elements(
-                numbers_elements, tag='numbers'))
+    test_stream = \
+        (TestStream()
+             .advance_watermark_to(5, tag='letters')
+             .add_elements(letters_elements, tag='letters')
+             .advance_watermark_to(10, tag='numbers')
+         .add_elements(numbers_elements, tag='numbers')) # yapf: disable
 
     class RecordFn(beam.DoFn):
       def process(
@@ -146,6 +149,8 @@ class TestStreamTest(unittest.TestCase):
         yield (element, timestamp)
 
     options = StandardOptions(streaming=True)
+    options.view_as(DebugOptions).add_experiment(
+        'passthrough_pcollection_output_ids')
     p = TestPipeline(options=options)
 
     main = p | test_stream
@@ -188,20 +193,19 @@ class TestStreamTest(unittest.TestCase):
         TimestampedValue('2', 22),
         TimestampedValue('3', 23),
     ]
-    test_stream = (
-        TestStream().advance_watermark_to(
-            0, tag='letters').advance_watermark_to(
-                0, tag='numbers').advance_watermark_to(
-                    20, tag='numbers').advance_watermark_to(
-                        5, tag='letters').add_elements(
-                            letters_elements,
-                            tag='letters').advance_watermark_to(
-                                10, tag='letters').add_elements(
-                                    numbers_elements,
-                                    tag='numbers').advance_watermark_to(
-                                        30, tag='numbers'))
+    test_stream = (TestStream()
+                   .advance_watermark_to(0, tag='letters')
+                   .advance_watermark_to(0, tag='numbers')
+                   .advance_watermark_to(20, tag='numbers')
+                   .advance_watermark_to(5, tag='letters')
+                   .add_elements(letters_elements, tag='letters')
+                   .advance_watermark_to(10, tag='letters')
+                   .add_elements(numbers_elements, tag='numbers')
+                   .advance_watermark_to(30, tag='numbers')) # yapf: disable
 
     options = StandardOptions(streaming=True)
+    options.view_as(DebugOptions).add_experiment(
+        'passthrough_pcollection_output_ids')
     p = TestPipeline(options=options)
 
     main = p | test_stream
@@ -527,6 +531,60 @@ class TestStreamTest(unittest.TestCase):
         label='assert per window')
 
     p.run()
+
+  def test_roundtrip_proto(self):
+    test_stream = (TestStream()
+                   .advance_processing_time(1)
+                   .advance_watermark_to(2)
+                   .add_elements([1, 2, 3])) # yapf: disable
+
+    p = TestPipeline(options=StandardOptions(streaming=True))
+    p | test_stream
+
+    pipeline_proto, context = p.to_runner_api(return_context=True)
+
+    for t in pipeline_proto.components.transforms.values():
+      if t.spec.urn == common_urns.primitives.TEST_STREAM.urn:
+        test_stream_proto = t
+
+    self.assertTrue(test_stream_proto)
+    roundtrip_test_stream = TestStream().from_runner_api(
+        test_stream_proto, context)
+
+    self.assertListEqual(test_stream._events, roundtrip_test_stream._events)
+    self.assertSetEqual(
+        test_stream.output_tags, roundtrip_test_stream.output_tags)
+    self.assertEqual(test_stream.coder, roundtrip_test_stream.coder)
+
+  def test_roundtrip_proto_multi(self):
+    test_stream = (TestStream()
+                   .advance_processing_time(1)
+                   .advance_watermark_to(2, tag='a')
+                   .advance_watermark_to(3, tag='b')
+                   .add_elements([1, 2, 3], tag='a')
+                   .add_elements([4, 5, 6], tag='b')) # yapf: disable
+
+    options = StandardOptions(streaming=True)
+    options.view_as(DebugOptions).add_experiment(
+        'passthrough_pcollection_output_ids')
+
+    p = TestPipeline(options=options)
+    p | test_stream
+
+    pipeline_proto, context = p.to_runner_api(return_context=True)
+
+    for t in pipeline_proto.components.transforms.values():
+      if t.spec.urn == common_urns.primitives.TEST_STREAM.urn:
+        test_stream_proto = t
+
+    self.assertTrue(test_stream_proto)
+    roundtrip_test_stream = TestStream().from_runner_api(
+        test_stream_proto, context)
+
+    self.assertListEqual(test_stream._events, roundtrip_test_stream._events)
+    self.assertSetEqual(
+        test_stream.output_tags, roundtrip_test_stream.output_tags)
+    self.assertEqual(test_stream.coder, roundtrip_test_stream.coder)
 
 
 if __name__ == '__main__':
