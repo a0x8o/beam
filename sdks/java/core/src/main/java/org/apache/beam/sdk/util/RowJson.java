@@ -49,10 +49,11 @@ import com.fasterxml.jackson.databind.ser.std.StdSerializer;
 import com.google.auto.value.AutoValue;
 import java.io.IOException;
 import java.math.BigDecimal;
-import java.util.List;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
 import javax.annotation.Nullable;
+import org.apache.beam.sdk.annotations.Experimental;
+import org.apache.beam.sdk.annotations.Experimental.Kind;
 import org.apache.beam.sdk.schemas.Schema;
 import org.apache.beam.sdk.schemas.Schema.Field;
 import org.apache.beam.sdk.schemas.Schema.FieldType;
@@ -77,6 +78,7 @@ import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Immutabl
  *   <li>{@link Schema.TypeName#STRING}
  * </ul>
  */
+@Experimental(Kind.SCHEMAS)
 public class RowJson {
   /** Jackson deserializer for parsing JSON into {@link Row Rows}. */
   public static class RowJsonDeserializer extends StdDeserializer<Row> {
@@ -241,7 +243,8 @@ public class RowJson {
       }
 
       boolean isArrayType() {
-        return TypeName.ARRAY.equals(type().getTypeName());
+        return TypeName.ARRAY.equals(type().getTypeName())
+            || TypeName.ITERABLE.equals(type().getTypeName());
       }
 
       FieldType arrayElementType() {
@@ -350,8 +353,9 @@ public class RowJson {
           gen.writeNumber((BigDecimal) value);
           break;
         case ARRAY:
+        case ITERABLE:
           gen.writeStartArray();
-          for (Object element : (List<Object>) value) {
+          for (Object element : (Iterable<Object>) value) {
             writeValue(gen, type.getCollectionElementType(), element);
           }
           gen.writeEndArray();

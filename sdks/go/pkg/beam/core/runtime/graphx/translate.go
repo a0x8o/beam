@@ -43,10 +43,10 @@ const (
 	// URNIterableSideInput = "beam:side_input:iterable:v1"
 	URNMultimapSideInput = "beam:side_input:multimap:v1"
 
-	URNGlobalWindowsWindowFn  = "beam:windowfn:global_windows:v0.1"
-	URNFixedWindowsWindowFn   = "beam:windowfn:fixed_windows:v0.1"
-	URNSlidingWindowsWindowFn = "beam:windowfn:sliding_windows:v0.1"
-	URNSessionsWindowFn       = "beam:windowfn:session_windows:v0.1"
+	URNGlobalWindowsWindowFn  = "beam:window_fn:global_windows:v1"
+	URNFixedWindowsWindowFn   = "beam:window_fn:fixed_windows:v1"
+	URNSlidingWindowsWindowFn = "beam:window_fn:sliding_windows:v1"
+	URNSessionsWindowFn       = "beam:window_fn:session_windows:v1"
 
 	// SDK constants
 
@@ -161,16 +161,14 @@ func (m *marshaller) updateIfCombineComposite(s *ScopeTree, transform *pb.PTrans
 	edge := s.Edges[1].Edge
 	acID := m.coders.Add(edge.AccumCoder)
 	payload := &pb.CombinePayload{
-		CombineFn: &pb.SdkFunctionSpec{
-			Spec: &pb.FunctionSpec{
-				Urn:     URNJavaDoFn,
-				Payload: []byte(mustEncodeMultiEdgeBase64(edge)),
-			},
-			EnvironmentId: m.addDefaultEnv(),
+		CombineFn: &pb.FunctionSpec{
+			Urn:     URNJavaDoFn,
+			Payload: []byte(mustEncodeMultiEdgeBase64(edge)),
 		},
 		AccumulatorCoderId: acID,
 	}
 	transform.Spec = &pb.FunctionSpec{Urn: URNCombinePerKey, Payload: protox.MustEncode(payload)}
+	transform.EnvironmentId = m.addDefaultEnv()
 }
 
 func (m *marshaller) addMultiEdge(edge NamedEdge) []string {
@@ -197,6 +195,7 @@ func (m *marshaller) addMultiEdge(edge NamedEdge) []string {
 	// allPIds tracks additional PTransformIDs generated for the pipeline
 	var allPIds []string
 	var spec *pb.FunctionSpec
+	var transformEnvID = ""
 	switch edge.Edge.Op {
 	case graph.Impulse:
 		// TODO(herohde) 7/18/2018: Encode data?
@@ -218,14 +217,11 @@ func (m *marshaller) addMultiEdge(edge NamedEdge) []string {
 				m.makeNode(out, m.coders.Add(makeBytesKeyedCoder(in.From.Coder)), in.From)
 
 				payload := &pb.ParDoPayload{
-					DoFn: &pb.SdkFunctionSpec{
-						Spec: &pb.FunctionSpec{
+					DoFn: &pb.FunctionSpec{
+						Urn: URNIterableSideInputKey,
+						Payload: []byte(protox.MustEncodeBase64(&v1.TransformPayload{
 							Urn: URNIterableSideInputKey,
-							Payload: []byte(protox.MustEncodeBase64(&v1.TransformPayload{
-								Urn: URNIterableSideInputKey,
-							})),
-						},
-						EnvironmentId: m.addDefaultEnv(),
+						})),
 					},
 				}
 
@@ -236,8 +232,9 @@ func (m *marshaller) addMultiEdge(edge NamedEdge) []string {
 						Urn:     URNParDo,
 						Payload: protox.MustEncode(payload),
 					},
-					Inputs:  map[string]string{"i0": nodeID(in.From)},
-					Outputs: map[string]string{"i0": out},
+					Inputs:        map[string]string{"i0": nodeID(in.From)},
+					Outputs:       map[string]string{"i0": out},
+					EnvironmentId: m.addDefaultEnv(),
 				}
 				m.transforms[keyedID] = keyed
 				allPIds = append(allPIds, keyedID)
@@ -249,17 +246,11 @@ func (m *marshaller) addMultiEdge(edge NamedEdge) []string {
 					AccessPattern: &pb.FunctionSpec{
 						Urn: URNMultimapSideInput,
 					},
-					ViewFn: &pb.SdkFunctionSpec{
-						Spec: &pb.FunctionSpec{
-							Urn: "foo",
-						},
-						EnvironmentId: m.addDefaultEnv(),
+					ViewFn: &pb.FunctionSpec{
+						Urn: "foo",
 					},
-					WindowMappingFn: &pb.SdkFunctionSpec{
-						Spec: &pb.FunctionSpec{
-							Urn: "bar",
-						},
-						EnvironmentId: m.addDefaultEnv(),
+					WindowMappingFn: &pb.FunctionSpec{
+						Urn: "bar",
 					},
 				}
 
@@ -272,27 +263,27 @@ func (m *marshaller) addMultiEdge(edge NamedEdge) []string {
 		}
 
 		payload := &pb.ParDoPayload{
-			DoFn: &pb.SdkFunctionSpec{
-				Spec: &pb.FunctionSpec{
-					Urn:     URNJavaDoFn,
-					Payload: []byte(mustEncodeMultiEdgeBase64(edge.Edge)),
-				},
-				EnvironmentId: m.addDefaultEnv(),
+			DoFn: &pb.FunctionSpec{
+				Urn:     URNJavaDoFn,
+				Payload: []byte(mustEncodeMultiEdgeBase64(edge.Edge)),
 			},
 			SideInputs: si,
 		}
+		if edge.Edge.DoFn.IsSplittable() {
+			payload.Splittable = true
+			payload.RestrictionCoderId = m.coders.Add(edge.Edge.RestrictionCoder)
+		}
+		transformEnvID = m.addDefaultEnv()
 		spec = &pb.FunctionSpec{Urn: URNParDo, Payload: protox.MustEncode(payload)}
 
 	case graph.Combine:
 		payload := &pb.ParDoPayload{
-			DoFn: &pb.SdkFunctionSpec{
-				Spec: &pb.FunctionSpec{
-					Urn:     URNJavaDoFn,
-					Payload: []byte(mustEncodeMultiEdgeBase64(edge.Edge)),
-				},
-				EnvironmentId: m.addDefaultEnv(),
+			DoFn: &pb.FunctionSpec{
+				Urn:     URNJavaDoFn,
+				Payload: []byte(mustEncodeMultiEdgeBase64(edge.Edge)),
 			},
 		}
+		transformEnvID = m.addDefaultEnv()
 		spec = &pb.FunctionSpec{Urn: URNParDo, Payload: protox.MustEncode(payload)}
 
 	case graph.Flatten:
@@ -303,9 +294,7 @@ func (m *marshaller) addMultiEdge(edge NamedEdge) []string {
 
 	case graph.WindowInto:
 		payload := &pb.WindowIntoPayload{
-			WindowFn: &pb.SdkFunctionSpec{
-				Spec: makeWindowFn(edge.Edge.WindowFn),
-			},
+			WindowFn: makeWindowFn(edge.Edge.WindowFn),
 		}
 		spec = &pb.FunctionSpec{Urn: URNWindow, Payload: protox.MustEncode(payload)}
 
@@ -317,10 +306,11 @@ func (m *marshaller) addMultiEdge(edge NamedEdge) []string {
 	}
 
 	transform := &pb.PTransform{
-		UniqueName: edge.Name,
-		Spec:       spec,
-		Inputs:     inputs,
-		Outputs:    outputs,
+		UniqueName:    edge.Name,
+		Spec:          spec,
+		Inputs:        inputs,
+		Outputs:       outputs,
+		EnvironmentId: transformEnvID,
 	}
 	m.transforms[id] = transform
 	allPIds = append(allPIds, id)
@@ -348,15 +338,12 @@ func (m *marshaller) expandCoGBK(edge NamedEdge) string {
 
 		injectID := fmt.Sprintf("%v_inject%v", id, i)
 		payload := &pb.ParDoPayload{
-			DoFn: &pb.SdkFunctionSpec{
-				Spec: &pb.FunctionSpec{
-					Urn: URNInject,
-					Payload: []byte(protox.MustEncodeBase64(&v1.TransformPayload{
-						Urn:    URNInject,
-						Inject: &v1.InjectPayload{N: (int32)(i)},
-					})),
-				},
-				EnvironmentId: m.addDefaultEnv(),
+			DoFn: &pb.FunctionSpec{
+				Urn: URNInject,
+				Payload: []byte(protox.MustEncodeBase64(&v1.TransformPayload{
+					Urn:    URNInject,
+					Inject: &v1.InjectPayload{N: (int32)(i)},
+				})),
 			},
 		}
 		inject := &pb.PTransform{
@@ -365,8 +352,9 @@ func (m *marshaller) expandCoGBK(edge NamedEdge) string {
 				Urn:     URNParDo,
 				Payload: protox.MustEncode(payload),
 			},
-			Inputs:  map[string]string{"i0": nodeID(in.From)},
-			Outputs: map[string]string{"i0": out},
+			Inputs:        map[string]string{"i0": nodeID(in.From)},
+			Outputs:       map[string]string{"i0": out},
+			EnvironmentId: m.addDefaultEnv(),
 		}
 		m.transforms[injectID] = inject
 		subtransforms = append(subtransforms, injectID)
@@ -412,14 +400,11 @@ func (m *marshaller) expandCoGBK(edge NamedEdge) string {
 
 	expandID := fmt.Sprintf("%v_expand", id)
 	payload := &pb.ParDoPayload{
-		DoFn: &pb.SdkFunctionSpec{
-			Spec: &pb.FunctionSpec{
+		DoFn: &pb.FunctionSpec{
+			Urn: URNExpand,
+			Payload: []byte(protox.MustEncodeBase64(&v1.TransformPayload{
 				Urn: URNExpand,
-				Payload: []byte(protox.MustEncodeBase64(&v1.TransformPayload{
-					Urn: URNExpand,
-				})),
-			},
-			EnvironmentId: m.addDefaultEnv(),
+			})),
 		},
 	}
 	expand := &pb.PTransform{
@@ -428,8 +413,9 @@ func (m *marshaller) expandCoGBK(edge NamedEdge) string {
 			Urn:     URNParDo,
 			Payload: protox.MustEncode(payload),
 		},
-		Inputs:  map[string]string{"i0": gbkOut},
-		Outputs: map[string]string{"i0": nodeID(outNode)},
+		Inputs:        map[string]string{"i0": gbkOut},
+		Outputs:       map[string]string{"i0": nodeID(outNode)},
+		EnvironmentId: m.addDefaultEnv(),
 	}
 	m.transforms[id] = expand
 	subtransforms = append(subtransforms, id)
@@ -481,6 +467,7 @@ func (m *marshaller) addDefaultEnv() string {
 
 func (m *marshaller) addWindowingStrategy(w *window.WindowingStrategy) string {
 	ws := marshalWindowingStrategy(m.coders, w)
+	ws.EnvironmentId = m.addDefaultEnv()
 	return m.internWindowingStrategy(ws)
 }
 
@@ -500,9 +487,7 @@ func (m *marshaller) internWindowingStrategy(w *pb.WindowingStrategy) string {
 // the given coder context.
 func marshalWindowingStrategy(c *CoderMarshaller, w *window.WindowingStrategy) *pb.WindowingStrategy {
 	ws := &pb.WindowingStrategy{
-		WindowFn: &pb.SdkFunctionSpec{
-			Spec: makeWindowFn(w.Fn),
-		},
+		WindowFn:         makeWindowFn(w.Fn),
 		MergeStatus:      pb.MergeStatus_NON_MERGING,
 		AccumulationMode: pb.AccumulationMode_DISCARDING,
 		WindowCoderId:    c.AddWindowCoder(makeWindowCoder(w.Fn)),
@@ -548,7 +533,7 @@ func makeWindowFn(w *window.Fn) *pb.FunctionSpec {
 		return &pb.FunctionSpec{
 			Urn: URNSessionsWindowFn,
 			Payload: protox.MustEncode(
-				&pb.SessionsPayload{
+				&pb.SessionWindowsPayload{
 					GapSize: ptypes.DurationProto(w.Gap),
 				},
 			),

@@ -19,16 +19,19 @@ package org.apache.beam.runners.dataflow.util;
 
 import java.io.IOException;
 import org.apache.beam.model.pipeline.v1.SchemaApi;
-import org.apache.beam.runners.core.construction.SchemaTranslation;
 import org.apache.beam.runners.core.construction.SdkComponents;
+import org.apache.beam.sdk.annotations.Experimental;
+import org.apache.beam.sdk.annotations.Experimental.Kind;
 import org.apache.beam.sdk.schemas.Schema;
 import org.apache.beam.sdk.schemas.SchemaCoder;
+import org.apache.beam.sdk.schemas.SchemaTranslation;
 import org.apache.beam.sdk.transforms.SerializableFunction;
 import org.apache.beam.sdk.util.SerializableUtils;
 import org.apache.beam.sdk.util.StringUtils;
 import org.apache.beam.sdk.values.TypeDescriptor;
 
 /** Translator for Schema coders. */
+@Experimental(Kind.SCHEMAS)
 public class SchemaCoderCloudObjectTranslator implements CloudObjectTranslator<SchemaCoder> {
   private static final String SCHEMA = "schema";
   private static final String TYPE_DESCRIPTOR = "typeDescriptor";
@@ -59,7 +62,7 @@ public class SchemaCoderCloudObjectTranslator implements CloudObjectTranslator<S
         base,
         SCHEMA,
         StringUtils.byteArrayToJsonString(
-            SchemaTranslation.schemaToProto(target.getSchema()).toByteArray()));
+            SchemaTranslation.schemaToProto(target.getSchema(), true).toByteArray()));
     return base;
   }
 

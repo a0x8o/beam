@@ -17,10 +17,13 @@
 
 """Cloud Datastore query splitter test."""
 
+# pytype: skip-file
+
 from __future__ import absolute_import
 
 import sys
 import unittest
+from typing import Type
 
 # patches unittest.TestCase to be python3 compatible
 import future.tests.base  # pylint: disable=unused-import
@@ -37,7 +40,7 @@ try:
   from google.cloud.proto.datastore.v1.query_pb2 import PropertyFilter
 except (ImportError, TypeError):
   datastore_pb2 = None
-  query_splitter = None
+  query_splitter = None  # type: ignore
 # pylint: enable=wrong-import-order, wrong-import-position
 
 
@@ -49,8 +52,13 @@ class QuerySplitterTest(unittest.TestCase):
   def setUp(self):
     pass
 
-  def create_query(self, kinds=(), order=False, limit=None, offset=None,
-                   inequality_filter=False):
+  def create_query(
+      self,
+      kinds=(),
+      order=False,
+      limit=None,
+      offset=None,
+      inequality_filter=False):
     query = query_pb2.Query()
     for kind in kinds:
       query.kind.add().name = kind
@@ -65,7 +73,7 @@ class QuerySplitterTest(unittest.TestCase):
       test_filter.property_filter.op = PropertyFilter.GREATER_THAN
     return query
 
-  split_error = ValueError
+  split_error = ValueError  # type: Type[Exception]
   query_splitter = query_splitter
 
   def test_get_splits_query_with_multiple_kinds(self):
@@ -98,12 +106,14 @@ class QuerySplitterTest(unittest.TestCase):
     num_splits = 10
     scatter_query = self.query_splitter._create_scatter_query(query, num_splits)
     self.assertEqual(scatter_query.kind[0], query.kind[0])
-    self.assertEqual(scatter_query.limit.value,
-                     (num_splits -1) * self.query_splitter.KEYS_PER_SPLIT)
-    self.assertEqual(scatter_query.order[0].direction,
-                     query_pb2.PropertyOrder.ASCENDING)
-    self.assertEqual(scatter_query.projection[0].property.name,
-                     self.query_splitter.KEY_PROPERTY_NAME)
+    self.assertEqual(
+        scatter_query.limit.value,
+        (num_splits - 1) * self.query_splitter.KEYS_PER_SPLIT)
+    self.assertEqual(
+        scatter_query.order[0].direction, query_pb2.PropertyOrder.ASCENDING)
+    self.assertEqual(
+        scatter_query.projection[0].property.name,
+        self.query_splitter.KEY_PROPERTY_NAME)
 
   def test_get_splits_with_two_splits(self):
     query = self.create_query(kinds=['shakespeare-demo'])
@@ -205,8 +215,8 @@ class QuerySplitterTest(unittest.TestCase):
 
       self.assertEqual(expected_calls, mock_datastore.run_query.call_args_list)
 
-  def create_scatter_requests(self, query, num_splits, batch_size,
-                              num_entities):
+  def create_scatter_requests(
+      self, query, num_splits, batch_size, num_entities):
     """Creates a list of expected scatter requests from the query splitter.
 
     This list of requests returned is used to verify that the query splitter

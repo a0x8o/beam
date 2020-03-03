@@ -453,7 +453,6 @@ class FlinkStreamingTransformTranslators {
           Map<TupleTag<?>, Coder<WindowedValue<?>>> tagsToCoders,
           Map<TupleTag<?>, Integer> tagsToIds,
           Coder<WindowedValue<InputT>> windowedInputCoder,
-          Coder<InputT> inputCoder,
           Map<TupleTag<?>, Coder<?>> outputCoders,
           Coder keyCoder,
           KeySelector<WindowedValue<InputT>, ?> keySelector,
@@ -505,7 +504,6 @@ class FlinkStreamingTransformTranslators {
       SingleOutputStreamOperator<WindowedValue<OutputT>> outputStream;
 
       Coder<WindowedValue<InputT>> windowedInputCoder = context.getWindowedInputCoder(input);
-      Coder<InputT> inputCoder = context.getInputCoder(input);
       Map<TupleTag<?>, Coder<?>> outputCoders = context.getOutputCoders();
 
       DataStream<WindowedValue<InputT>> inputDataStream = context.getInputDataStream(input);
@@ -546,7 +544,6 @@ class FlinkStreamingTransformTranslators {
                 tagsToCoders,
                 tagsToIds,
                 windowedInputCoder,
-                inputCoder,
                 outputCoders,
                 keyCoder,
                 keySelector,
@@ -574,7 +571,6 @@ class FlinkStreamingTransformTranslators {
                 tagsToCoders,
                 tagsToIds,
                 windowedInputCoder,
-                inputCoder,
                 outputCoders,
                 keyCoder,
                 keySelector,
@@ -694,7 +690,6 @@ class FlinkStreamingTransformTranslators {
               tagsToCoders,
               tagsToIds,
               windowedInputCoder,
-              inputCoder,
               outputCoders1,
               keyCoder,
               keySelector,
@@ -705,7 +700,6 @@ class FlinkStreamingTransformTranslators {
                   doFn1,
                   stepName,
                   windowedInputCoder,
-                  inputCoder,
                   outputCoders1,
                   mainOutputTag1,
                   additionalOutputTags1,
@@ -756,7 +750,6 @@ class FlinkStreamingTransformTranslators {
               tagsToCoders,
               tagsToIds,
               windowedInputCoder,
-              inputCoder,
               outputCoders1,
               keyCoder,
               keySelector,
@@ -767,7 +760,6 @@ class FlinkStreamingTransformTranslators {
                   doFn,
                   stepName,
                   windowedInputCoder,
-                  inputCoder,
                   outputCoders1,
                   mainOutputTag,
                   additionalOutputTags,
@@ -1310,43 +1302,9 @@ class FlinkStreamingTransformTranslators {
               new CreateStreamingFlinkViewPayloadTranslator())
           .put(
               SplittableParDoViaKeyedWorkItems.ProcessElements.class,
-              new SplittableParDoProcessElementsTranslator())
-          .put(
-              SplittableParDoViaKeyedWorkItems.GBKIntoKeyedWorkItems.class,
-              new SplittableParDoGbkIntoKeyedWorkItemsPayloadTranslator())
+              PTransformTranslation.TransformPayloadTranslator.NotSerializable.forUrn(
+                  SPLITTABLE_PROCESS_URN))
           .build();
-    }
-  }
-
-  /**
-   * A translator just to vend the URN. This will need to be moved to runners-core-construction-java
-   * once SDF is reorganized appropriately.
-   */
-  private static class SplittableParDoProcessElementsPayloadTranslator
-      extends PTransformTranslation.TransformPayloadTranslator.NotSerializable<
-          SplittableParDoViaKeyedWorkItems.ProcessElements<?, ?, ?, ?>> {
-
-    private SplittableParDoProcessElementsPayloadTranslator() {}
-
-    @Override
-    public String getUrn(SplittableParDoViaKeyedWorkItems.ProcessElements<?, ?, ?, ?> transform) {
-      return SPLITTABLE_PROCESS_URN;
-    }
-  }
-
-  /**
-   * A translator just to vend the URN. This will need to be moved to runners-core-construction-java
-   * once SDF is reorganized appropriately.
-   */
-  private static class SplittableParDoGbkIntoKeyedWorkItemsPayloadTranslator
-      extends PTransformTranslation.TransformPayloadTranslator.NotSerializable<
-          SplittableParDoViaKeyedWorkItems.GBKIntoKeyedWorkItems<?, ?>> {
-
-    private SplittableParDoGbkIntoKeyedWorkItemsPayloadTranslator() {}
-
-    @Override
-    public String getUrn(SplittableParDoViaKeyedWorkItems.GBKIntoKeyedWorkItems<?, ?> transform) {
-      return SplittableParDo.SPLITTABLE_GBKIKWI_URN;
     }
   }
 

@@ -38,6 +38,7 @@ import java.util.Objects;
 import java.util.Set;
 import javax.annotation.Nullable;
 import org.apache.beam.sdk.annotations.Experimental;
+import org.apache.beam.sdk.annotations.Experimental.Kind;
 import org.apache.beam.sdk.coders.AtomicCoder;
 import org.apache.beam.sdk.coders.CannotProvideCoderException;
 import org.apache.beam.sdk.coders.Coder;
@@ -57,6 +58,7 @@ import org.apache.beam.sdk.transforms.DoFn.UnboundedPerElement;
 import org.apache.beam.sdk.transforms.Watch.Growth.PollResult;
 import org.apache.beam.sdk.transforms.splittabledofn.OffsetRangeTracker;
 import org.apache.beam.sdk.transforms.splittabledofn.RestrictionTracker;
+import org.apache.beam.sdk.transforms.splittabledofn.SplitResult;
 import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
 import org.apache.beam.sdk.util.VarInt;
 import org.apache.beam.sdk.values.KV;
@@ -121,7 +123,7 @@ import org.slf4j.LoggerFactory;
  * <p>Note: This transform works only in runners supporting Splittable DoFn: see <a
  * href="https://beam.apache.org/documentation/runners/capability-matrix/">capability matrix</a>.
  */
-@Experimental(Experimental.Kind.SPLITTABLE_DO_FN)
+@Experimental(Kind.SPLITTABLE_DO_FN)
 public class Watch {
   private static final Logger LOG = LoggerFactory.getLogger(Watch.class);
 
@@ -758,12 +760,13 @@ public class Watch {
     }
 
     @GetInitialRestriction
-    public OffsetRange getInitialRestriction(KV<InputT, List<TimestampedValue<OutputT>>> element) {
+    public OffsetRange getInitialRestriction(
+        @Element KV<InputT, List<TimestampedValue<OutputT>>> element) {
       return new OffsetRange(0, element.getValue().size());
     }
 
     @NewTracker
-    public OffsetRangeTracker newTracker(OffsetRange restriction) {
+    public OffsetRangeTracker newTracker(@Restriction OffsetRange restriction) {
       return restriction.newTracker();
     }
 
@@ -923,12 +926,13 @@ public class Watch {
     }
 
     @GetInitialRestriction
-    public GrowthState getInitialRestriction(InputT element) {
+    public GrowthState getInitialRestriction(@Element InputT element) {
       return PollingGrowthState.of(getTerminationCondition().forNewInput(Instant.now(), element));
     }
 
     @NewTracker
-    public GrowthTracker<OutputT, TerminationStateT> newTracker(GrowthState restriction) {
+    public GrowthTracker<OutputT, TerminationStateT> newTracker(
+        @Restriction GrowthState restriction) {
       return new GrowthTracker<>(restriction, coderFunnel);
     }
 
@@ -1028,7 +1032,10 @@ public class Watch {
     }
 
     @Override
-    public GrowthState checkpoint() {
+    public SplitResult<GrowthState> trySplit(double fractionOfRemainder) {
+      // TODO(BEAM-8873): Add support for splitting off a fixed amount of work for this restriction
+      // instead of only supporting checkpointing.
+
       // residual should contain exactly the work *not* claimed in the current ProcessElement call -
       // unclaimed pending outputs or future polling output
       GrowthState residual;
@@ -1061,7 +1068,7 @@ public class Watch {
       }
 
       shouldStop = true;
-      return residual;
+      return SplitResult.of(state, residual);
     }
 
     private HashCode hash128(OutputT value) {

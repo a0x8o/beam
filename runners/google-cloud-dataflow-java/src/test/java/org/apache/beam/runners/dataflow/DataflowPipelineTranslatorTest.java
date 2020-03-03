@@ -83,8 +83,11 @@ import org.apache.beam.sdk.state.ValueState;
 import org.apache.beam.sdk.transforms.Count;
 import org.apache.beam.sdk.transforms.Create;
 import org.apache.beam.sdk.transforms.DoFn;
+import org.apache.beam.sdk.transforms.Impulse;
+import org.apache.beam.sdk.transforms.MapElements;
 import org.apache.beam.sdk.transforms.PTransform;
 import org.apache.beam.sdk.transforms.ParDo;
+import org.apache.beam.sdk.transforms.SimpleFunction;
 import org.apache.beam.sdk.transforms.Sum;
 import org.apache.beam.sdk.transforms.View;
 import org.apache.beam.sdk.transforms.display.DisplayData;
@@ -736,15 +739,23 @@ public class DataflowPipelineTranslatorTest implements Serializable {
   @Test
   public void testSplittableParDoTranslationFnApi() throws Exception {
     DataflowPipelineOptions options = buildPipelineOptions();
-    DataflowRunner runner = DataflowRunner.fromOptions(options);
     options.setExperiments(Arrays.asList("beam_fn_api"));
+    DataflowRunner runner = DataflowRunner.fromOptions(options);
     DataflowPipelineTranslator translator = DataflowPipelineTranslator.fromOptions(options);
 
     Pipeline pipeline = Pipeline.create(options);
 
     PCollection<String> windowedInput =
         pipeline
-            .apply(Create.of("a"))
+            .apply(Impulse.create())
+            .apply(
+                MapElements.via(
+                    new SimpleFunction<byte[], String>() {
+                      @Override
+                      public String apply(byte[] input) {
+                        return "";
+                      }
+                    }))
             .apply(Window.into(FixedWindows.of(Duration.standardMinutes(1))));
     windowedInput.apply(ParDo.of(new TestSplittableFn()));
 
@@ -848,6 +859,66 @@ public class DataflowPipelineTranslatorTest implements Serializable {
         Structs.getBoolean(Iterables.getOnlyElement(toIsmRecordOutputs), "use_indexed_format"));
 
     Step collectionToSingletonStep = steps.get(2);
+    assertEquals("CollectionToSingleton", collectionToSingletonStep.getKind());
+  }
+
+  @Test
+  public void testToSingletonTranslationWithFnApiSideInput() throws Exception {
+    // A "change detector" test that makes sure the translation
+    // of getting a PCollectionView<T> does not change
+    // in bad ways during refactor
+
+    DataflowPipelineOptions options = buildPipelineOptions();
+    options.setExperiments(Arrays.asList("beam_fn_api"));
+    DataflowPipelineTranslator translator = DataflowPipelineTranslator.fromOptions(options);
+
+    Pipeline pipeline = Pipeline.create(options);
+    pipeline.apply(Create.of(1)).apply(View.asSingleton());
+    DataflowRunner runner = DataflowRunner.fromOptions(options);
+    runner.replaceTransforms(pipeline);
+    Job job = translator.translate(pipeline, runner, Collections.emptyList()).getJob();
+    assertAllStepOutputsHaveUniqueIds(job);
+
+    List<Step> steps = job.getSteps();
+    assertEquals(9, steps.size());
+
+    Step collectionToSingletonStep = steps.get(steps.size() - 1);
+    assertEquals("CollectionToSingleton", collectionToSingletonStep.getKind());
+
+    @SuppressWarnings("unchecked")
+    List<Map<String, Object>> ctsOutputs =
+        (List<Map<String, Object>>)
+            steps.get(steps.size() - 1).getProperties().get(PropertyNames.OUTPUT_INFO);
+    assertTrue(Structs.getBoolean(Iterables.getOnlyElement(ctsOutputs), "use_indexed_format"));
+  }
+
+  @Test
+  public void testToIterableTranslationWithFnApiSideInput() throws Exception {
+    // A "change detector" test that makes sure the translation
+    // of getting a PCollectionView<Iterable<T>> does not change
+    // in bad ways during refactor
+
+    DataflowPipelineOptions options = buildPipelineOptions();
+    options.setExperiments(Arrays.asList("beam_fn_api"));
+    DataflowPipelineTranslator translator = DataflowPipelineTranslator.fromOptions(options);
+
+    Pipeline pipeline = Pipeline.create(options);
+    pipeline.apply(Create.of(1, 2, 3)).apply(View.asIterable());
+
+    DataflowRunner runner = DataflowRunner.fromOptions(options);
+    runner.replaceTransforms(pipeline);
+    Job job = translator.translate(pipeline, runner, Collections.emptyList()).getJob();
+    assertAllStepOutputsHaveUniqueIds(job);
+
+    List<Step> steps = job.getSteps();
+    assertEquals(5, steps.size());
+
+    @SuppressWarnings("unchecked")
+    List<Map<String, Object>> ctsOutputs =
+        (List<Map<String, Object>>)
+            steps.get(steps.size() - 1).getProperties().get(PropertyNames.OUTPUT_INFO);
+    assertTrue(Structs.getBoolean(Iterables.getOnlyElement(ctsOutputs), "use_indexed_format"));
+    Step collectionToSingletonStep = steps.get(steps.size() - 1);
     assertEquals("CollectionToSingleton", collectionToSingletonStep.getKind());
   }
 
@@ -1009,7 +1080,7 @@ public class DataflowPipelineTranslatorTest implements Serializable {
     }
 
     @GetInitialRestriction
-    public OffsetRange getInitialRange(String element) {
+    public OffsetRange getInitialRange(@Element String element) {
       return null;
     }
   }

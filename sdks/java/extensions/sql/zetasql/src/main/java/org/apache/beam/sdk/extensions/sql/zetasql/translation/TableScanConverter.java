@@ -61,8 +61,7 @@ class TableScanConverter extends RelConverter<ResolvedTableScan> {
     SchemaPlus defaultSchemaPlus = getConfig().getDefaultSchema();
     // TODO: reject incorrect top-level schema
 
-    Table calciteTable =
-        TableResolution.resolveCalciteTable(getConfig().getContext(), defaultSchemaPlus, tablePath);
+    Table calciteTable = TableResolution.resolveCalciteTable(defaultSchemaPlus, tablePath);
 
     // we already resolved the table before passing the query to Analyzer, so it should be there
     checkNotNull(
@@ -90,13 +89,13 @@ class TableScanConverter extends RelConverter<ResolvedTableScan> {
     if (calciteTable instanceof TranslatableTable) {
       return ((TranslatableTable) calciteTable).toRel(createToRelContext(), relOptTable);
     } else {
-      throw new RuntimeException("Does not support non TranslatableTable type table!");
+      throw new UnsupportedOperationException("Does not support non TranslatableTable type table!");
     }
   }
 
   private List<String> getTablePath(com.google.zetasql.Table table) {
     if (!getTrait().isTableResolved(table)) {
-      throw new RuntimeException(
+      throw new IllegalArgumentException(
           "Unexpected table found when converting to Calcite rel node: " + table);
     }
 
@@ -122,7 +121,7 @@ class TableScanConverter extends RelConverter<ResolvedTableScan> {
     if (columnList != null) {
       for (ResolvedColumn resolvedColumn : columnList) {
         if (UNSUPPORTED_DATA_TYPES.contains(resolvedColumn.getType().getKind())) {
-          throw new IllegalArgumentException(
+          throw new UnsupportedOperationException(
               "Does not support " + UNSUPPORTED_DATA_TYPES + " types in source tables");
         }
       }

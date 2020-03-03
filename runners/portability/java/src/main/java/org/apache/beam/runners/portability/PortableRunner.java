@@ -17,13 +17,16 @@
  */
 package org.apache.beam.runners.portability;
 
-import static org.apache.beam.runners.core.construction.PipelineResources.detectClassPathResourcesToStage;
+import static org.apache.beam.runners.core.construction.resources.PipelineResources.detectClassPathResourcesToStage;
 import static org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Preconditions.checkState;
 
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.Collection;
+import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import org.apache.beam.model.jobmanagement.v1.JobApi.PrepareJobRequest;
@@ -36,7 +39,6 @@ import org.apache.beam.model.pipeline.v1.Endpoints.ApiServiceDescriptor;
 import org.apache.beam.runners.core.construction.ArtifactServiceStager;
 import org.apache.beam.runners.core.construction.ArtifactServiceStager.StagedFile;
 import org.apache.beam.runners.core.construction.Environments;
-import org.apache.beam.runners.core.construction.JavaReadViaImpulse;
 import org.apache.beam.runners.core.construction.PipelineOptionsTranslation;
 import org.apache.beam.runners.core.construction.PipelineTranslation;
 import org.apache.beam.runners.fnexecution.GrpcFnServer;
@@ -45,12 +47,13 @@ import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.PipelineResult;
 import org.apache.beam.sdk.PipelineRunner;
 import org.apache.beam.sdk.fn.channel.ManagedChannelFactory;
+import org.apache.beam.sdk.options.ExperimentalOptions;
 import org.apache.beam.sdk.options.PipelineOptions;
 import org.apache.beam.sdk.options.PipelineOptionsValidator;
 import org.apache.beam.sdk.options.PortablePipelineOptions;
 import org.apache.beam.sdk.util.ZipFiles;
-import org.apache.beam.vendor.grpc.v1p21p0.com.google.protobuf.ByteString;
-import org.apache.beam.vendor.grpc.v1p21p0.io.grpc.ManagedChannel;
+import org.apache.beam.vendor.grpc.v1p26p0.com.google.protobuf.ByteString;
+import org.apache.beam.vendor.grpc.v1p26p0.io.grpc.ManagedChannel;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.annotations.VisibleForTesting;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableList;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Sets;
@@ -90,8 +93,18 @@ public class PortableRunner extends PipelineRunner<PipelineResult> {
 
     // Deduplicate artifacts.
     Set<String> pathsToStage = Sets.newHashSet();
+    List<String> experiments = options.as(ExperimentalOptions.class).getExperiments();
+    if (experiments != null) {
+      Optional<String> jarPackages =
+          experiments.stream()
+              .filter((String flag) -> flag.startsWith("jar_packages="))
+              .findFirst();
+      jarPackages.ifPresent(
+          s -> pathsToStage.addAll(Arrays.asList(s.replaceFirst("jar_packages=", "").split(","))));
+    }
     if (portableOptions.getFilesToStage() == null) {
-      pathsToStage.addAll(detectClassPathResourcesToStage(PortableRunner.class.getClassLoader()));
+      pathsToStage.addAll(
+          detectClassPathResourcesToStage(PortableRunner.class.getClassLoader(), options));
       if (pathsToStage.isEmpty()) {
         throw new IllegalArgumentException("No classpath elements found.");
       }
@@ -137,8 +150,6 @@ public class PortableRunner extends PipelineRunner<PipelineResult> {
 
   @Override
   public PipelineResult run(Pipeline pipeline) {
-    pipeline.replaceAll(ImmutableList.of(JavaReadViaImpulse.boundedOverride()));
-
     Runnable cleanup;
     if (Environments.ENVIRONMENT_LOOPBACK.equals(
         options.as(PortablePipelineOptions.class).getDefaultEnvironmentType())) {

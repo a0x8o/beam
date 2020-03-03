@@ -43,8 +43,10 @@ import com.google.cloud.bigquery.storage.v1beta1.Storage.CreateReadSessionReques
 import com.google.cloud.bigquery.storage.v1beta1.Storage.ReadSession;
 import com.google.cloud.bigquery.storage.v1beta1.Storage.Stream;
 import java.io.IOException;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import javax.annotation.Nullable;
@@ -52,6 +54,7 @@ import org.apache.avro.generic.GenericRecord;
 import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.PipelineRunner;
 import org.apache.beam.sdk.annotations.Experimental;
+import org.apache.beam.sdk.annotations.Experimental.Kind;
 import org.apache.beam.sdk.coders.CannotProvideCoderException;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.coders.CoderRegistry;
@@ -685,7 +688,7 @@ public class BigQueryIO {
      * <p>Use new template-compatible source implementation. This implementation is compatible with
      * repeated template invocations. It does not support dynamic work rebalancing.
      */
-    @Experimental(Experimental.Kind.SOURCE_SINK)
+    @Experimental(Kind.SOURCE_SINK)
     public Read withTemplateCompatibility() {
       return new Read(this.inner.withTemplateCompatibility());
     }
@@ -697,7 +700,7 @@ public class BigQueryIO {
   @AutoValue
   public abstract static class TypedRead<T> extends PTransform<PBegin, PCollection<T>> {
     /** Determines the method used to read data from BigQuery. */
-    @Experimental(Experimental.Kind.SOURCE_SINK)
+    @Experimental(Kind.SOURCE_SINK)
     public enum Method {
       /** The default behavior if no method is explicitly set. Currently {@link #EXPORT}. */
       DEFAULT,
@@ -739,7 +742,7 @@ public class BigQueryIO {
 
       abstract Builder<T> setQueryLocation(String location);
 
-      @Experimental(Experimental.Kind.SOURCE_SINK)
+      @Experimental(Kind.SOURCE_SINK)
       abstract Builder<T> setMethod(Method method);
 
       /**
@@ -747,13 +750,13 @@ public class BigQueryIO {
        *     #setRowRestriction(ValueProvider)} instead.
        */
       @Deprecated
-      @Experimental(Experimental.Kind.SOURCE_SINK)
+      @Experimental(Kind.SOURCE_SINK)
       abstract Builder<T> setReadOptions(TableReadOptions readOptions);
 
-      @Experimental(Experimental.Kind.SOURCE_SINK)
+      @Experimental(Kind.SOURCE_SINK)
       abstract Builder<T> setSelectedFields(ValueProvider<List<String>> selectedFields);
 
-      @Experimental(Experimental.Kind.SOURCE_SINK)
+      @Experimental(Kind.SOURCE_SINK)
       abstract Builder<T> setRowRestriction(ValueProvider<String> rowRestriction);
 
       abstract TypedRead<T> build();
@@ -764,13 +767,13 @@ public class BigQueryIO {
 
       abstract Builder<T> setKmsKey(String kmsKey);
 
-      @Experimental(Experimental.Kind.SCHEMAS)
+      @Experimental(Kind.SCHEMAS)
       abstract Builder<T> setTypeDescriptor(TypeDescriptor<T> typeDescriptor);
 
-      @Experimental(Experimental.Kind.SCHEMAS)
+      @Experimental(Kind.SCHEMAS)
       abstract Builder<T> setToBeamRowFn(ToBeamRowFunction<T> toRowFn);
 
-      @Experimental(Experimental.Kind.SCHEMAS)
+      @Experimental(Kind.SCHEMAS)
       abstract Builder<T> setFromBeamRowFn(FromBeamRowFunction<T> fromRowFn);
     }
 
@@ -800,20 +803,20 @@ public class BigQueryIO {
     @Nullable
     abstract String getQueryLocation();
 
-    @Experimental(Experimental.Kind.SOURCE_SINK)
+    @Experimental(Kind.SOURCE_SINK)
     abstract Method getMethod();
 
     /** @deprecated Use {@link #getSelectedFields()} and {@link #getRowRestriction()} instead. */
     @Deprecated
-    @Experimental(Experimental.Kind.SOURCE_SINK)
+    @Experimental(Kind.SOURCE_SINK)
     @Nullable
     abstract TableReadOptions getReadOptions();
 
-    @Experimental(Experimental.Kind.SOURCE_SINK)
+    @Experimental(Kind.SOURCE_SINK)
     @Nullable
     abstract ValueProvider<List<String>> getSelectedFields();
 
-    @Experimental(Experimental.Kind.SOURCE_SINK)
+    @Experimental(Kind.SOURCE_SINK)
     @Nullable
     abstract ValueProvider<String> getRowRestriction();
 
@@ -824,15 +827,15 @@ public class BigQueryIO {
     abstract String getKmsKey();
 
     @Nullable
-    @Experimental(Experimental.Kind.SCHEMAS)
+    @Experimental(Kind.SCHEMAS)
     abstract TypeDescriptor<T> getTypeDescriptor();
 
     @Nullable
-    @Experimental(Experimental.Kind.SCHEMAS)
+    @Experimental(Kind.SCHEMAS)
     abstract ToBeamRowFunction<T> getToBeamRowFn();
 
     @Nullable
-    @Experimental(Experimental.Kind.SCHEMAS)
+    @Experimental(Kind.SCHEMAS)
     abstract FromBeamRowFunction<T> getFromBeamRowFn();
 
     /**
@@ -1422,7 +1425,7 @@ public class BigQueryIO {
      *
      * <p>Setting these conversion functions is necessary to enable {@link Schema} support.
      */
-    @Experimental(Experimental.Kind.SCHEMAS)
+    @Experimental(Kind.SCHEMAS)
     public TypedRead<T> withBeamRowConverters(
         TypeDescriptor<T> typeDescriptor,
         ToBeamRowFunction<T> toRowFn,
@@ -1500,7 +1503,7 @@ public class BigQueryIO {
     }
 
     /** See {@link Method}. */
-    @Experimental(Experimental.Kind.SOURCE_SINK)
+    @Experimental(Kind.SOURCE_SINK)
     public TypedRead<T> withMethod(Method method) {
       return toBuilder().setMethod(method).build();
     }
@@ -1510,14 +1513,14 @@ public class BigQueryIO {
      *     instead.
      */
     @Deprecated
-    @Experimental(Experimental.Kind.SOURCE_SINK)
+    @Experimental(Kind.SOURCE_SINK)
     public TypedRead<T> withReadOptions(TableReadOptions readOptions) {
       ensureReadOptionsFieldsNotSet();
       return toBuilder().setReadOptions(readOptions).build();
     }
 
     /** See {@link #withSelectedFields(ValueProvider)}. */
-    @Experimental(Experimental.Kind.SOURCE_SINK)
+    @Experimental(Kind.SOURCE_SINK)
     public TypedRead<T> withSelectedFields(List<String> selectedFields) {
       return withSelectedFields(StaticValueProvider.of(selectedFields));
     }
@@ -1528,14 +1531,14 @@ public class BigQueryIO {
      *
      * <p>Requires {@link Method#DIRECT_READ}. Not compatible with {@link #fromQuery(String)}.
      */
-    @Experimental(Experimental.Kind.SOURCE_SINK)
+    @Experimental(Kind.SOURCE_SINK)
     public TypedRead<T> withSelectedFields(ValueProvider<List<String>> selectedFields) {
       ensureReadOptionsNotSet();
       return toBuilder().setSelectedFields(selectedFields).build();
     }
 
     /** See {@link #withRowRestriction(ValueProvider)}. */
-    @Experimental(Experimental.Kind.SOURCE_SINK)
+    @Experimental(Kind.SOURCE_SINK)
     public TypedRead<T> withRowRestriction(String rowRestriction) {
       return withRowRestriction(StaticValueProvider.of(rowRestriction));
     }
@@ -1547,13 +1550,13 @@ public class BigQueryIO {
      *
      * <p>Requires {@link Method#DIRECT_READ}. Not compatible with {@link #fromQuery(String)}.
      */
-    @Experimental(Experimental.Kind.SOURCE_SINK)
+    @Experimental(Kind.SOURCE_SINK)
     public TypedRead<T> withRowRestriction(ValueProvider<String> rowRestriction) {
       ensureReadOptionsNotSet();
       return toBuilder().setRowRestriction(rowRestriction).build();
     }
 
-    @Experimental(Experimental.Kind.SOURCE_SINK)
+    @Experimental(Kind.SOURCE_SINK)
     public TypedRead<T> withTemplateCompatibility() {
       return toBuilder().setWithTemplateCompatibility(true).build();
     }
@@ -1635,11 +1638,13 @@ public class BigQueryIO {
         .setBigQueryServices(new BigQueryServicesImpl())
         .setCreateDisposition(Write.CreateDisposition.CREATE_IF_NEEDED)
         .setWriteDisposition(Write.WriteDisposition.WRITE_EMPTY)
+        .setSchemaUpdateOptions(Collections.emptySet())
         .setNumFileShards(0)
         .setMethod(Write.Method.DEFAULT)
         .setExtendedErrorInfo(false)
         .setSkipInvalidRows(false)
         .setIgnoreUnknownValues(false)
+        .setIgnoreInsertIds(false)
         .setMaxFilesPerPartition(BatchLoads.DEFAULT_MAX_FILES_PER_PARTITION)
         .setMaxBytesPerPartition(BatchLoads.DEFAULT_MAX_BYTES_PER_PARTITION)
         .setOptimizeWrites(false)
@@ -1729,6 +1734,8 @@ public class BigQueryIO {
     abstract CreateDisposition getCreateDisposition();
 
     abstract WriteDisposition getWriteDisposition();
+
+    abstract Set<SchemaUpdateOption> getSchemaUpdateOptions();
     /** Table description. Default is empty. */
     @Nullable
     abstract String getTableDescription();
@@ -1769,11 +1776,14 @@ public class BigQueryIO {
 
     abstract Boolean getIgnoreUnknownValues();
 
+    abstract Boolean getIgnoreInsertIds();
+
     @Nullable
     abstract String getKmsKey();
 
     abstract Boolean getOptimizeWrites();
 
+    @Experimental(Kind.SCHEMAS)
     abstract Boolean getUseBeamSchema();
 
     abstract Builder<T> toBuilder();
@@ -1807,6 +1817,8 @@ public class BigQueryIO {
 
       abstract Builder<T> setWriteDisposition(WriteDisposition writeDisposition);
 
+      abstract Builder<T> setSchemaUpdateOptions(Set<SchemaUpdateOption> schemaUpdateOptions);
+
       abstract Builder<T> setTableDescription(String tableDescription);
 
       abstract Builder<T> setValidate(boolean validate);
@@ -1839,10 +1851,13 @@ public class BigQueryIO {
 
       abstract Builder<T> setIgnoreUnknownValues(Boolean ignoreUnknownValues);
 
+      abstract Builder<T> setIgnoreInsertIds(Boolean ignoreInsertIds);
+
       abstract Builder<T> setKmsKey(String kmsKey);
 
       abstract Builder<T> setOptimizeWrites(Boolean optimizeWrites);
 
+      @Experimental(Kind.SCHEMAS)
       abstract Builder<T> setUseBeamSchema(Boolean useBeamSchema);
 
       abstract Write<T> build();
@@ -1908,6 +1923,25 @@ public class BigQueryIO {
        * possible for both to succeed.
        */
       WRITE_EMPTY
+    }
+
+    /**
+     * An enumeration type for the BigQuery schema update options strings.
+     *
+     * <p>Note from the BigQuery API doc -- Schema update options are supported in two cases: when
+     * writeDisposition is WRITE_APPEND; when writeDisposition is WRITE_TRUNCATE and the destination
+     * table is a partition of a table, specified by partition decorators.
+     *
+     * @see <a
+     *     href="https://cloud.google.com/bigquery/docs/reference/rest/v2/Job#jobconfigurationquery">
+     *     <code>configuration.query.schemaUpdateOptions</code> in the BigQuery Jobs API</a>
+     */
+    public enum SchemaUpdateOption {
+      /** Allow adding a nullable field to the schema. */
+      ALLOW_FIELD_ADDITION,
+
+      /** Allow relaxing a required field in the original schema to nullable. */
+      ALLOW_FIELD_RELAXATION
     }
 
     /**
@@ -2098,6 +2132,12 @@ public class BigQueryIO {
       return toBuilder().setWriteDisposition(writeDisposition).build();
     }
 
+    /** Allows the schema of the destination table to be updated as a side effect of the write. */
+    public Write<T> withSchemaUpdateOptions(Set<SchemaUpdateOption> schemaUpdateOptions) {
+      checkArgument(schemaUpdateOptions != null, "schemaUpdateOptions can not be null");
+      return toBuilder().setSchemaUpdateOptions(schemaUpdateOptions).build();
+    }
+
     /** Specifies the table description. */
     public Write<T> withTableDescription(String tableDescription) {
       checkArgument(tableDescription != null, "tableDescription can not be null");
@@ -2209,6 +2249,15 @@ public class BigQueryIO {
       return toBuilder().setIgnoreUnknownValues(true).build();
     }
 
+    /**
+     * Setting this option to true disables insertId based data deduplication offered by BigQuery.
+     * For more information, please see
+     * https://cloud.google.com/bigquery/streaming-data-into-bigquery#disabling_best_effort_de-duplication.
+     */
+    public Write<T> ignoreInsertIds() {
+      return toBuilder().setIgnoreInsertIds(true).build();
+    }
+
     public Write<T> withKmsKey(String kmsKey) {
       return toBuilder().setKmsKey(kmsKey).build();
     }
@@ -2227,7 +2276,7 @@ public class BigQueryIO {
      * formatFunction is set, then BigQueryIO will automatically turn the input records into
      * TableRows that match the schema.
      */
-    @Experimental
+    @Experimental(Kind.SCHEMAS)
     public Write<T> useBeamSchema() {
       return toBuilder().setUseBeamSchema(true).build();
     }
@@ -2270,11 +2319,22 @@ public class BigQueryIO {
       return toBuilder().setMaxFilesPerPartition(maxFilesPerPartition).build();
     }
 
-    @VisibleForTesting
-    Write<T> withMaxBytesPerPartition(long maxBytesPerPartition) {
+    /**
+     * Control how much data will be assigned to a single BigQuery load job. If the amount of data
+     * flowing into one {@code BatchLoads} partition exceeds this value, that partition will be
+     * handled via multiple load jobs.
+     *
+     * <p>The default value (11 TiB) respects BigQuery's maximum size per load job limit and is
+     * appropriate for most use cases. Reducing the value of this parameter can improve stability
+     * when loading to tables with complex schemas containing thousands of fields.
+     *
+     * @see <a href="https://cloud.google.com/bigquery/quotas#load_jobs">BigQuery Load Job
+     *     Limits</a>
+     */
+    public Write<T> withMaxBytesPerPartition(long maxBytesPerPartition) {
       checkArgument(
           maxBytesPerPartition > 0,
-          "maxFilesPerPartition must be > 0, but was: %s",
+          "maxBytesPerPartition must be > 0, but was: %s",
           maxBytesPerPartition);
       return toBuilder().setMaxBytesPerPartition(maxBytesPerPartition).build();
     }
@@ -2568,6 +2628,7 @@ public class BigQueryIO {
                 .withExtendedErrorInfo(getExtendedErrorInfo())
                 .withSkipInvalidRows(getSkipInvalidRows())
                 .withIgnoreUnknownValues(getIgnoreUnknownValues())
+                .withIgnoreInsertIds(getIgnoreInsertIds())
                 .withKmsKey(getKmsKey());
         return input.apply(streamingInserts);
       } else {
@@ -2587,8 +2648,12 @@ public class BigQueryIO {
                 getIgnoreUnknownValues(),
                 elementCoder,
                 rowWriterFactory,
-                getKmsKey());
+                getKmsKey(),
+                getClustering() != null);
         batchLoads.setTestServices(getBigQueryServices());
+        if (getSchemaUpdateOptions() != null) {
+          batchLoads.setSchemaUpdateOptions(getSchemaUpdateOptions());
+        }
         if (getMaxFilesPerBundle() != null) {
           batchLoads.setMaxNumWritersPerBundle(getMaxFilesPerBundle());
         }
@@ -2634,6 +2699,9 @@ public class BigQueryIO {
           .add(
               DisplayData.item("writeDisposition", getWriteDisposition().toString())
                   .withLabel("Table WriteDisposition"))
+          .add(
+              DisplayData.item("schemaUpdateOptions", getSchemaUpdateOptions().toString())
+                  .withLabel("Table SchemaUpdateOptions"))
           .addIfNotDefault(
               DisplayData.item("validation", getValidate()).withLabel("Validation Enabled"), true)
           .addIfNotNull(

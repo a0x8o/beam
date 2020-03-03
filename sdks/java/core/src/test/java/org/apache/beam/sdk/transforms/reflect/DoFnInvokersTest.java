@@ -25,6 +25,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertThat;
+import static org.junit.Assert.fail;
 import static org.mockito.Matchers.eq;
 import static org.mockito.Matchers.same;
 import static org.mockito.Mockito.doAnswer;
@@ -55,6 +56,7 @@ import org.apache.beam.sdk.transforms.reflect.DoFnInvoker.FakeArgumentProvider;
 import org.apache.beam.sdk.transforms.reflect.testhelper.DoFnInvokersTestHelper;
 import org.apache.beam.sdk.transforms.splittabledofn.HasDefaultTracker;
 import org.apache.beam.sdk.transforms.splittabledofn.RestrictionTracker;
+import org.apache.beam.sdk.transforms.splittabledofn.SplitResult;
 import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
 import org.apache.beam.sdk.transforms.windowing.IntervalWindow;
 import org.apache.beam.sdk.util.UserCodeException;
@@ -89,7 +91,7 @@ public class DoFnInvokersTest {
 
   @Before
   public void setUp() {
-    mockElement = new String("element");
+    mockElement = "element";
     mockTimestamp = new Instant(0);
     MockitoAnnotations.initMocks(this);
     when(mockArgumentProvider.window()).thenReturn(mockWindow);
@@ -112,7 +114,7 @@ public class DoFnInvokersTest {
   }
 
   private void invokeOnTimer(String timerId, DoFn<String, String> fn) {
-    DoFnInvokers.invokerFor(fn).invokeOnTimer(timerId, mockArgumentProvider);
+    DoFnInvokers.invokerFor(fn).invokeOnTimer(timerId, "", mockArgumentProvider);
   }
 
   @Test
@@ -237,7 +239,7 @@ public class DoFnInvokersTest {
   public void testDoFnWithState() throws Exception {
     ValueState<Integer> mockState = mock(ValueState.class);
     final String stateId = "my-state-id-here";
-    when(mockArgumentProvider.state(stateId)).thenReturn(mockState);
+    when(mockArgumentProvider.state(stateId, false)).thenReturn(mockState);
 
     class MockFn extends DoFn<String, String> {
       @StateId(stateId)
@@ -323,12 +325,12 @@ public class DoFnInvokersTest {
       }
 
       @GetInitialRestriction
-      public SomeRestriction getInitialRestriction(String element) {
+      public SomeRestriction getInitialRestriction(@Element String element) {
         return null;
       }
 
       @NewTracker
-      public SomeRestrictionTracker newTracker(SomeRestriction restriction) {
+      public SomeRestrictionTracker newTracker(@Restriction SomeRestriction restriction) {
         return null;
       }
     }
@@ -400,16 +402,18 @@ public class DoFnInvokersTest {
     }
 
     @GetInitialRestriction
-    public SomeRestriction getInitialRestriction(String element) {
+    public SomeRestriction getInitialRestriction(@Element String element) {
       return null;
     }
 
     @SplitRestriction
     public void splitRestriction(
-        String element, SomeRestriction restriction, OutputReceiver<SomeRestriction> receiver) {}
+        @Element String element,
+        @Restriction SomeRestriction restriction,
+        OutputReceiver<SomeRestriction> receiver) {}
 
     @NewTracker
-    public SomeRestrictionTracker newTracker(SomeRestriction restriction) {
+    public SomeRestrictionTracker newTracker(@Restriction SomeRestriction restriction) {
       return null;
     }
 
@@ -430,15 +434,15 @@ public class DoFnInvokersTest {
     final SomeRestriction part2 = new SomeRestriction();
     final SomeRestriction part3 = new SomeRestriction();
     when(fn.getRestrictionCoder()).thenReturn(coder);
-    when(fn.getInitialRestriction("blah")).thenReturn(restriction);
+    when(fn.getInitialRestriction(mockElement)).thenReturn(restriction);
     doAnswer(
             AdditionalAnswers.delegatesTo(
                 new MockFn() {
                   @DoFn.SplitRestriction
                   @Override
                   public void splitRestriction(
-                      String element,
-                      SomeRestriction restriction,
+                      @Element String element,
+                      @Restriction SomeRestriction restriction,
                       DoFn.OutputReceiver<SomeRestriction> receiver) {
                     receiver.output(part1);
                     receiver.output(part2);
@@ -446,29 +450,65 @@ public class DoFnInvokersTest {
                   }
                 }))
         .when(fn)
-        .splitRestriction(eq("blah"), same(restriction), Mockito.any());
+        .splitRestriction(eq(mockElement), same(restriction), Mockito.any());
     when(fn.newTracker(restriction)).thenReturn(tracker);
     when(fn.processElement(mockProcessContext, tracker)).thenReturn(resume());
 
     assertEquals(coder, invoker.invokeGetRestrictionCoder(CoderRegistry.createDefault()));
-    assertEquals(restriction, invoker.invokeGetInitialRestriction("blah"));
-    final List<SomeRestriction> outputs = new ArrayList<>();
-    invoker.invokeSplitRestriction(
-        "blah",
+
+    assertEquals(
         restriction,
-        new OutputReceiver<SomeRestriction>() {
+        invoker.invokeGetInitialRestriction(
+            new FakeArgumentProvider<String, String>() {
+              @Override
+              public String element(DoFn<String, String> doFn) {
+                return mockElement;
+              }
+            }));
+    List<SomeRestriction> outputs = new ArrayList<>();
+    invoker.invokeSplitRestriction(
+        new FakeArgumentProvider<String, String>() {
           @Override
-          public void output(SomeRestriction output) {
-            outputs.add(output);
+          public String element(DoFn<String, String> doFn) {
+            return mockElement;
           }
 
           @Override
-          public void outputWithTimestamp(SomeRestriction output, Instant timestamp) {
-            outputs.add(output);
+          public Object restriction() {
+            return restriction;
+          }
+
+          @Override
+          public OutputReceiver outputReceiver(DoFn doFn) {
+            return new OutputReceiver<SomeRestriction>() {
+              @Override
+              public void output(SomeRestriction output) {
+                outputs.add(output);
+              }
+
+              @Override
+              public void outputWithTimestamp(SomeRestriction output, Instant timestamp) {
+                fail("Unexpected output with timestamp");
+              }
+            };
           }
         });
+
     assertEquals(Arrays.asList(part1, part2, part3), outputs);
-    assertEquals(tracker, invoker.invokeNewTracker(restriction));
+    assertEquals(
+        tracker,
+        invoker.invokeNewTracker(
+            new FakeArgumentProvider<String, String>() {
+              @Override
+              public String element(DoFn<String, String> doFn) {
+                return mockElement;
+              }
+
+              @Override
+              public Object restriction() {
+                return restriction;
+              }
+            }));
     assertEquals(
         resume(),
         invoker.invokeProcessElement(
@@ -506,7 +546,7 @@ public class DoFnInvokersTest {
     }
 
     @Override
-    public RestrictionWithDefaultTracker checkpoint() {
+    public SplitResult<RestrictionWithDefaultTracker> trySplit(double fractionOfRemainder) {
       throw new UnsupportedOperationException();
     }
 
@@ -536,7 +576,7 @@ public class DoFnInvokersTest {
           ProcessContext c, RestrictionTracker<RestrictionWithDefaultTracker, Void> tracker) {}
 
       @GetInitialRestriction
-      public RestrictionWithDefaultTracker getInitialRestriction(String element) {
+      public RestrictionWithDefaultTracker getInitialRestriction(@Element String element) {
         return null;
       }
     }
@@ -552,28 +592,47 @@ public class DoFnInvokersTest {
         invoker.<RestrictionWithDefaultTracker>invokeGetRestrictionCoder(coderRegistry),
         instanceOf(CoderForDefaultTracker.class));
     invoker.invokeSplitRestriction(
-        "blah",
-        "foo",
-        new DoFn.OutputReceiver<String>() {
-          private boolean invoked;
-
+        new FakeArgumentProvider<String, String>() {
           @Override
-          public void output(String output) {
-            assertFalse(invoked);
-            invoked = true;
-            assertEquals("foo", output);
+          public String element(DoFn<String, String> doFn) {
+            return "blah";
           }
 
           @Override
-          public void outputWithTimestamp(String output, Instant instant) {
-            assertFalse(invoked);
-            invoked = true;
-            assertEquals("foo", output);
+          public Object restriction() {
+            return "foo";
+          }
+
+          @Override
+          public OutputReceiver<String> outputReceiver(DoFn<String, String> doFn) {
+            return new DoFn.OutputReceiver<String>() {
+              private boolean invoked;
+
+              @Override
+              public void output(String output) {
+                assertFalse(invoked);
+                invoked = true;
+                assertEquals("foo", output);
+              }
+
+              @Override
+              public void outputWithTimestamp(String output, Instant instant) {
+                assertFalse(invoked);
+                invoked = true;
+                assertEquals("foo", output);
+              }
+            };
           }
         });
     assertEquals(stop(), invoker.invokeProcessElement(mockArgumentProvider));
     assertThat(
-        invoker.invokeNewTracker(new RestrictionWithDefaultTracker()),
+        invoker.invokeNewTracker(
+            new FakeArgumentProvider<String, String>() {
+              @Override
+              public Object restriction() {
+                return new RestrictionWithDefaultTracker();
+              }
+            }),
         instanceOf(DefaultTracker.class));
   }
 
@@ -748,12 +807,12 @@ public class DoFnInvokersTest {
               }
 
               @GetInitialRestriction
-              public SomeRestriction getInitialRestriction(Integer element) {
+              public SomeRestriction getInitialRestriction(@Element Integer element) {
                 return null;
               }
 
               @NewTracker
-              public SomeRestrictionTracker newTracker(SomeRestriction restriction) {
+              public SomeRestrictionTracker newTracker(@Restriction SomeRestriction restriction) {
                 return null;
               }
             })
@@ -830,7 +889,7 @@ public class DoFnInvokersTest {
     SimpleTimerDoFn fn = new SimpleTimerDoFn();
 
     DoFnInvoker<String, String> invoker = DoFnInvokers.invokerFor(fn);
-    invoker.invokeOnTimer(timerId, mockArgumentProvider);
+    invoker.invokeOnTimer(timerId, "", mockArgumentProvider);
     assertThat(fn.status, equalTo("OK now"));
   }
 
@@ -859,7 +918,7 @@ public class DoFnInvokersTest {
     SimpleTimerDoFn fn = new SimpleTimerDoFn();
 
     DoFnInvoker<String, String> invoker = DoFnInvokers.invokerFor(fn);
-    invoker.invokeOnTimer(timerId, mockArgumentProvider);
+    invoker.invokeOnTimer(timerId, "", mockArgumentProvider);
     assertThat(fn.window, equalTo(testWindow));
   }
 

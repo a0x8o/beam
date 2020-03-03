@@ -28,6 +28,7 @@ import java.util.Queue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.stream.Collectors;
+import java.util.stream.StreamSupport;
 import javax.annotation.Nullable;
 import org.apache.beam.runners.direct.DirectOptions;
 import org.apache.beam.sdk.Pipeline;
@@ -307,7 +308,7 @@ public class BeamEnumerableConverter extends ConverterImpl implements Enumerable
         } else if (logicalId.equals(CharType.IDENTIFIER)) {
           return beamValue;
         } else {
-          throw new IllegalArgumentException("Unknown DateTime type " + logicalId);
+          throw new UnsupportedOperationException("Unknown DateTime type " + logicalId);
         }
       case DATETIME:
         return ((ReadableInstant) beamValue).getMillis();
@@ -327,6 +328,10 @@ public class BeamEnumerableConverter extends ConverterImpl implements Enumerable
             .stream()
                 .map(elem -> fieldToAvatica(type.getCollectionElementType(), elem))
                 .collect(Collectors.toList());
+      case ITERABLE:
+        return StreamSupport.stream(((Iterable<?>) beamValue).spliterator(), false)
+            .map(elem -> fieldToAvatica(type.getCollectionElementType(), elem))
+            .collect(Collectors.toList());
       case MAP:
         return ((Map<?, ?>) beamValue)
             .entrySet().stream()
@@ -378,17 +383,18 @@ public class BeamEnumerableConverter extends ConverterImpl implements Enumerable
 
   private static boolean isLimitQuery(BeamRelNode node) {
     return (node instanceof BeamSortRel && ((BeamSortRel) node).isLimitOnly())
-        || (node instanceof BeamCalcRel && ((BeamCalcRel) node).isInputSortRelAndLimitOnly());
+        || (node instanceof AbstractBeamCalcRel
+            && ((AbstractBeamCalcRel) node).isInputSortRelAndLimitOnly());
   }
 
   private static int getLimitCount(BeamRelNode node) {
     if (node instanceof BeamSortRel) {
       return ((BeamSortRel) node).getCount();
-    } else if (node instanceof BeamCalcRel) {
-      return ((BeamCalcRel) node).getLimitCountOfSortRel();
+    } else if (node instanceof AbstractBeamCalcRel) {
+      return ((AbstractBeamCalcRel) node).getLimitCountOfSortRel();
     }
 
-    throw new RuntimeException(
+    throw new IllegalArgumentException(
         "Cannot get limit count from RelNode tree with root " + node.getRelTypeName());
   }
 

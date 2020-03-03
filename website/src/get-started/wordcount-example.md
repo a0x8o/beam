@@ -171,7 +171,7 @@ input and output data is often represented by the SDK class `PCollection`.
 represent a dataset of virtually any size, including unbounded datasets.
 
 ![The MinimalWordCount pipeline data flow.](
-  {{ "/images/wordcount-pipeline.png" | prepend: site.baseurl }}){: width="800px"}
+  {{ "/images/wordcount-pipeline.svg" | prepend: site.baseurl }}){: width="800px"}
 
 *Figure 1: The MinimalWordCount pipeline data flow.*
 
@@ -207,7 +207,7 @@ The MinimalWordCount pipeline contains five transforms:
     ```java
         .apply("ExtractWords", FlatMapElements
             .into(TypeDescriptors.strings())
-            .via((String word) -> Arrays.asList(word.split("[^\\p{L}]+"))))
+            .via((String line) -> Arrays.asList(line.split("[^\\p{L}]+"))))
     ```
 
     ```py

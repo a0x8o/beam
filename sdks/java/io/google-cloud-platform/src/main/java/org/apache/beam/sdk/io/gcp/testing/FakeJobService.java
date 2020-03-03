@@ -51,10 +51,12 @@ import java.nio.channels.WritableByteChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.stream.Collectors;
 import org.apache.avro.Schema;
 import org.apache.avro.file.DataFileReader;
 import org.apache.avro.file.DataFileWriter;
@@ -63,7 +65,7 @@ import org.apache.avro.generic.GenericDatumReader;
 import org.apache.avro.generic.GenericDatumWriter;
 import org.apache.avro.generic.GenericRecord;
 import org.apache.avro.generic.GenericRecordBuilder;
-import org.apache.beam.sdk.annotations.Experimental;
+import org.apache.beam.sdk.annotations.Internal;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.coders.Coder.Context;
 import org.apache.beam.sdk.extensions.gcp.util.BackOffAdapter;
@@ -85,7 +87,7 @@ import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Lists;
 import org.joda.time.Duration;
 
 /** A fake implementation of BigQuery's job service. */
-@Experimental(Experimental.Kind.SOURCE_SINK)
+@Internal
 public class FakeJobService implements JobService, Serializable {
   private static final JsonFactory JSON_FACTORY = Transport.getJsonFactory();
   // Whenever a job is started, the first 2 calls to GetJob will report the job as pending,
@@ -262,6 +264,12 @@ public class FakeJobService implements JobService, Serializable {
       }
     }
     throw new UnsupportedOperationException();
+  }
+
+  public Collection<Job> getAllJobs() {
+    synchronized (allJobs) {
+      return allJobs.values().stream().map(j -> j.job).collect(Collectors.toList());
+    }
   }
 
   @Override

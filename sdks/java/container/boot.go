@@ -97,6 +97,10 @@ func main() {
 	os.Setenv("LOGGING_API_SERVICE_DESCRIPTOR", proto.MarshalTextString(&pb.ApiServiceDescriptor{Url: *loggingEndpoint}))
 	os.Setenv("CONTROL_API_SERVICE_DESCRIPTOR", proto.MarshalTextString(&pb.ApiServiceDescriptor{Url: *controlEndpoint}))
 
+	if info.GetStatusEndpoint() != nil {
+		os.Setenv("STATUS_API_SERVICE_DESCRIPTOR", proto.MarshalTextString(info.GetStatusEndpoint()))
+	}
+
 	const jarsDir = "/opt/apache/beam/jars"
 	cp := []string{
 		filepath.Join(jarsDir, "slf4j-api.jar"),
@@ -137,9 +141,6 @@ func main() {
 // ensure there is memory for non-heap use and other overhead, while also not
 // underutilizing the machine.
 func heapSizeLimit(info *fnpb.ProvisionInfo) uint64 {
-	if provided := info.GetResourceLimits().GetMemory().GetSize(); provided > 0 {
-		return (provided * 80) / 100
-	}
 	if size, err := syscallx.PhysicalMemorySize(); err == nil {
 		return (size * 70) / 100
 	}

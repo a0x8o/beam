@@ -32,8 +32,6 @@ import org.apache.beam.model.pipeline.v1.MetricsApi.IntDistributionData;
 import org.apache.beam.model.pipeline.v1.MetricsApi.MonitoringInfo;
 import org.apache.beam.runners.core.construction.BeamUrns;
 import org.apache.beam.runners.core.metrics.MetricUpdates.MetricUpdate;
-import org.apache.beam.sdk.annotations.Experimental;
-import org.apache.beam.sdk.annotations.Experimental.Kind;
 import org.apache.beam.sdk.metrics.Counter;
 import org.apache.beam.sdk.metrics.Distribution;
 import org.apache.beam.sdk.metrics.Metric;
@@ -57,7 +55,6 @@ import org.slf4j.LoggerFactory;
  * <p>For consistency, all threads that update metrics should finish before getting the final
  * cumulative values/updates.
  */
-@Experimental(Kind.METRICS)
 public class MetricsContainerImpl implements Serializable, MetricsContainer {
 
   private static final Logger LOG = LoggerFactory.getLogger(MetricsContainerImpl.class);
@@ -77,6 +74,19 @@ public class MetricsContainerImpl implements Serializable, MetricsContainer {
   /** Create a new {@link MetricsContainerImpl} associated with the given {@code stepName}. */
   public MetricsContainerImpl(@Nullable String stepName) {
     this.stepName = stepName;
+  }
+
+  /** Reset the metrics. */
+  public void reset() {
+    reset(counters);
+    reset(distributions);
+    reset(gauges);
+  }
+
+  private void reset(MetricsMap<MetricName, ? extends MetricCell<?>> cells) {
+    for (MetricCell<?> cell : cells.values()) {
+      cell.reset();
+    }
   }
 
   /**

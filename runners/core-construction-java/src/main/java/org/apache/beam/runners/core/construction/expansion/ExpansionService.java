@@ -38,13 +38,13 @@ import org.apache.beam.model.pipeline.v1.RunnerApi;
 import org.apache.beam.runners.core.construction.BeamUrns;
 import org.apache.beam.runners.core.construction.CoderTranslation;
 import org.apache.beam.runners.core.construction.Environments;
-import org.apache.beam.runners.core.construction.JavaReadViaImpulse;
 import org.apache.beam.runners.core.construction.PipelineTranslation;
 import org.apache.beam.runners.core.construction.RehydratedComponents;
 import org.apache.beam.runners.core.construction.SdkComponents;
 import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.expansion.ExternalTransformRegistrar;
+import org.apache.beam.sdk.options.ExperimentalOptions;
 import org.apache.beam.sdk.transforms.ExternalTransformBuilder;
 import org.apache.beam.sdk.transforms.PTransform;
 import org.apache.beam.sdk.values.PCollection;
@@ -54,14 +54,13 @@ import org.apache.beam.sdk.values.PDone;
 import org.apache.beam.sdk.values.PInput;
 import org.apache.beam.sdk.values.POutput;
 import org.apache.beam.sdk.values.TupleTag;
-import org.apache.beam.vendor.grpc.v1p21p0.io.grpc.Server;
-import org.apache.beam.vendor.grpc.v1p21p0.io.grpc.ServerBuilder;
-import org.apache.beam.vendor.grpc.v1p21p0.io.grpc.stub.StreamObserver;
+import org.apache.beam.vendor.grpc.v1p26p0.io.grpc.Server;
+import org.apache.beam.vendor.grpc.v1p26p0.io.grpc.ServerBuilder;
+import org.apache.beam.vendor.grpc.v1p26p0.io.grpc.stub.StreamObserver;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.annotations.VisibleForTesting;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.CaseFormat;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Converter;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Preconditions;
-import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableList;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableMap;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Iterables;
 import org.slf4j.Logger;
@@ -277,12 +276,12 @@ public class ExpansionService extends ExpansionServiceGrpc.ExpansionServiceImplB
       } else if (output instanceof PCollectionTuple) {
         return ((PCollectionTuple) output)
             .getAll().entrySet().stream()
-                .collect(Collectors.toMap(entry -> entry.getKey().toString(), Map.Entry::getValue));
+                .collect(Collectors.toMap(entry -> entry.getKey().getId(), Map.Entry::getValue));
       } else if (output instanceof PCollectionList<?>) {
         PCollectionList<?> listOutput = (PCollectionList<?>) output;
         return IntStream.range(0, listOutput.size())
             .boxed()
-            .collect(Collectors.toMap(index -> "output_" + index, listOutput::get));
+            .collect(Collectors.toMap(Object::toString, listOutput::get));
       } else {
         throw new UnsupportedOperationException("Unknown output type: " + output.getClass());
       }
@@ -315,6 +314,8 @@ public class ExpansionService extends ExpansionServiceGrpc.ExpansionServiceImplB
     LOG.debug("Full transform: {}", request.getTransform());
     Set<String> existingTransformIds = request.getComponents().getTransformsMap().keySet();
     Pipeline pipeline = Pipeline.create();
+    ExperimentalOptions.addExperiment(
+        pipeline.getOptions().as(ExperimentalOptions.class), "beam_fn_api");
     RehydratedComponents rehydratedComponents =
         RehydratedComponents.forComponents(request.getComponents()).withPipeline(pipeline);
 
@@ -334,19 +335,31 @@ public class ExpansionService extends ExpansionServiceGrpc.ExpansionServiceImplB
       throw new UnsupportedOperationException(
           "Unknown urn: " + request.getTransform().getSpec().getUrn());
     }
-    registeredTransforms
-        .get(request.getTransform().getSpec().getUrn())
-        .apply(
-            pipeline,
-            request.getTransform().getUniqueName(),
-            request.getTransform().getSpec(),
-            inputs);
+    Map<String, PCollection<?>> outputs =
+        registeredTransforms
+            .get(request.getTransform().getSpec().getUrn())
+            .apply(
+                pipeline,
+                request.getTransform().getUniqueName(),
+                request.getTransform().getSpec(),
+                inputs);
 
     // Needed to find which transform was new...
     SdkComponents sdkComponents =
         rehydratedComponents.getSdkComponents().withNewIdPrefix(request.getNamespace());
     sdkComponents.registerEnvironment(Environments.JAVA_SDK_HARNESS_ENVIRONMENT);
-    pipeline.replaceAll(ImmutableList.of(JavaReadViaImpulse.boundedOverride()));
+    Map<String, String> outputMap =
+        outputs.entrySet().stream()
+            .collect(
+                Collectors.toMap(
+                    Map.Entry::getKey,
+                    output -> {
+                      try {
+                        return sdkComponents.registerPCollection(output.getValue());
+                      } catch (IOException exn) {
+                        throw new RuntimeException(exn);
+                      }
+                    }));
     RunnerApi.Pipeline pipelineProto = PipelineTranslation.toProto(pipeline, sdkComponents);
     String expandedTransformId =
         Iterables.getOnlyElement(
@@ -359,6 +372,8 @@ public class ExpansionService extends ExpansionServiceGrpc.ExpansionServiceImplB
             .getTransformsOrThrow(expandedTransformId)
             .toBuilder()
             .setUniqueName(expandedTransformId)
+            .clearOutputs()
+            .putAllOutputs(outputMap)
             .build();
     LOG.debug("Expanded to {}", expandedTransform);
 

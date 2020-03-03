@@ -22,6 +22,8 @@ import static org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Prec
 
 import java.util.List;
 import java.util.Map;
+import org.apache.beam.sdk.annotations.Experimental;
+import org.apache.beam.sdk.annotations.Experimental.Kind;
 import org.apache.beam.sdk.schemas.FieldAccessDescriptor;
 import org.apache.beam.sdk.schemas.FieldAccessDescriptor.FieldDescriptor;
 import org.apache.beam.sdk.schemas.FieldAccessDescriptor.FieldDescriptor.ListQualifier;
@@ -30,11 +32,15 @@ import org.apache.beam.sdk.schemas.FieldAccessDescriptor.FieldDescriptor.Qualifi
 import org.apache.beam.sdk.schemas.Schema;
 import org.apache.beam.sdk.schemas.Schema.Field;
 import org.apache.beam.sdk.schemas.Schema.FieldType;
+import org.apache.beam.sdk.schemas.Schema.TypeName;
+import org.apache.beam.sdk.transforms.SerializableFunction;
 import org.apache.beam.sdk.values.Row;
+import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Iterables;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Lists;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Maps;
 
 /** Helper methods to select subrows out of rows. */
+@Experimental(Kind.SCHEMAS)
 public class SelectHelpers {
 
   private static Schema union(Iterable<Schema> schemas) {
@@ -93,8 +99,12 @@ public class SelectHelpers {
 
     List<Schema> schemas = Lists.newArrayList();
     Schema.Builder builder = Schema.builder();
-    for (int fieldId : fieldAccessDescriptor.fieldIdsAccessed()) {
-      builder.addField(inputSchema.getField(fieldId));
+    for (FieldDescriptor fieldDescriptor : fieldAccessDescriptor.getFieldsAccessed()) {
+      Field field = inputSchema.getField(fieldDescriptor.getFieldId());
+      if (fieldDescriptor.getFieldRename() != null) {
+        field = field.withName(fieldDescriptor.getFieldRename());
+      }
+      builder.addField(field);
     }
     schemas.add(builder.build());
 
@@ -103,6 +113,9 @@ public class SelectHelpers {
       FieldDescriptor fieldDescriptor = nested.getKey();
       FieldAccessDescriptor nestedAccess = nested.getValue();
       Field field = inputSchema.getField(checkNotNull(fieldDescriptor.getFieldId()));
+      if (fieldDescriptor.getFieldRename() != null) {
+        field = field.withName(fieldDescriptor.getFieldRename());
+      }
       Schema outputSchema =
           getOutputSchemaHelper(field.getType(), nestedAccess, fieldDescriptor.getQualifiers(), 0);
       schemas.add(outputSchema);
@@ -133,9 +146,17 @@ public class SelectHelpers {
             getOutputSchemaHelper(
                 componentType, fieldAccessDescriptor, qualifiers, qualifierPosition + 1);
         for (Field field : outputComponent.getFields()) {
-          Field newField =
-              Field.of(field.getName(), FieldType.array(field.getType()))
-                  .withNullable(inputFieldType.getNullable());
+          Field newField;
+          if (TypeName.ARRAY.equals(inputFieldType.getTypeName())) {
+            newField =
+                Field.of(field.getName(), FieldType.array(field.getType()))
+                    .withNullable(inputFieldType.getNullable());
+          } else {
+            checkArgument(TypeName.ITERABLE.equals(inputFieldType.getTypeName()));
+            newField =
+                Field.of(field.getName(), FieldType.iterable(field.getType()))
+                    .withNullable(inputFieldType.getNullable());
+          }
           builder.addField(newField);
         }
         return builder.build();
@@ -244,7 +265,7 @@ public class SelectHelpers {
         {
           FieldType nestedInputType = checkNotNull(inputType.getCollectionElementType());
           FieldType nestedOutputType = checkNotNull(outputType.getCollectionElementType());
-          List<Object> list = (List) value;
+          Iterable<Object> iterable = (Iterable) value;
 
           // When selecting multiple subelements under a list, we distribute the select
           // resulting in multiple lists. For example, if there is a field "list" with type
@@ -263,9 +284,9 @@ public class SelectHelpers {
           List<List<Object>> selectedLists =
               Lists.newArrayListWithCapacity(nestedSchema.getFieldCount());
           for (int i = 0; i < nestedSchema.getFieldCount(); i++) {
-            selectedLists.add(Lists.newArrayListWithCapacity(list.size()));
+            selectedLists.add(Lists.newArrayListWithCapacity(Iterables.size(iterable)));
           }
-          for (Object o : list) {
+          for (Object o : iterable) {
             Row.Builder selectElementBuilder = Row.withSchema(nestedSchema);
             selectIntoRowWithQualifiers(
                 qualifiers,
@@ -329,6 +350,48 @@ public class SelectHelpers {
         }
       default:
         throw new RuntimeException("Unexpected type " + qualifier.getKind());
+    }
+  }
+
+  /**
+   * This policy keeps all levels of a name. Every field name in the path to a given field is
+   * concated with _ characters.
+   */
+  public static final SerializableFunction<List<String>, String> CONCAT_FIELD_NAMES =
+      l -> {
+        return String.join("_", l);
+      };
+  /**
+   * This policy keeps the raw nested field name. If two differently-nested fields have the same
+   * name, flattening will fail with this policy.
+   */
+  public static final SerializableFunction<List<String>, String> KEEP_NESTED_NAME =
+      l -> {
+        return l.get(l.size() - 1);
+      };
+
+  public static FieldAccessDescriptor allLeavesDescriptor(
+      Schema schema, SerializableFunction<List<String>, String> nameFn) {
+    List<String> nameComponents = Lists.newArrayList();
+    Map<String, String> fieldsSelected = Maps.newHashMap();
+    allLeafFields(schema, nameComponents, nameFn, fieldsSelected);
+    return FieldAccessDescriptor.withFieldNamesAs(fieldsSelected).resolve(schema);
+  }
+
+  private static void allLeafFields(
+      Schema schema,
+      List<String> nameComponents,
+      SerializableFunction<List<String>, String> nameFn,
+      Map<String, String> fieldsSelected) {
+    for (Field field : schema.getFields()) {
+      nameComponents.add(field.getName());
+      if (field.getType().getTypeName().isCompositeType()) {
+        allLeafFields(field.getType().getRowSchema(), nameComponents, nameFn, fieldsSelected);
+      } else {
+        String newName = nameFn.apply(nameComponents);
+        fieldsSelected.put(String.join(".", nameComponents), newName);
+      }
+      nameComponents.remove(nameComponents.size() - 1);
     }
   }
 }

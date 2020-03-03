@@ -39,6 +39,7 @@ import java.util.stream.Collectors;
 import javax.annotation.Nullable;
 import org.apache.beam.runners.core.StatefulDoFnRunner;
 import org.apache.beam.runners.flink.FlinkPipelineOptions;
+import org.apache.beam.runners.flink.metrics.FlinkMetricContainer;
 import org.apache.beam.runners.flink.translation.types.CoderTypeInformation;
 import org.apache.beam.runners.flink.translation.types.CoderTypeSerializer;
 import org.apache.beam.sdk.Pipeline;
@@ -94,6 +95,7 @@ import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
+import org.mockito.Mockito;
 import org.powermock.reflect.Whitebox;
 
 /** Tests for {@link DoFnOperator}. */
@@ -132,7 +134,6 @@ public class DoFnOperatorTest {
             new IdentityDoFn<>(),
             "stepName",
             coder,
-            null,
             Collections.emptyMap(),
             outputTag,
             Collections.emptyList(),
@@ -193,7 +194,6 @@ public class DoFnOperatorTest {
             new MultiOutputDoFn(additionalOutput1, additionalOutput2),
             "stepName",
             coder,
-            null,
             Collections.emptyMap(),
             mainOutput,
             ImmutableList.of(additionalOutput1, additionalOutput2),
@@ -309,7 +309,6 @@ public class DoFnOperatorTest {
             fn,
             "stepName",
             inputCoder,
-            null,
             Collections.emptyMap(),
             outputTag,
             Collections.emptyList(),
@@ -403,7 +402,6 @@ public class DoFnOperatorTest {
             fn,
             "stepName",
             inputCoder,
-            null,
             Collections.emptyMap(),
             outputTag,
             Collections.emptyList(),
@@ -512,7 +510,6 @@ public class DoFnOperatorTest {
             fn,
             "stepName",
             coder,
-            null,
             Collections.emptyMap(),
             outputTag,
             Collections.emptyList(),
@@ -618,7 +615,6 @@ public class DoFnOperatorTest {
             new IdentityDoFn<>(),
             "stepName",
             coder,
-            null,
             Collections.emptyMap(),
             outputTag,
             Collections.emptyList(),
@@ -790,7 +786,6 @@ public class DoFnOperatorTest {
                   new IdentityDoFn<>(),
                   "stepName",
                   coder,
-                  null,
                   Collections.emptyMap(),
                   outputTag,
                   Collections.emptyList(),
@@ -829,7 +824,6 @@ public class DoFnOperatorTest {
                   new IdentityDoFn<>(),
                   "stepName",
                   coder,
-                  null,
                   Collections.emptyMap(),
                   outputTag,
                   Collections.emptyList(),
@@ -927,7 +921,6 @@ public class DoFnOperatorTest {
                   new IdentityDoFn<>(),
                   "stepName",
                   coder,
-                  null,
                   Collections.emptyMap(),
                   outputTag,
                   Collections.emptyList(),
@@ -967,7 +960,6 @@ public class DoFnOperatorTest {
                   new IdentityDoFn<>(),
                   "stepName",
                   coder,
-                  null,
                   Collections.emptyMap(),
                   outputTag,
                   Collections.emptyList(),
@@ -1143,7 +1135,6 @@ public class DoFnOperatorTest {
             fn,
             "stepName",
             inputCoder,
-            null,
             Collections.emptyMap(),
             outputTag,
             Collections.emptyList(),
@@ -1191,7 +1182,6 @@ public class DoFnOperatorTest {
             doFn,
             "stepName",
             windowedValueCoder,
-            null,
             Collections.emptyMap(),
             outputTag,
             Collections.emptyList(),
@@ -1241,7 +1231,6 @@ public class DoFnOperatorTest {
             doFn,
             "stepName",
             windowedValueCoder,
-            null,
             Collections.emptyMap(),
             outputTag,
             Collections.emptyList(),
@@ -1339,7 +1328,6 @@ public class DoFnOperatorTest {
             doFn,
             "stepName",
             windowedValueCoder,
-            null,
             Collections.emptyMap(),
             outputTag,
             Collections.emptyList(),
@@ -1394,7 +1382,6 @@ public class DoFnOperatorTest {
             doFn,
             "stepName",
             windowedValueCoder,
-            null,
             Collections.emptyMap(),
             outputTag,
             Collections.emptyList(),
@@ -1459,7 +1446,6 @@ public class DoFnOperatorTest {
                 new IdentityDoFn(),
                 "stepName",
                 windowedValueCoder,
-                null,
                 Collections.emptyMap(),
                 outputTag,
                 Collections.emptyList(),
@@ -1572,7 +1558,6 @@ public class DoFnOperatorTest {
                 doFn,
                 "stepName",
                 windowedValueCoder,
-                null,
                 Collections.emptyMap(),
                 outputTag,
                 Collections.emptyList(),
@@ -1688,7 +1673,6 @@ public class DoFnOperatorTest {
                 doFn,
                 "stepName",
                 windowedValueCoder,
-                null,
                 Collections.emptyMap(),
                 outputTag,
                 Collections.emptyList(),
@@ -1802,7 +1786,6 @@ public class DoFnOperatorTest {
         doFn,
         "stepName",
         windowedValueCoder,
-        null,
         Collections.emptyMap(),
         outputTag,
         Collections.emptyList(),
@@ -1845,7 +1828,6 @@ public class DoFnOperatorTest {
             },
             "stepName",
             windowedValueCoder,
-            null,
             Collections.emptyMap(),
             outputTag,
             Collections.emptyList(),
@@ -1874,13 +1856,43 @@ public class DoFnOperatorTest {
     assertThrows(Error.class, () -> testHarness.snapshot(0, 0));
   }
 
+  @Test
+  public void testAccumulatorRegistrationOnOperatorClose() throws Exception {
+    DoFnOperator doFnOperator = getOperatorForCleanupInspection();
+    OneInputStreamOperatorTestHarness<WindowedValue<String>, WindowedValue<String>> testHarness =
+        new OneInputStreamOperatorTestHarness<>(doFnOperator);
+
+    testHarness.open();
+
+    String metricContainerFieldName = "flinkMetricContainer";
+    FlinkMetricContainer monitoredContainer =
+        Mockito.spy(
+            (FlinkMetricContainer)
+                Whitebox.getInternalState(doFnOperator, metricContainerFieldName));
+    Whitebox.setInternalState(doFnOperator, metricContainerFieldName, monitoredContainer);
+
+    testHarness.close();
+    Mockito.verify(monitoredContainer).registerMetricsForPipelineResult();
+  }
+
   /**
    * Ensures Jackson cache is cleaned to get rid of any references to the Flink Classloader. See
    * https://jira.apache.org/jira/browse/BEAM-6460
    */
   @Test
   public void testRemoveCachedClassReferences() throws Exception {
+    OneInputStreamOperatorTestHarness<WindowedValue<String>, WindowedValue<String>> testHarness =
+        new OneInputStreamOperatorTestHarness<>(getOperatorForCleanupInspection());
 
+    LRUMap typeCache =
+        (LRUMap) Whitebox.getInternalState(TypeFactory.defaultInstance(), "_typeCache");
+    assertThat(typeCache.size(), greaterThan(0));
+    testHarness.open();
+    testHarness.close();
+    assertThat(typeCache.size(), is(0));
+  }
+
+  private static DoFnOperator getOperatorForCleanupInspection() {
     FlinkPipelineOptions options = PipelineOptionsFactory.as(FlinkPipelineOptions.class);
     options.setParallelism(4);
 
@@ -1901,34 +1913,22 @@ public class DoFnOperatorTest {
             outputTag,
             WindowedValue.getFullCoder(StringUtf8Coder.of(), GlobalWindow.Coder.INSTANCE));
 
-    DoFnOperator<String, String> doFnOperator =
-        new DoFnOperator<>(
-            doFn,
-            "stepName",
-            windowedValueCoder,
-            null,
-            Collections.emptyMap(),
-            outputTag,
-            Collections.emptyList(),
-            outputManagerFactory,
-            WindowingStrategy.globalDefault(),
-            new HashMap<>(), /* side-input mapping */
-            Collections.emptyList(), /* side inputs */
-            options,
-            null,
-            null,
-            DoFnSchemaInformation.create(),
-            Collections.emptyMap());
-
-    OneInputStreamOperatorTestHarness<WindowedValue<String>, WindowedValue<String>> testHarness =
-        new OneInputStreamOperatorTestHarness<>(doFnOperator);
-
-    LRUMap typeCache =
-        (LRUMap) Whitebox.getInternalState(TypeFactory.defaultInstance(), "_typeCache");
-    assertThat(typeCache.size(), greaterThan(0));
-    testHarness.open();
-    testHarness.close();
-    assertThat(typeCache.size(), is(0));
+    return new DoFnOperator<>(
+        doFn,
+        "stepName",
+        windowedValueCoder,
+        Collections.emptyMap(),
+        outputTag,
+        Collections.emptyList(),
+        outputManagerFactory,
+        WindowingStrategy.globalDefault(),
+        new HashMap<>(), /* side-input mapping */
+        Collections.emptyList(), /* side inputs */
+        options,
+        null,
+        null,
+        DoFnSchemaInformation.create(),
+        Collections.emptyMap());
   }
 
   private Iterable<WindowedValue<String>> stripStreamRecord(Iterable<?> input) {

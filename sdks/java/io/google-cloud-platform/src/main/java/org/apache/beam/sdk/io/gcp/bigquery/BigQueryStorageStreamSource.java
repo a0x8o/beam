@@ -30,7 +30,6 @@ import com.google.cloud.bigquery.storage.v1beta1.Storage.SplitReadStreamRequest;
 import com.google.cloud.bigquery.storage.v1beta1.Storage.SplitReadStreamResponse;
 import com.google.cloud.bigquery.storage.v1beta1.Storage.Stream;
 import com.google.cloud.bigquery.storage.v1beta1.Storage.StreamPosition;
-import com.google.protobuf.UnknownFieldSet;
 import java.io.IOException;
 import java.util.Iterator;
 import java.util.List;
@@ -42,6 +41,7 @@ import org.apache.avro.io.BinaryDecoder;
 import org.apache.avro.io.DatumReader;
 import org.apache.avro.io.DecoderFactory;
 import org.apache.beam.sdk.annotations.Experimental;
+import org.apache.beam.sdk.annotations.Experimental.Kind;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.io.BoundedSource;
 import org.apache.beam.sdk.io.gcp.bigquery.BigQueryServices.BigQueryServerStream;
@@ -52,12 +52,11 @@ import org.apache.beam.sdk.transforms.SerializableFunction;
 import org.apache.beam.sdk.transforms.display.DisplayData;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Preconditions;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableList;
-import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Iterables;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /** A {@link org.apache.beam.sdk.io.Source} representing a single stream in a read session. */
-@Experimental(Experimental.Kind.SOURCE_SINK)
+@Experimental(Kind.SOURCE_SINK)
 public class BigQueryStorageStreamSource<T> extends BoundedSource<T> {
 
   private static final Logger LOGGER = LoggerFactory.getLogger(BigQueryStorageStreamSource.class);
@@ -151,7 +150,7 @@ public class BigQueryStorageStreamSource<T> extends BoundedSource<T> {
   }
 
   /** A {@link org.apache.beam.sdk.io.Source.Reader} which reads records from a stream. */
-  @Experimental(Experimental.Kind.SOURCE_SINK)
+  @Experimental(Kind.SOURCE_SINK)
   public static class BigQueryStorageStreamReader<T> extends BoundedSource.BoundedReader<T> {
 
     private final DatumReader<GenericRecord> datumReader;
@@ -292,16 +291,7 @@ public class BigQueryStorageStreamSource<T> extends BoundedSource<T> {
       SplitReadStreamRequest splitRequest =
           SplitReadStreamRequest.newBuilder()
               .setOriginalStream(source.stream)
-              // TODO(aryann): Once we rebuild the generated client code, we should change this to
-              // use setFraction().
-              .setUnknownFields(
-                  UnknownFieldSet.newBuilder()
-                      .addField(
-                          2,
-                          UnknownFieldSet.Field.newBuilder()
-                              .addFixed32(java.lang.Float.floatToIntBits((float) fraction))
-                              .build())
-                      .build())
+              .setFraction((float) fraction)
               .build();
       SplitReadStreamResponse splitResponse = storageClient.splitReadStream(splitRequest);
 
@@ -390,16 +380,7 @@ public class BigQueryStorageStreamSource<T> extends BoundedSource<T> {
     }
 
     private static float getFractionConsumed(ReadRowsResponse response) {
-      // TODO(aryann): Once we rebuild the generated client code, we should change this to
-      // use getFractionConsumed().
-      List<Integer> fractionConsumedField =
-          response.getStatus().getUnknownFields().getField(2).getFixed32List();
-      if (fractionConsumedField.isEmpty()) {
-        Metrics.counter(BigQueryStorageStreamReader.class, "fraction-consumed-not-set").inc();
-        return 0f;
-      }
-
-      return Float.intBitsToFloat(Iterables.getOnlyElement(fractionConsumedField));
+      return response.getStatus().getFractionConsumed();
     }
   }
 }

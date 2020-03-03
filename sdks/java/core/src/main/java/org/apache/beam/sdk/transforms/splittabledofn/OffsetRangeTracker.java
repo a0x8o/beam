@@ -22,6 +22,8 @@ import static org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Prec
 import static org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Preconditions.checkState;
 
 import javax.annotation.Nullable;
+import org.apache.beam.sdk.annotations.Experimental;
+import org.apache.beam.sdk.annotations.Experimental.Kind;
 import org.apache.beam.sdk.io.range.OffsetRange;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.MoreObjects;
 
@@ -29,6 +31,7 @@ import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.MoreObjects
  * A {@link RestrictionTracker} for claiming offsets in an {@link OffsetRange} in a monotonically
  * increasing fashion.
  */
+@Experimental(Kind.SPLITTABLE_DO_FN)
 public class OffsetRangeTracker extends RestrictionTracker<OffsetRange, Long>
     implements Sizes.HasSize {
   private OffsetRange range;
@@ -45,12 +48,15 @@ public class OffsetRangeTracker extends RestrictionTracker<OffsetRange, Long>
   }
 
   @Override
-  public OffsetRange checkpoint() {
+  public SplitResult<OffsetRange> trySplit(double fractionOfRemainder) {
+    // TODO(BEAM-8872): Add support for splitting off a fixed amount of work for this restriction
+    // instead of only supporting checkpointing.
+
     checkState(
         lastClaimedOffset != null, "Can't checkpoint before any offset was successfully claimed");
     OffsetRange res = new OffsetRange(lastClaimedOffset + 1, range.getTo());
     this.range = new OffsetRange(range.getFrom(), lastClaimedOffset + 1);
-    return res;
+    return SplitResult.of(range, res);
   }
 
   /**

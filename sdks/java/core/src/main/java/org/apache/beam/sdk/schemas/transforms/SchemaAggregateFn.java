@@ -37,7 +37,6 @@ import org.apache.beam.sdk.transforms.Combine.CombineFn;
 import org.apache.beam.sdk.transforms.CombineFns;
 import org.apache.beam.sdk.transforms.CombineFns.CoCombineResult;
 import org.apache.beam.sdk.transforms.CombineFns.ComposedCombineFn;
-import org.apache.beam.sdk.transforms.SerializableFunction;
 import org.apache.beam.sdk.transforms.SimpleFunction;
 import org.apache.beam.sdk.values.Row;
 import org.apache.beam.sdk.values.TupleTag;
@@ -46,15 +45,15 @@ import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Lists;
 /** This is the builder used by {@link Group} to build up a composed {@link CombineFn}. */
 @Experimental(Kind.SCHEMAS)
 class SchemaAggregateFn {
-  static <T> Inner<T> create() {
-    return new AutoValue_SchemaAggregateFn_Inner.Builder<T>()
+  static Inner create() {
+    return new AutoValue_SchemaAggregateFn_Inner.Builder()
         .setFieldAggregations(Lists.newArrayList())
         .build();
   }
 
   /** Implementation of {@link #create}. */
   @AutoValue
-  abstract static class Inner<T> extends CombineFn<T, Object[], Row> {
+  abstract static class Inner extends CombineFn<Row, Object[], Row> {
     // Represents an aggregation of one or more fields.
     static class FieldAggregation<FieldT, AccumT, OutputT> implements Serializable {
       FieldAccessDescriptor fieldsToAggregate;
@@ -66,11 +65,12 @@ class SchemaAggregateFn {
       private final TupleTag<Object> combineTag;
       // The schema corresponding to the the subset of input fields being aggregated.
       @Nullable private final Schema inputSubSchema;
+      @Nullable private final FieldAccessDescriptor flattenedFieldAccessDescriptor;
       // The flattened version of inputSubSchema.
-      @Nullable private final Schema unnestedInputSubSchema;
+      @Nullable private final Schema flattenedInputSubSchema;
       // The output schema resulting from the aggregation.
       private final Schema aggregationSchema;
-      private final boolean needsUnnesting;
+      private final boolean needsFlattening;
 
       FieldAggregation(
           FieldAccessDescriptor fieldsToAggregate,
@@ -96,13 +96,17 @@ class SchemaAggregateFn {
         if (inputSchema != null) {
           this.fieldsToAggregate = fieldsToAggregate.resolve(inputSchema);
           this.inputSubSchema = SelectHelpers.getOutputSchema(inputSchema, this.fieldsToAggregate);
-          this.unnestedInputSubSchema = Unnest.getUnnestedSchema(inputSubSchema);
-          this.needsUnnesting = !inputSchema.equals(unnestedInputSubSchema);
+          this.flattenedFieldAccessDescriptor =
+              SelectHelpers.allLeavesDescriptor(inputSubSchema, SelectHelpers.CONCAT_FIELD_NAMES);
+          this.flattenedInputSubSchema =
+              SelectHelpers.getOutputSchema(inputSubSchema, flattenedFieldAccessDescriptor);
+          this.needsFlattening = !inputSchema.equals(flattenedInputSubSchema);
         } else {
           this.fieldsToAggregate = fieldsToAggregate;
           this.inputSubSchema = null;
-          this.unnestedInputSubSchema = null;
-          this.needsUnnesting = false;
+          this.flattenedFieldAccessDescriptor = null;
+          this.flattenedInputSubSchema = null;
+          this.needsFlattening = false;
         }
         this.outputField = outputField;
         this.fn = fn;
@@ -118,48 +122,48 @@ class SchemaAggregateFn {
       }
     }
 
-    abstract Builder<T> toBuilder();
+    abstract Builder toBuilder();
 
     @AutoValue.Builder
-    abstract static class Builder<T> {
-      abstract Builder<T> setInputSchema(@Nullable Schema inputSchema);
+    abstract static class Builder {
+      abstract Builder setInputSchema(@Nullable Schema inputSchema);
 
-      abstract Builder<T> setOutputSchema(@Nullable Schema outputSchema);
+      abstract Builder setOutputSchema(@Nullable Schema outputSchema);
 
-      abstract Builder<T> setComposedCombineFn(@Nullable ComposedCombineFn<T> composedCombineFn);
+      abstract Builder setComposedCombineFn(@Nullable ComposedCombineFn composedCombineFn);
 
-      abstract Builder<T> setFieldAggregations(List<FieldAggregation> fieldAggregations);
+      abstract Builder setFieldAggregations(List<FieldAggregation> fieldAggregations);
 
-      abstract Inner<T> build();
+      abstract Inner build();
     }
 
     abstract @Nullable Schema getInputSchema();
 
     abstract @Nullable Schema getOutputSchema();
 
-    abstract @Nullable ComposedCombineFn<T> getComposedCombineFn();
+    abstract @Nullable ComposedCombineFn getComposedCombineFn();
 
     abstract List<FieldAggregation> getFieldAggregations();
 
     /** Once the schema is known, this function is called by the {@link Group} transform. */
-    Inner<T> withSchema(Schema inputSchema, SerializableFunction<T, Row> toRowFunction) {
+    Inner withSchema(Schema inputSchema) {
       List<FieldAggregation> fieldAggregations =
           getFieldAggregations().stream()
               .map(f -> f.resolve(inputSchema))
               .collect(Collectors.toList());
 
-      ComposedCombineFn<T> composedCombineFn = null;
+      ComposedCombineFn composedCombineFn = null;
       for (int i = 0; i < fieldAggregations.size(); ++i) {
         FieldAggregation fieldAggregation = fieldAggregations.get(i);
-        SimpleFunction<T, ?> extractFunction;
+        SimpleFunction<Row, ?> extractFunction;
         Coder extractOutputCoder;
-        if (fieldAggregation.unnestedInputSubSchema.getFieldCount() == 1) {
-          extractFunction = new ExtractSingleFieldFunction<>(fieldAggregation, toRowFunction);
+        if (fieldAggregation.fieldsToAggregate.referencesSingleField()) {
+          extractFunction = new ExtractSingleFieldFunction(fieldAggregation);
           extractOutputCoder =
               SchemaCoder.coderForFieldType(
-                  fieldAggregation.unnestedInputSubSchema.getField(0).getType());
+                  fieldAggregation.flattenedInputSubSchema.getField(0).getType());
         } else {
-          extractFunction = new ExtractFieldsFunction<>(fieldAggregation, toRowFunction);
+          extractFunction = new ExtractFieldsFunction(fieldAggregation);
           extractOutputCoder = SchemaCoder.of(fieldAggregation.inputSubSchema);
         }
         if (i == 0) {
@@ -188,7 +192,7 @@ class SchemaAggregateFn {
     }
 
     /** Aggregate all values of a set of fields into an output field. */
-    <CombineInputT, AccumT, CombineOutputT> Inner<T> aggregateFields(
+    <CombineInputT, AccumT, CombineOutputT> Inner aggregateFields(
         FieldAccessDescriptor fieldsToAggregate,
         CombineFn<CombineInputT, AccumT, CombineOutputT> fn,
         String outputFieldName) {
@@ -199,7 +203,7 @@ class SchemaAggregateFn {
     }
 
     /** Aggregate all values of a set of fields into an output field. */
-    <CombineInputT, AccumT, CombineOutputT> Inner<T> aggregateFields(
+    <CombineInputT, AccumT, CombineOutputT> Inner aggregateFields(
         FieldAccessDescriptor fieldsToAggregate,
         CombineFn<CombineInputT, AccumT, CombineOutputT> fn,
         Field outputField) {
@@ -224,47 +228,43 @@ class SchemaAggregateFn {
     }
 
     /** Extract a single field from an input {@link Row}. */
-    private static class ExtractSingleFieldFunction<InputT, OutputT>
-        extends SimpleFunction<InputT, OutputT> {
+    private static class ExtractSingleFieldFunction<OutputT> extends SimpleFunction<Row, OutputT> {
       private final FieldAggregation fieldAggregation;
-      private final SerializableFunction<InputT, Row> toRowFunction;
 
-      private ExtractSingleFieldFunction(
-          FieldAggregation fieldAggregation, SerializableFunction<InputT, Row> toRowFunction) {
+      private ExtractSingleFieldFunction(FieldAggregation fieldAggregation) {
         this.fieldAggregation = fieldAggregation;
-        this.toRowFunction = toRowFunction;
       }
 
       @Override
-      public OutputT apply(InputT input) {
-        Row row = toRowFunction.apply(input);
+      public OutputT apply(Row row) {
         Row selected =
             SelectHelpers.selectRow(
                 row,
                 fieldAggregation.fieldsToAggregate,
                 row.getSchema(),
                 fieldAggregation.inputSubSchema);
-        if (fieldAggregation.needsUnnesting) {
-          selected = Unnest.unnestRow(selected, fieldAggregation.unnestedInputSubSchema);
+        if (fieldAggregation.needsFlattening) {
+          selected =
+              SelectHelpers.selectRow(
+                  selected,
+                  fieldAggregation.flattenedFieldAccessDescriptor,
+                  row.getSchema(),
+                  fieldAggregation.flattenedInputSubSchema);
         }
         return selected.getValue(0);
       }
     }
 
     /** Extract multiple fields from an input {@link Row}. */
-    private static class ExtractFieldsFunction<T> extends SimpleFunction<T, Row> {
+    private static class ExtractFieldsFunction extends SimpleFunction<Row, Row> {
       private FieldAggregation fieldAggregation;
-      private SerializableFunction<T, Row> toRowFunction;
 
-      private ExtractFieldsFunction(
-          FieldAggregation fieldAggregation, SerializableFunction<T, Row> toRowFunction) {
+      private ExtractFieldsFunction(FieldAggregation fieldAggregation) {
         this.fieldAggregation = fieldAggregation;
-        this.toRowFunction = toRowFunction;
       }
 
       @Override
-      public Row apply(T input) {
-        Row row = toRowFunction.apply(input);
+      public Row apply(Row row) {
         return SelectHelpers.selectRow(
             row,
             fieldAggregation.fieldsToAggregate,
@@ -279,7 +279,7 @@ class SchemaAggregateFn {
     }
 
     @Override
-    public Object[] addInput(Object[] accumulator, T input) {
+    public Object[] addInput(Object[] accumulator, Row input) {
       return getComposedCombineFn().addInput(accumulator, input);
     }
 
@@ -289,13 +289,13 @@ class SchemaAggregateFn {
     }
 
     @Override
-    public Coder<Object[]> getAccumulatorCoder(CoderRegistry registry, Coder<T> inputCoder)
+    public Coder<Object[]> getAccumulatorCoder(CoderRegistry registry, Coder<Row> inputCoder)
         throws CannotProvideCoderException {
       return getComposedCombineFn().getAccumulatorCoder(registry, inputCoder);
     }
 
     @Override
-    public Coder<Row> getDefaultOutputCoder(CoderRegistry registry, Coder<T> inputCoder) {
+    public Coder<Row> getDefaultOutputCoder(CoderRegistry registry, Coder<Row> inputCoder) {
       return SchemaCoder.of(getOutputSchema());
     }
 
