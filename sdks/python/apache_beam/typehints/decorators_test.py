@@ -113,7 +113,7 @@ class IOTypeHintsTest(unittest.TestCase):
 
     self._test_strip_iterable_fail(typehints.Union[str, int])
     self._test_strip_iterable_fail(typehints.Optional[str])
-    self._test_strip_iterable_fail(typehints.WindowedValue[str])
+    self._test_strip_iterable_fail(typehints.WindowedValue[str])  # type: ignore[misc]
     self._test_strip_iterable_fail(typehints.Dict[str, int])
 
   def test_make_traceback(self):
@@ -130,6 +130,11 @@ class IOTypeHintsTest(unittest.TestCase):
     self.assertRegex(th.debug_str(), r'with_input_types')
     th = th.with_output_types(str)
     self.assertRegex(th.debug_str(), r'(?s)with_output_types.*with_input_types')
+
+    th = decorators.IOTypeHints.empty().with_output_types(str)
+    th2 = decorators.IOTypeHints.empty().with_input_types(int)
+    th = th.with_defaults(th2)
+    self.assertRegex(th.debug_str(), r'(?s)based on:.*\'str\'.*and:.*\'int\'')
 
   def test_with_defaults_noop_does_not_grow_origin(self):
     th = decorators.IOTypeHints.empty()

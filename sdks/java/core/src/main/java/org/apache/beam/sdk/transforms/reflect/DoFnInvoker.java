@@ -26,6 +26,7 @@ import org.apache.beam.sdk.state.TimeDomain;
 import org.apache.beam.sdk.state.Timer;
 import org.apache.beam.sdk.state.TimerMap;
 import org.apache.beam.sdk.transforms.DoFn;
+import org.apache.beam.sdk.transforms.DoFn.BundleFinalizer;
 import org.apache.beam.sdk.transforms.DoFn.FinishBundle;
 import org.apache.beam.sdk.transforms.DoFn.MultiOutputReceiver;
 import org.apache.beam.sdk.transforms.DoFn.OutputReceiver;
@@ -35,6 +36,7 @@ import org.apache.beam.sdk.transforms.DoFn.StateId;
 import org.apache.beam.sdk.transforms.DoFn.TimerId;
 import org.apache.beam.sdk.transforms.splittabledofn.RestrictionTracker;
 import org.apache.beam.sdk.transforms.splittabledofn.Sizes;
+import org.apache.beam.sdk.transforms.splittabledofn.WatermarkEstimator;
 import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
 import org.apache.beam.sdk.transforms.windowing.PaneInfo;
 import org.apache.beam.sdk.values.Row;
@@ -53,10 +55,10 @@ public interface DoFnInvoker<InputT, OutputT> {
   void invokeSetup();
 
   /** Invoke the {@link DoFn.StartBundle} method on the bound {@link DoFn}. */
-  void invokeStartBundle(DoFn<InputT, OutputT>.StartBundleContext c);
+  void invokeStartBundle(ArgumentProvider<InputT, OutputT> arguments);
 
   /** Invoke the {@link DoFn.FinishBundle} method on the bound {@link DoFn}. */
-  void invokeFinishBundle(DoFn<InputT, OutputT>.FinishBundleContext c);
+  void invokeFinishBundle(ArgumentProvider<InputT, OutputT> arguments);
 
   /** Invoke the {@link DoFn.Teardown} method on the bound {@link DoFn}. */
   void invokeTeardown();
@@ -102,6 +104,21 @@ public interface DoFnInvoker<InputT, OutputT> {
   @SuppressWarnings("TypeParameterUnusedInFormals")
   <RestrictionT, PositionT> RestrictionTracker<RestrictionT, PositionT> invokeNewTracker(
       ArgumentProvider<InputT, OutputT> arguments);
+
+  /** Invoke the {@link DoFn.NewWatermarkEstimator} method on the bound {@link DoFn}. */
+  @SuppressWarnings("TypeParameterUnusedInFormals")
+  <WatermarkEstimatorStateT>
+      WatermarkEstimator<WatermarkEstimatorStateT> invokeNewWatermarkEstimator(
+          ArgumentProvider<InputT, OutputT> arguments);
+
+  /** Invoke the {@link DoFn.GetInitialWatermarkEstimatorState} method on the bound {@link DoFn}. */
+  Object invokeGetInitialWatermarkEstimatorState(ArgumentProvider<InputT, OutputT> arguments);
+
+  /**
+   * Invoke the {@link DoFn.GetWatermarkEstimatorStateCoder} method on the bound {@link DoFn}.
+   * Called only during pipeline construction time.
+   */
+  Coder<?> invokeGetWatermarkEstimatorStateCoder(CoderRegistry coderRegistry);
 
   /** Get the bound {@link DoFn}. */
   DoFn<InputT, OutputT> getFn();
@@ -168,8 +185,14 @@ public interface DoFnInvoker<InputT, OutputT> {
     /** Provide a {@link OutputReceiver} for outputting rows to the default output. */
     OutputReceiver<Row> outputRowReceiver(DoFn<InputT, OutputT> doFn);
 
-    /** Provide a {@link MultiOutputReceiver} for outputing to the default output. */
+    /** Provide a {@link MultiOutputReceiver} for outputting to the default output. */
     MultiOutputReceiver taggedOutputReceiver(DoFn<InputT, OutputT> doFn);
+
+    /**
+     * Provide a {@link BundleFinalizer} for being able to register a callback after the bundle has
+     * been successfully persisted by the runner.
+     */
+    BundleFinalizer bundleFinalizer();
 
     /**
      * If this is a splittable {@link DoFn}, returns the associated restriction with the current
@@ -182,6 +205,18 @@ public interface DoFnInvoker<InputT, OutputT> {
      * the current call.
      */
     RestrictionTracker<?, ?> restrictionTracker();
+
+    /**
+     * If this is a splittable {@link DoFn}, returns the associated watermark estimator state with
+     * the current call.
+     */
+    Object watermarkEstimatorState();
+
+    /**
+     * If this is a splittable {@link DoFn}, returns the associated {@link WatermarkEstimator} with
+     * the current call.
+     */
+    WatermarkEstimator<?> watermarkEstimator();
 
     /** Returns the state cell for the given {@link StateId}. */
     State state(String stateId, boolean alwaysFetched);
@@ -330,6 +365,24 @@ public interface DoFnInvoker<InputT, OutputT> {
           String.format("RestrictionTracker unsupported in %s", getErrorContext()));
     }
 
+    @Override
+    public Object watermarkEstimatorState() {
+      throw new UnsupportedOperationException(
+          String.format("WatermarkEstimatorState unsupported in %s", getErrorContext()));
+    }
+
+    @Override
+    public WatermarkEstimator<?> watermarkEstimator() {
+      throw new UnsupportedOperationException(
+          String.format("WatermarkEstimator unsupported in %s", getErrorContext()));
+    }
+
+    @Override
+    public BundleFinalizer bundleFinalizer() {
+      throw new UnsupportedOperationException(
+          String.format("BundleFinalizer unsupported in %s", getErrorContext()));
+    }
+
     /**
      * Return a human readable representation of the current call context to be used during error
      * reporting.
@@ -436,6 +489,16 @@ public interface DoFnInvoker<InputT, OutputT> {
     }
 
     @Override
+    public Object watermarkEstimatorState() {
+      return delegate.watermarkEstimatorState();
+    }
+
+    @Override
+    public WatermarkEstimator<?> watermarkEstimator() {
+      return delegate.watermarkEstimator();
+    }
+
+    @Override
     public State state(String stateId, boolean alwaysFetch) {
       return delegate.state(stateId, alwaysFetch);
     }
@@ -453,6 +516,11 @@ public interface DoFnInvoker<InputT, OutputT> {
     @Override
     public String timerId(DoFn<InputT, OutputT> doFn) {
       return delegate.timerId(doFn);
+    }
+
+    @Override
+    public BundleFinalizer bundleFinalizer() {
+      return delegate.bundleFinalizer();
     }
 
     @Override

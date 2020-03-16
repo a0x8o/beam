@@ -30,6 +30,7 @@ import logging
 import queue
 import sys
 import threading
+import time
 import traceback
 from builtins import object
 from concurrent import futures
@@ -55,6 +56,7 @@ from apache_beam.runners.worker import bundle_processor
 from apache_beam.runners.worker import data_plane
 from apache_beam.runners.worker import statesampler
 from apache_beam.runners.worker.channel_factory import GRPCChannelFactory
+from apache_beam.runners.worker.data_plane import PeriodicThread
 from apache_beam.runners.worker.statecache import StateCache
 from apache_beam.runners.worker.worker_id_interceptor import WorkerIdInterceptor
 from apache_beam.runners.worker.worker_status import FnApiWorkerStatusHandler
@@ -71,6 +73,8 @@ _LOGGER = logging.getLogger(__name__)
 # 5 minutes * 60 seconds * 1020 millis * 1000 micros * 1000 nanoseconds
 DEFAULT_LOG_LULL_TIMEOUT_NS = 5 * 60 * 1000 * 1000 * 1000
 
+DEFAULT_BUNDLE_PROCESSOR_CACHE_SHUTDOWN_THRESHOLD_S = 60
+
 
 class SdkHarness(object):
   REQUEST_METHOD_PREFIX = '_request_'
@@ -84,7 +88,7 @@ class SdkHarness(object):
                # time-based data buffering is disabled by default
                data_buffer_time_limit_ms=0,
                profiler_factory=None,  # type: Optional[Callable[..., Profile]]
-               status_address=None,  # type: Optional[str, unicode]
+               status_address=None,  # type: Optional[str]
                ):
     self._alive = True
     self._worker_index = 0
@@ -118,7 +122,8 @@ class SdkHarness(object):
     if status_address:
       try:
         self._status_handler = FnApiWorkerStatusHandler(
-            status_address, self._bundle_processor_cache)
+            status_address, self._bundle_processor_cache
+        )  # type: Optional[FnApiWorkerStatusHandler]
       except Exception:
         traceback_string = traceback.format_exc()
         _LOGGER.warning(
@@ -285,6 +290,9 @@ class BundleProcessorCache(object):
     }  # type: Dict[str, Tuple[str, bundle_processor.BundleProcessor]]
     self.cached_bundle_processors = collections.defaultdict(
         list)  # type: DefaultDict[str, List[bundle_processor.BundleProcessor]]
+    self.last_access_times = \
+        collections.defaultdict(float)  # type: DefaultDict[str, float]
+    self._schedule_periodic_shutdown()
 
   def register(self, bundle_descriptor):
     # type: (beam_fn_api_pb2.ProcessBundleDescriptor) -> None
@@ -341,18 +349,48 @@ class BundleProcessorCache(object):
     """
     descriptor_id, processor = self.active_bundle_processors.pop(instruction_id)
     processor.reset()
+    self.last_access_times[descriptor_id] = time.time()
     self.cached_bundle_processors[descriptor_id].append(processor)
 
   def shutdown(self):
     """
     Shutdown all ``BundleProcessor``s in the cache.
     """
+    if self.periodic_shutdown:
+      self.periodic_shutdown.cancel()
+      self.periodic_shutdown.join()
+      self.periodic_shutdown = None
+
     for instruction_id in self.active_bundle_processors:
       self.active_bundle_processors[instruction_id][1].shutdown()
       del self.active_bundle_processors[instruction_id]
     for cached_bundle_processors in self.cached_bundle_processors.values():
-      while len(cached_bundle_processors) > 0:
-        cached_bundle_processors.pop().shutdown()
+      BundleProcessorCache._shutdown_cached_bundle_processors(
+          cached_bundle_processors)
+
+  def _schedule_periodic_shutdown(self):
+    def shutdown_inactive_bundle_processors():
+      for descriptor_id, last_access_time in self.last_access_times.items():
+        if (time.time() - last_access_time >
+            DEFAULT_BUNDLE_PROCESSOR_CACHE_SHUTDOWN_THRESHOLD_S):
+          BundleProcessorCache._shutdown_cached_bundle_processors(
+              self.cached_bundle_processors[descriptor_id])
+
+    self.periodic_shutdown = PeriodicThread(
+        DEFAULT_BUNDLE_PROCESSOR_CACHE_SHUTDOWN_THRESHOLD_S,
+        shutdown_inactive_bundle_processors)
+    self.periodic_shutdown.daemon = True
+    self.periodic_shutdown.start()
+
+  @staticmethod
+  def _shutdown_cached_bundle_processors(cached_bundle_processors):
+    try:
+      while True:
+        # pop() is threadsafe
+        bundle_processor = cached_bundle_processors.pop()
+        bundle_processor.shutdown()
+    except IndexError:
+      pass
 
 
 class SdkWorker(object):
@@ -543,8 +581,7 @@ class StateHandler(with_metaclass(abc.ABCMeta, object)):  # type: ignore[misc]
     raise NotImplementedError(type(self))
 
 
-class StateHandlerFactory(with_metaclass(abc.ABCMeta,
-                                         object)):  # type: ignore[misc]
+class StateHandlerFactory(with_metaclass(abc.ABCMeta, object)):  # type: ignore[misc]
   """An abstract factory for creating ``DataChannel``."""
   @abc.abstractmethod
   def create_state_handler(self, api_service_descriptor):

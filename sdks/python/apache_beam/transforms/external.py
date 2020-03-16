@@ -226,7 +226,7 @@ class ExternalTransform(ptransform.PTransform):
     Experimental; no backwards compatibility guarantees.
   """
   _namespace_counter = 0
-  _namespace = threading.local()
+  _namespace = threading.local()  # type: ignore[assignment]
 
   _IMPULSE_PREFIX = 'impulse'
 
@@ -315,7 +315,12 @@ class ExternalTransform(ptransform.PTransform):
         transform=transform_proto)
 
     if isinstance(self._expansion_service, str):
-      with grpc.insecure_channel(self._expansion_service) as channel:
+      # Some environments may not support unsecure channels. Hence using a
+      # secure channel with local credentials here.
+      # TODO: update this to support secure non-local channels.
+      channel_creds = grpc.local_channel_credentials()
+      with grpc.secure_channel(self._expansion_service,
+                               channel_creds) as channel:
         response = beam_expansion_api_pb2_grpc.ExpansionServiceStub(
             channel).Expand(request)
     else:
@@ -325,6 +330,7 @@ class ExternalTransform(ptransform.PTransform):
       raise RuntimeError(response.error)
     self._expanded_components = response.components
     self._expanded_transform = response.transform
+    self._expanded_requirements = response.requirements
     result_context = pipeline_context.PipelineContext(response.components)
 
     def fix_output(pcoll, tag):
@@ -417,6 +423,9 @@ class ExternalTransform(ptransform.PTransform):
           environment_id=proto.environment_id)
       context.transforms.put_proto(id, new_proto)
 
+    for requirement in self._expanded_requirements:
+      context.add_requirement(requirement)
+
     return beam_runner_api_pb2.PTransform(
         unique_name=full_label,
         spec=self._expanded_transform.spec,
@@ -462,8 +471,8 @@ class BeamJarExpansionService(JavaJarExpansionService):
   """An expansion service based on an Beam Java Jar file.
 
   Attempts to use a locally-build copy of the jar based on the gradle target,
-  if it exists, otherwise attempts to download it (with caching) from the
-  apache maven repository.
+  if it exists, otherwise attempts to download and cache the released artifact
+  corresponding to this version of Beam from the apache maven repository.
   """
   def __init__(self, gradle_target, extra_args=None, gradle_appendix=None):
     path_to_jar = subprocess_server.JavaJarServer.path_to_beam_jar(

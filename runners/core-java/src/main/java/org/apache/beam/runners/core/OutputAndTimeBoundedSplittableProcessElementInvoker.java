@@ -32,6 +32,7 @@ import org.apache.beam.sdk.state.TimeDomain;
 import org.apache.beam.sdk.state.Timer;
 import org.apache.beam.sdk.state.TimerMap;
 import org.apache.beam.sdk.transforms.DoFn;
+import org.apache.beam.sdk.transforms.DoFn.BundleFinalizer;
 import org.apache.beam.sdk.transforms.DoFn.FinishBundleContext;
 import org.apache.beam.sdk.transforms.DoFn.MultiOutputReceiver;
 import org.apache.beam.sdk.transforms.DoFn.OutputReceiver;
@@ -110,7 +111,12 @@ public class OutputAndTimeBoundedSplittableProcessElementInvoker<
 
     DoFn.ProcessContinuation cont =
         invoker.invokeProcessElement(
-            new DoFnInvoker.ArgumentProvider<InputT, OutputT>() {
+            new DoFnInvoker.BaseArgumentProvider<InputT, OutputT>() {
+              @Override
+              public String getErrorContext() {
+                return OutputAndTimeBoundedSplittableProcessElementInvoker.class.getSimpleName();
+              }
+
               @Override
               public DoFn<InputT, OutputT>.ProcessContext processContext(
                   DoFn<InputT, OutputT> doFn) {
@@ -167,6 +173,12 @@ public class OutputAndTimeBoundedSplittableProcessElementInvoker<
               @Override
               public MultiOutputReceiver taggedOutputReceiver(DoFn<InputT, OutputT> doFn) {
                 return DoFnOutputReceivers.windowedMultiReceiver(processContext, null);
+              }
+
+              @Override
+              public BundleFinalizer bundleFinalizer() {
+                throw new UnsupportedOperationException(
+                    "Not supported in non-portable SplittableDoFn");
               }
 
               @Override

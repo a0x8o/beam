@@ -31,6 +31,7 @@ import org.apache.beam.sdk.state.TimeDomain;
 import org.apache.beam.sdk.state.Timer;
 import org.apache.beam.sdk.state.TimerMap;
 import org.apache.beam.sdk.transforms.DoFn;
+import org.apache.beam.sdk.transforms.DoFn.StartBundleContext;
 import org.apache.beam.sdk.transforms.PTransform;
 import org.apache.beam.sdk.transforms.ParDo;
 import org.apache.beam.sdk.transforms.Reshuffle;
@@ -41,6 +42,7 @@ import org.apache.beam.sdk.transforms.reflect.DoFnInvoker.BaseArgumentProvider;
 import org.apache.beam.sdk.transforms.reflect.DoFnInvokers;
 import org.apache.beam.sdk.transforms.reflect.DoFnSignatures;
 import org.apache.beam.sdk.transforms.splittabledofn.RestrictionTracker;
+import org.apache.beam.sdk.transforms.splittabledofn.WatermarkEstimator;
 import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
 import org.apache.beam.sdk.transforms.windowing.PaneInfo;
 import org.apache.beam.sdk.values.KV;
@@ -132,10 +134,26 @@ public class SplittableParDoNaiveBounded {
     @StartBundle
     public void startBundle(StartBundleContext c) {
       invoker.invokeStartBundle(
-          new DoFn<InputT, OutputT>.StartBundleContext() {
+          new BaseArgumentProvider<InputT, OutputT>() {
             @Override
-            public PipelineOptions getPipelineOptions() {
+            public DoFn<InputT, OutputT>.StartBundleContext startBundleContext(
+                DoFn<InputT, OutputT> doFn) {
+              return new DoFn<InputT, OutputT>.StartBundleContext() {
+                @Override
+                public PipelineOptions getPipelineOptions() {
+                  return c.getPipelineOptions();
+                }
+              };
+            }
+
+            @Override
+            public PipelineOptions pipelineOptions() {
               return c.getPipelineOptions();
+            }
+
+            @Override
+            public String getErrorContext() {
+              return "SplittableParDoNaiveBounded/StartBundle";
             }
           });
     }
@@ -174,23 +192,40 @@ public class SplittableParDoNaiveBounded {
     @FinishBundle
     public void finishBundle(FinishBundleContext c) {
       invoker.invokeFinishBundle(
-          new DoFn<InputT, OutputT>.FinishBundleContext() {
+          new BaseArgumentProvider<InputT, OutputT>() {
             @Override
-            public PipelineOptions getPipelineOptions() {
+            public DoFn<InputT, OutputT>.FinishBundleContext finishBundleContext(
+                DoFn<InputT, OutputT> doFn) {
+              return new DoFn<InputT, OutputT>.FinishBundleContext() {
+                @Override
+                public PipelineOptions getPipelineOptions() {
+                  return c.getPipelineOptions();
+                }
+
+                @Override
+                public void output(
+                    @Nullable OutputT output, Instant timestamp, BoundedWindow window) {
+                  throw new UnsupportedOperationException(
+                      "Output from FinishBundle for SDF is not supported in naive implementation");
+                }
+
+                @Override
+                public <T> void output(
+                    TupleTag<T> tag, T output, Instant timestamp, BoundedWindow window) {
+                  throw new UnsupportedOperationException(
+                      "Output from FinishBundle for SDF is not supported in naive implementation");
+                }
+              };
+            }
+
+            @Override
+            public PipelineOptions pipelineOptions() {
               return c.getPipelineOptions();
             }
 
             @Override
-            public void output(@Nullable OutputT output, Instant timestamp, BoundedWindow window) {
-              throw new UnsupportedOperationException(
-                  "Output from FinishBundle for SDF is not supported");
-            }
-
-            @Override
-            public <T> void output(
-                TupleTag<T> tag, T output, Instant timestamp, BoundedWindow window) {
-              throw new UnsupportedOperationException(
-                  "Output from FinishBundle for SDF is not supported");
+            public String getErrorContext() {
+              return "SplittableParDoNaiveBounded/StartBundle";
             }
           });
     }
@@ -318,6 +353,11 @@ public class SplittableParDoNaiveBounded {
       }
 
       @Override
+      public BundleFinalizer bundleFinalizer() {
+        throw new UnsupportedOperationException();
+      }
+
+      @Override
       public Object restriction() {
         return tracker.currentRestriction();
       }
@@ -375,6 +415,17 @@ public class SplittableParDoNaiveBounded {
       @Override
       public void updateWatermark(Instant watermark) {
         // Ignore watermark updates
+      }
+
+      @Override
+      public Object watermarkEstimatorState() {
+        throw new UnsupportedOperationException(
+            "@WatermarkEstimatorState parameters are not supported.");
+      }
+
+      @Override
+      public WatermarkEstimator<?> watermarkEstimator() {
+        throw new UnsupportedOperationException("WatermarkEstimator parameters are not supported.");
       }
 
       // ----------- Unsupported methods --------------------

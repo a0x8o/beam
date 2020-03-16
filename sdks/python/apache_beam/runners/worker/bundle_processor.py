@@ -80,10 +80,11 @@ if TYPE_CHECKING:
   from google.protobuf import message  # pylint: disable=ungrouped-imports
   from apache_beam import pvalue
   from apache_beam.portability.api import metrics_pb2
+  from apache_beam.runners.sdf_utils import SplitResultPrimary
+  from apache_beam.runners.sdf_utils import SplitResultResidual
   from apache_beam.runners.worker import data_plane
   from apache_beam.runners.worker import sdk_worker
   from apache_beam.transforms import window
-  from apache_beam.utils.timestamp import Timestamp
 
 # This module is experimental. No backwards-compatibility guarantees.
 T = TypeVar('T')
@@ -216,7 +217,7 @@ class DataInputOperation(RunnerIOOperation):
       self.output(decoded_value)
 
   def try_split(self, fraction_of_remainder, total_buffer_size):
-    # type: (...) -> Optional[Tuple[int, Optional[Tuple[operations.DoOperation, common.SplitResultType]], Optional[Tuple[operations.DoOperation, common.SplitResultType]], int]]
+    # type: (...) -> Optional[Tuple[int, Optional[operations.SdfSplitResultsPrimary], Optional[operations.SdfSplitResultsResidual], int]]
     with self.splitting_lock:
       if not self.started:
         return None
@@ -245,7 +246,9 @@ class DataInputOperation(RunnerIOOperation):
         # If it's less than what's left of the current element,
         # try splitting at the current element.
         if keep_of_element_remainder < 1:
-          split = self.receivers[0].try_split(keep_of_element_remainder)
+          split = self.receivers[0].try_split(
+              keep_of_element_remainder
+          )  # type: Optional[Tuple[operations.SdfSplitResultsPrimary, operations.SdfSplitResultsResidual]]
           if split:
             element_primary, element_residual = split
             self.stop = self.index + 1
@@ -901,7 +904,7 @@ class BundleProcessor(object):
 
   def delayed_bundle_application(self,
                                  op,  # type: operations.DoOperation
-                                 deferred_remainder  # type: common.SplitResultType
+                                 deferred_remainder  # type: SplitResultResidual
                                 ):
     # type: (...) -> beam_fn_api_pb2.DelayedBundleApplication
     assert op.input_info is not None
@@ -910,8 +913,9 @@ class BundleProcessor(object):
         deferred_remainder)
     if deferred_timestamp:
       assert isinstance(deferred_timestamp, timestamp.Duration)
-      proto_deferred_watermark = duration_pb2.Duration()
-      proto_deferred_watermark.FromMicroseconds(deferred_timestamp.micros)
+      proto_deferred_watermark = proto_utils.from_micros(
+          duration_pb2.Duration,
+          deferred_timestamp.micros)  # type: Optional[duration_pb2.Duration]
     else:
       proto_deferred_watermark = None
     return beam_fn_api_pb2.DelayedBundleApplication(
@@ -921,16 +925,25 @@ class BundleProcessor(object):
 
   def bundle_application(self,
                          op,  # type: operations.DoOperation
-                         primary  # type: common.SplitResultType
+                         primary  # type: SplitResultPrimary
                         ):
+    # type: (...) -> beam_fn_api_pb2.BundleApplication
     return self.construct_bundle_application(op, None, primary.primary_value)
 
-  def construct_bundle_application(self, op, output_watermark, element):
+  def construct_bundle_application(self,
+                                   op,  # type: operations.DoOperation
+                                   output_watermark,  # type: Optional[timestamp.Timestamp]
+                                   element
+                                  ):
+    # type: (...) -> beam_fn_api_pb2.BundleApplication
     transform_id, main_input_tag, main_input_coder, outputs = op.input_info
     if output_watermark:
-      proto_output_watermark = timestamp_pb2.Timestamp()
-      proto_output_watermark.FromMicroseconds(output_watermark.micros)
-      output_watermarks = {output: proto_output_watermark for output in outputs}
+      proto_output_watermark = proto_utils.from_micros(
+          timestamp_pb2.Timestamp, output_watermark.micros)
+      output_watermarks = {
+          output: proto_output_watermark
+          for output in outputs
+      }  # type: Optional[Dict[str, timestamp_pb2.Timestamp]]
     else:
       output_watermarks = None
     return beam_fn_api_pb2.BundleApplication(
@@ -1321,8 +1334,9 @@ def create_dofn_javasdk(
     beam_runner_api_pb2.ParDoPayload)
 def create_pair_with_restriction(*args):
   class PairWithRestriction(beam.DoFn):
-    def __init__(self, fn, restriction_provider):
+    def __init__(self, fn, restriction_provider, watermark_estimator_provider):
       self.restriction_provider = restriction_provider
+      self.watermark_estimator_provider = watermark_estimator_provider
 
     # An unused window is requested to force explosion of multi-window
     # WindowedValues.
@@ -1331,7 +1345,12 @@ def create_pair_with_restriction(*args):
       # TODO(SDF): Do we want to allow mutation of the element?
       # (E.g. it could be nice to shift bulky description to the portion
       # that can be distributed.)
-      yield element, self.restriction_provider.initial_restriction(element)
+      initial_restriction = self.restriction_provider.initial_restriction(
+          element)
+      initial_estimator_state = (
+          self.watermark_estimator_provider.initial_estimator_state(
+              element, initial_restriction))
+      yield (element, (initial_restriction, initial_estimator_state))
 
   return _create_sdf_operation(PairWithRestriction, *args)
 
@@ -1341,14 +1360,18 @@ def create_pair_with_restriction(*args):
     beam_runner_api_pb2.ParDoPayload)
 def create_split_and_size_restrictions(*args):
   class SplitAndSizeRestrictions(beam.DoFn):
-    def __init__(self, fn, restriction_provider):
+    def __init__(self, fn, restriction_provider, watermark_estimator_provider):
       self.restriction_provider = restriction_provider
+      self.watermark_estimator_provider = watermark_estimator_provider
 
     def process(self, element_restriction, *args, **kwargs):
-      element, restriction = element_restriction
+      element, (restriction, _) = element_restriction
       for part, size in self.restriction_provider.split_and_size(
           element, restriction):
-        yield ((element, part), size)
+        estimator_state = (
+            self.watermark_estimator_provider.initial_estimator_state(
+                element, part))
+        yield ((element, (part, estimator_state)), size)
 
   return _create_sdf_operation(SplitAndSizeRestrictions, *args)
 
@@ -1381,8 +1404,11 @@ def _create_sdf_operation(
   dofn_data = pickler.loads(parameter.do_fn.payload)
   dofn = dofn_data[0]
   restriction_provider = common.DoFnSignature(dofn).get_restriction_provider()
-  serialized_fn = pickler.dumps((proxy_dofn(dofn, restriction_provider), ) +
-                                dofn_data[1:])
+  watermark_estiamtor_provider = (
+      common.DoFnSignature(dofn).get_watermark_estimator_provider())
+  serialized_fn = pickler.dumps(
+      (proxy_dofn(dofn, restriction_provider, watermark_estiamtor_provider), ) +
+      dofn_data[1:])
   return _create_pardo_operation(
       factory,
       transform_id,
@@ -1446,16 +1472,6 @@ def _create_pardo_operation(
 
   output_tags = list(transform_proto.outputs.keys())
 
-  # Hack to match out prefix injected by dataflow runner.
-  def mutate_tag(tag):
-    if 'None' in output_tags:
-      if tag == 'None':
-        return 'out'
-      else:
-        return 'out_' + tag
-    else:
-      return tag
-
   dofn_data = pickler.loads(serialized_fn)
   if not dofn_data[-1]:
     # Windowing not set.
@@ -1504,7 +1520,7 @@ def _create_pardo_operation(
   output_coders = factory.get_output_coders(transform_proto)
   spec = operation_specs.WorkerDoFn(
       serialized_fn=serialized_fn,
-      output_tags=[mutate_tag(tag) for tag in output_tags],
+      output_tags=output_tags,
       input=None,
       side_inputs=None,  # Fn API uses proto definitions and the Fn State API
       output_coders=[output_coders[tag] for tag in output_tags])
@@ -1709,7 +1725,7 @@ def create_map_windows(
     factory,  # type: BeamTransformFactory
     transform_id,  # type: str
     transform_proto,  # type: beam_runner_api_pb2.PTransform
-    mapping_fn_spec,  # type: beam_runner_api_pb2.SdkFunctionSpec
+    mapping_fn_spec,  # type: beam_runner_api_pb2.FunctionSpec
     consumers  # type: Dict[str, List[operations.Operation]]
 ):
   assert mapping_fn_spec.urn == python_urns.PICKLED_WINDOW_MAPPING_FN
