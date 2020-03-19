@@ -1,0 +1,24 @@
+load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
+load("@fbsource//tools/build_defs:export_directory.bzl", "export_directory")
+
+python_unittest(
+    name = "test",
+    srcs = glob(["*.py"]),
+    py_version = [
+        "2.7",
+        "3.7",
+    ],
+    resources = {
+        "//opensource/fbcode_builder:manifests": "manifests",
+        ":fixtures": "fixtures",
+    },
+    deps = [
+        "//opensource/fbcode_builder/getdeps:lib",
+    ],
+)
+
+export_directory(
+    name = "fixtures",
+    srcs = glob(["fixtures/**/*"]),
+    visibility = ["PUBLIC"],
+)
