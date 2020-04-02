@@ -407,7 +407,7 @@ class BasicProvisionService(beam_provision_api_pb2_grpc.ProvisionServiceServicer
 
 
 class EmptyArtifactRetrievalService(
-    beam_artifact_api_pb2_grpc.ArtifactRetrievalServiceServicer):
+    beam_artifact_api_pb2_grpc.LegacyArtifactRetrievalServiceServicer):
   def GetManifest(self, request, context=None):
     return beam_artifact_api_pb2.GetManifestResponse(
         manifest=beam_artifact_api_pb2.Manifest())
@@ -460,10 +460,10 @@ class GrpcServer(object):
       if self.provision_info.artifact_staging_dir:
         service = artifact_service.BeamFilesystemArtifactService(
             self.provision_info.artifact_staging_dir
-        )  # type: beam_artifact_api_pb2_grpc.ArtifactRetrievalServiceServicer
+        )  # type: beam_artifact_api_pb2_grpc.LegacyArtifactRetrievalServiceServicer
       else:
         service = EmptyArtifactRetrievalService()
-      beam_artifact_api_pb2_grpc.add_ArtifactRetrievalServiceServicer_to_server(
+      beam_artifact_api_pb2_grpc.add_LegacyArtifactRetrievalServiceServicer_to_server(
           service, self.control_server)
 
     self.data_plane_handler = data_plane.BeamFnDataServicer(
@@ -642,6 +642,8 @@ class EmbeddedGrpcWorkerHandler(GrpcWorkerHandler):
     self.worker_thread.join()
 
 
+# The subprocesses module is not threadsafe on Python 2.7. Use this lock to
+# prevent concurrent calls to POpen().
 SUBPROCESS_LOCK = threading.Lock()
 
 
@@ -759,7 +761,7 @@ class WorkerHandlerManager(object):
     self._cached_handlers = collections.defaultdict(
         list)  # type: DefaultDict[str, List[WorkerHandler]]
     self._workers_by_id = {}  # type: Dict[str, WorkerHandler]
-    self._state = StateServicer()  # rename?
+    self.state_servicer = StateServicer()
     self._grpc_server = None  # type: Optional[GrpcServer]
 
   def get_worker_handlers(
@@ -781,14 +783,14 @@ class WorkerHandlerManager(object):
       self._grpc_server = cast(GrpcServer, None)
     elif self._grpc_server is None:
       self._grpc_server = GrpcServer(
-          self._state, self._job_provision_info, self)
+          self.state_servicer, self._job_provision_info, self)
 
     worker_handler_list = self._cached_handlers[environment_id]
     if len(worker_handler_list) < num_workers:
       for _ in range(len(worker_handler_list), num_workers):
         worker_handler = WorkerHandler.create(
             environment,
-            self._state,
+            self.state_servicer,
             self._job_provision_info,
             self._grpc_server)
         _LOGGER.info(
