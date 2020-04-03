@@ -342,6 +342,14 @@ message StandardPTransforms {
     // https://s.apache.org/beam-runner-api-combine-model#heading=h.aj86ew4v1wk
     // Payload: CombinePayload
     COMBINE_GROUPED_VALUES = 3 [(beam_urn) = "beam:transform:combine_grouped_values:v1"];
+
+    // Represents the Convert To Accumulators transform, as described in the
+    // following document:
+    // https://s.apache.org/beam-runner-api-combine-model#heading=h.h5697l1scd9x
+    // Payload: CombinePayload
+    COMBINE_PER_KEY_CONVERT_TO_ACCUMULATORS = 4
+        [(beam_urn) =
+             "beam:transform:combine_per_key_convert_to_accumulators:v1"];
   }
   // Payload for all of these: ParDoPayload containing the user's SDF
   enum SplittableParDoComponents {
@@ -693,9 +701,14 @@ message StandardCoders {
     // Components: Coder for a single element.
     ITERABLE = 3 [(beam_urn) = "beam:coder:iterable:v1"];
 
-    // Encodes a timer containing a timestamp and a user specified payload.
-    // The encoding is represented as: timestamp payload
-    //   timestamp - a big endian 8 byte integer representing millis-since-epoch.
+    // Encodes a timer containing a user key, a dynamic timer tag, a clear bit,
+    // a fire timestamp, a hold timestamp, the windows and the paneinfo.
+    // The encoding is represented as:
+    //   user key - user defined key, uses the component coder.
+    //   dynamic timer tag - a string which identifies a timer.
+    //   windows - uses component coders.
+    //   clear bit - a boolean set for clearing the timer.
+    //   fire timestamp - a big endian 8 byte integer representing millis-since-epoch.
     //     The encoded representation is shifted so that the byte representation of
     //     negative values are lexicographically ordered before the byte representation
     //     of positive values. This is typically done by subtracting -9223372036854775808
@@ -708,8 +721,9 @@ message StandardCoders {
     //                        1: 80 00 00 00 00 00 00 01
     //                      256: 80 00 00 00 00 00 01 00
     //      9223372036854775807: FF FF FF FF FF FF FF FF
-    //   payload - user defined data, uses the component coder
-    // Components: Coder for the payload.
+    //   hold timestamp - similar to the fire timestamp.
+    //   paneinfo - similar to the paneinfo of the windowed_value.
+    // Components: Coder for the key and windows.
     TIMER = 4 [(beam_urn) = "beam:coder:timer:v1"];
 
     /*
@@ -1171,7 +1185,7 @@ message ArtifactFilePayload {
 
 message ArtifactUrlPayload {
   // a string for an artifact URL e.g. "https://.../foo.jar" or "gs://tmp/foo.jar"
-  string path = 1;
+  string url = 1;
 }
 
 message EmbeddedFilePayload {

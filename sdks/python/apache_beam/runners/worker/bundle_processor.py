@@ -580,16 +580,36 @@ class OutputTimer(object):
 
   def set(self, ts):
     ts = timestamp.Timestamp.of(ts)
+    # TODO(BEAM-9562): Plumb through actual timer fields.
     self._receiver.receive(
-        windowed_value.WindowedValue((self._key, dict(timestamp=ts)),
+        windowed_value.WindowedValue((
+            self._key,
+            userstate.Timer(
+                user_key='',
+                dynamic_timer_tag='',
+                windows=(self._window, ),
+                clear_bit=False,
+                fire_timestamp=ts,
+                hold_timestamp=ts,
+                paneinfo=windowed_value.PANE_INFO_UNKNOWN)),
                                      ts, (self._window, )))
 
   def clear(self):
     # type: () -> None
     dummy_millis = int(common_urns.constants.MAX_TIMESTAMP_MILLIS.constant) + 1
     clear_ts = timestamp.Timestamp(micros=dummy_millis * 1000)
+    # TODO(BEAM-9562): Plumb through actual paneinfo.
     self._receiver.receive(
-        windowed_value.WindowedValue((self._key, dict(timestamp=clear_ts)),
+        windowed_value.WindowedValue((
+            self._key,
+            userstate.Timer(
+                user_key='',
+                dynamic_timer_tag='',
+                windows=(self._window, ),
+                clear_bit=False,
+                fire_timestamp=timestamp.Timestamp.of(clear_ts),
+                hold_timestamp=timestamp.Timestamp.of(0),
+                paneinfo=windowed_value.PANE_INFO_UNKNOWN)),
                                      0, (self._window, )))
 
 
@@ -1664,6 +1684,20 @@ def create_combine_per_key_extract_outputs(
 ):
   return _create_combine_phase_operation(
       factory, transform_id, transform_proto, payload, consumers, 'extract')
+
+
+@BeamTransformFactory.register_urn(
+    common_urns.combine_components.COMBINE_PER_KEY_CONVERT_TO_ACCUMULATORS.urn,
+    beam_runner_api_pb2.CombinePayload)
+def create_combine_per_key_convert_to_accumulators(
+    factory,  # type: BeamTransformFactory
+    transform_id,  # type: str
+    transform_proto,  # type: beam_runner_api_pb2.PTransform
+    payload,  # type: beam_runner_api_pb2.CombinePayload
+    consumers  # type: Dict[str, List[operations.Operation]]
+):
+  return _create_combine_phase_operation(
+      factory, transform_id, transform_proto, payload, consumers, 'convert')
 
 
 @BeamTransformFactory.register_urn(
