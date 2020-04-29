@@ -21,6 +21,7 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.core.Is.is;
 
 import java.nio.ByteBuffer;
+import java.util.Collections;
 import java.util.UUID;
 import org.apache.beam.runners.core.StateInternals;
 import org.apache.beam.runners.core.StateInternalsTest;
@@ -37,6 +38,7 @@ import org.apache.beam.sdk.util.CoderUtils;
 import org.apache.flink.api.common.ExecutionConfig;
 import org.apache.flink.api.common.JobID;
 import org.apache.flink.api.java.typeutils.GenericTypeInfo;
+import org.apache.flink.core.fs.CloseableRegistry;
 import org.apache.flink.runtime.jobgraph.JobVertexID;
 import org.apache.flink.runtime.operators.testutils.DummyEnvironment;
 import org.apache.flink.runtime.query.KvStateRegistry;
@@ -44,6 +46,8 @@ import org.apache.flink.runtime.state.AbstractKeyedStateBackend;
 import org.apache.flink.runtime.state.KeyGroupRange;
 import org.apache.flink.runtime.state.KeyedStateBackend;
 import org.apache.flink.runtime.state.memory.MemoryStateBackend;
+import org.apache.flink.runtime.state.ttl.TtlTimeProvider;
+import org.hamcrest.Matchers;
 import org.joda.time.Instant;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -79,27 +83,44 @@ public class FlinkStateInternalsTest extends StateInternalsTest {
             stateTag);
 
     Instant noHold = new Instant(Long.MAX_VALUE);
-    assertThat(stateInternals.watermarkHold(), is(noHold));
+    assertThat(stateInternals.minWatermarkHoldMs(), is(noHold.getMillis()));
 
     Instant high = new Instant(10);
     globalWindow.add(high);
-    assertThat(stateInternals.watermarkHold(), is(high));
+    assertThat(stateInternals.minWatermarkHoldMs(), is(high.getMillis()));
 
     Instant middle = new Instant(5);
     fixedWindow.add(middle);
-    assertThat(stateInternals.watermarkHold(), is(middle));
+    assertThat(stateInternals.minWatermarkHoldMs(), is(middle.getMillis()));
 
     Instant low = new Instant(1);
     globalWindow.add(low);
-    assertThat(stateInternals.watermarkHold(), is(low));
+    assertThat(stateInternals.minWatermarkHoldMs(), is(low.getMillis()));
 
     // Try to overwrite with later hold (should not succeed)
     globalWindow.add(high);
-    assertThat(stateInternals.watermarkHold(), is(low));
+    assertThat(stateInternals.minWatermarkHoldMs(), is(low.getMillis()));
     fixedWindow.add(high);
-    assertThat(stateInternals.watermarkHold(), is(low));
+    assertThat(stateInternals.minWatermarkHoldMs(), is(low.getMillis()));
 
+    // Watermark hold should be computed across all keys
+    ByteBuffer firstKey = keyedStateBackend.getCurrentKey();
     changeKey(keyedStateBackend);
+    ByteBuffer secondKey = keyedStateBackend.getCurrentKey();
+    assertThat(firstKey, is(Matchers.not(secondKey)));
+    assertThat(stateInternals.minWatermarkHoldMs(), is(low.getMillis()));
+    // ..but be tracked per key / window
+    assertThat(globalWindow.read(), is(Matchers.nullValue()));
+    assertThat(fixedWindow.read(), is(Matchers.nullValue()));
+    globalWindow.add(middle);
+    fixedWindow.add(high);
+    assertThat(globalWindow.read(), is(middle));
+    assertThat(fixedWindow.read(), is(high));
+    // Old key should give previous results
+    keyedStateBackend.setCurrentKey(firstKey);
+    assertThat(globalWindow.read(), is(low));
+    assertThat(fixedWindow.read(), is(middle));
+
     // Discard watermark view and recover it
     stateInternals = new FlinkStateInternals<>(keyedStateBackend, StringUtf8Coder.of());
     globalWindow = stateInternals.state(StateNamespaces.global(), stateTag);
@@ -109,16 +130,29 @@ public class FlinkStateInternalsTest extends StateInternalsTest {
                 IntervalWindow.getCoder(), new IntervalWindow(new Instant(0), new Instant(10))),
             stateTag);
 
-    assertThat(stateInternals.watermarkHold(), is(low));
+    // Watermark hold across all keys should be unchanged
+    assertThat(stateInternals.minWatermarkHoldMs(), is(low.getMillis()));
+
+    // Check the holds for the second key and clear them
+    keyedStateBackend.setCurrentKey(secondKey);
+    assertThat(globalWindow.read(), is(middle));
+    assertThat(fixedWindow.read(), is(high));
+    globalWindow.clear();
+    fixedWindow.clear();
+
+    // Check the holds for the first key and clear them
+    keyedStateBackend.setCurrentKey(firstKey);
+    assertThat(globalWindow.read(), is(low));
+    assertThat(fixedWindow.read(), is(middle));
 
     fixedWindow.clear();
-    assertThat(stateInternals.watermarkHold(), is(low));
+    assertThat(stateInternals.minWatermarkHoldMs(), is(low.getMillis()));
 
     globalWindow.clear();
-    assertThat(stateInternals.watermarkHold(), is(noHold));
+    assertThat(stateInternals.minWatermarkHoldMs(), is(noHold.getMillis()));
   }
 
-  private KeyedStateBackend<ByteBuffer> createStateBackend() throws Exception {
+  public static KeyedStateBackend<ByteBuffer> createStateBackend() throws Exception {
     MemoryStateBackend backend = new MemoryStateBackend();
 
     AbstractKeyedStateBackend<ByteBuffer> keyedStateBackend =
@@ -129,14 +163,19 @@ public class FlinkStateInternalsTest extends StateInternalsTest {
             new GenericTypeInfo<>(ByteBuffer.class).createSerializer(new ExecutionConfig()),
             2,
             new KeyGroupRange(0, 1),
-            new KvStateRegistry().createTaskRegistry(new JobID(), new JobVertexID()));
+            new KvStateRegistry().createTaskRegistry(new JobID(), new JobVertexID()),
+            TtlTimeProvider.DEFAULT,
+            null,
+            Collections.emptyList(),
+            new CloseableRegistry());
 
     changeKey(keyedStateBackend);
 
     return keyedStateBackend;
   }
 
-  private void changeKey(KeyedStateBackend<ByteBuffer> keyedStateBackend) throws CoderException {
+  private static void changeKey(KeyedStateBackend<ByteBuffer> keyedStateBackend)
+      throws CoderException {
     keyedStateBackend.setCurrentKey(
         ByteBuffer.wrap(
             CoderUtils.encodeToByteArray(StringUtf8Coder.of(), UUID.randomUUID().toString())));
