@@ -33,7 +33,9 @@ import typing
 import unittest
 import uuid
 from builtins import range
+from typing import Any
 from typing import Dict
+from typing import Tuple
 
 # patches unittest.TestCase to be python3 compatible
 import hamcrest  # pylint: disable=ungrouped-imports
@@ -231,10 +233,7 @@ class FnApiRunnerTest(unittest.TestCase):
   def test_multimap_side_input(self):
     with self.create_pipeline() as p:
       main = p | 'main' >> beam.Create(['a', 'b'])
-      side = (
-          p | 'side' >> beam.Create([('a', 1), ('b', 2), ('a', 3)])
-          # TODO(BEAM-4782): Obviate the need for this map.
-          | beam.Map(lambda kv: (kv[0], kv[1])))
+      side = p | 'side' >> beam.Create([('a', 1), ('b', 2), ('a', 3)])
       assert_that(
           main | beam.Map(
               lambda k, d: (k, sorted(d[k])), beam.pvalue.AsMultiMap(side)),
@@ -245,10 +244,7 @@ class FnApiRunnerTest(unittest.TestCase):
     # twice as side input.
     with self.create_pipeline() as p:
       main = p | 'main' >> beam.Create(['a', 'b'])
-      side = (
-          p | 'side' >> beam.Create([('a', 1), ('b', 2), ('a', 3)])
-          # TODO(BEAM-4782): Obviate the need for this map.
-          | beam.Map(lambda kv: (kv[0], kv[1])))
+      side = p | 'side' >> beam.Create([('a', 1), ('b', 2), ('a', 3)])
       assert_that(
           main | 'first map' >> beam.Map(
               lambda k,
@@ -421,15 +417,24 @@ class FnApiRunnerTest(unittest.TestCase):
       assert_that(actual, equal_to(expected))
 
   def test_pardo_state_timers(self):
-    self._run_pardo_state_timers(False)
+    self._run_pardo_state_timers(windowed=False)
+
+  def test_pardo_state_timers_non_standard_coder(self):
+    self._run_pardo_state_timers(windowed=False, key_type=Any)
 
   def test_windowed_pardo_state_timers(self):
-    self._run_pardo_state_timers(True)
+    self._run_pardo_state_timers(windowed=True)
 
-  def _run_pardo_state_timers(self, windowed):
+  def _run_pardo_state_timers(self, windowed, key_type=None):
+    """
+    :param windowed: If True, uses an interval window, otherwise a global window
+    :param key_type: Allows to override the inferred key type. This is useful to
+    test the use of non-standard coders, e.g. Python's FastPrimitivesCoder.
+    """
     state_spec = userstate.BagStateSpec('state', beam.coders.StrUtf8Coder())
     timer_spec = userstate.TimerSpec('timer', userstate.TimeDomain.WATERMARK)
     elements = list('abcdefgh')
+    key = 'key'
     buffer_size = 3
 
     class BufferDoFn(beam.DoFn):
@@ -480,7 +485,8 @@ class FnApiRunnerTest(unittest.TestCase):
           | beam.Map(lambda e: window.TimestampedValue(e, ord(e) % 2))
           | beam.WindowInto(
               window.FixedWindows(1) if windowed else window.GlobalWindows())
-          | beam.Map(lambda x: ('key', x))
+          | beam.Map(lambda x: (key, x)).with_output_types(
+              Tuple[key_type if key_type else type(key), Any])
           | beam.ParDo(BufferDoFn()))
 
       assert_that(actual, is_buffered_correctly)
