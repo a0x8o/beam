@@ -87,6 +87,7 @@
   <suppress id="ForbidNonVendoredGuava" files=".*zetasql.*TableScanConverter\.java" />
   <suppress id="ForbidNonVendoredGuava" files=".*zetasql.*ExpressionConverter\.java" />
   <suppress id="ForbidNonVendoredGuava" files=".*zetasql.*ZetaSQLPlannerImpl\.java" />
+  <suppress id="ForbidNonVendoredGuava" files=".*zetasql.*SqlAnalyzer\.java" />
 
   <!-- Flink -->
   <!-- Checkstyle does not correctly detect package files across multiple source directories. -->
@@ -94,6 +95,7 @@
   <suppress checks="JavadocPackage" files=".*runners.flink.*EncodedTypeSerializer\.java"/>
   <suppress checks="JavadocPackage" files=".*runners.flink.*BeamStoppableFunction\.java"/>
   <suppress checks="JavadocPackage" files=".*runners.flink.*BeamFlinkRemoteStreamEnvironment\.java"/>
+  <suppress checks="JavadocPackage" files=".*runners.flink.*FlinkCapabilities\.java"/>
 
   <!-- ThriftIO -->
   <!-- Suppress Checkstyle for Thrift generated test files. -->

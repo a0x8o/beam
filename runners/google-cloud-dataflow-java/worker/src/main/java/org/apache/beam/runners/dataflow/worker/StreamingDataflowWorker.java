@@ -394,7 +394,7 @@ public class StreamingDataflowWorker {
   private final ConcurrentMap<String, String> systemNameToComputationIdMap =
       new ConcurrentHashMap<>();
 
-  private final WindmillStateCache stateCache = new WindmillStateCache();
+  private final WindmillStateCache stateCache;
 
   private final ThreadFactory threadFactory;
   private DataflowMapTaskExecutorFactory mapTaskExecutorFactory;
@@ -577,6 +577,7 @@ public class StreamingDataflowWorker {
       boolean publishCounters,
       HotKeyLogger hotKeyLogger)
       throws IOException {
+    this.stateCache = new WindmillStateCache(options.getWorkerCacheMb());
     this.mapTaskExecutorFactory = mapTaskExecutorFactory;
     this.workUnitClient = workUnitClient;
     this.options = options;
@@ -2309,14 +2310,14 @@ public class StreamingDataflowWorker {
           builder.append("<td>");
           builder.append(String.format("%016x", workItem.getShardingKey()));
           builder.append("</td><td>");
-          builder.append(workItem.getWorkToken());
+          builder.append(String.format("%016x", workItem.getWorkToken()));
           builder.append("</td><td>");
           builder.append(queue.size() - 1);
           builder.append("</td><td>");
           builder.append(elapsedString(work.getStartTime(), now));
           builder.append("</td><td>");
           builder.append(state);
-          builder.append("</td></tr>\n");
+          builder.append("</td><td>");
           builder.append(elapsedString(work.getStateStartTime(), now));
           builder.append("</td></tr>\n");
         }

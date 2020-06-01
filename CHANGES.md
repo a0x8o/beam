@@ -57,11 +57,16 @@
 ## I/Os
 
 * Support for X source added (Java/Python) ([BEAM-X](https://issues.apache.org/jira/browse/BEAM-X)).
+* Support for reading from Snowflake added (Java) ([BEAM-9722](https://issues.apache.org/jira/browse/BEAM-9722)).
 
 ## New Features / Improvements
 
-* --direct_num_workers=0 is supported for FnApi runner. It will set the number of threads/subprocesses to number of cores of the machine executing the pipeline ([BEAM-9443](https://issues.apache.org/jira/browse/BEAM-9443)).
+* `--workerCacheMB` flag is supported in Dataflow streaming pipeline ([BEAM-9964](https://issues.apache.org/jira/browse/BEAM-9964))
+* `--direct_num_workers=0` is supported for FnApi runner. It will set the number of threads/subprocesses to number of cores of the machine executing the pipeline ([BEAM-9443](https://issues.apache.org/jira/browse/BEAM-9443)).
 * Python SDK now has experimental support for SqlTransform ([BEAM-8603](https://issues.apache.org/jira/browse/BEAM-8603)).
+* Add OnWindowExpiration method to Stateful DoFn ([BEAM-1589](https://issues.apache.org/jira/browse/BEAM-1589)).
+* Add a more complete I/O support matrix in the documentation site ([BEAM-9916](https://issues.apache.org/jira/browse/BEAM-9916)).
+* Upgrade Sphinx to 3.0.3 for building PyDoc.
 
 ## Breaking Changes
 
@@ -75,7 +80,7 @@
 
 * Fixed X (Java/Python) ([BEAM-X](https://issues.apache.org/jira/browse/BEAM-X)).
 
-# [2.21.0] - Unreleased (In Progress)
+# [2.21.0] - 2020-05-27
 
 ## Highlights
 
@@ -88,6 +93,7 @@ Please migrate your code to use
 See the updated
 [datastore_wordcount](https://github.com/apache/beam/blob/master/sdks/python/apache_beam/examples/cookbook/datastore_wordcount.py)
 for example usage.
+* Python SDK: Added integration tests and updated batch write functionality for Google Cloud Spanner transform ([BEAM-8949](https://issues.apache.org/jira/browse/BEAM-8949)).
 
 ## New Features / Improvements
 * Python SDK will now use Python 3 type annotations as pipeline type hints.
@@ -102,7 +108,7 @@ for example usage.
     More details will be in 
     [Ensuring Python Type Safety](https://beam.apache.org/documentation/sdks/python-type-safety/)
     and an upcoming
-    [blog post](https://beam.apache.org/blog/python/typing/2020/03/06/python-typing.html).
+    [blog post](https://beam.apache.org/blog/python-typing/index.html).
 
 * Java SDK: Introducing the concept of options in Beam Schema’s. These options add extra 
 context to fields and schemas. This replaces the current Beam metadata that is present 
@@ -124,6 +130,11 @@ conversion to beam schema options. *Remark: Schema aware is still experimental.*
     see https://cloud.google.com/bigquery/docs/loading-data-cloud-storage-avro#avro_conversions.
 * Added integration of Java SDK with Google Cloud AI VideoIntelligence service 
 ([BEAM-9147](https://issues.apache.org/jira/browse/BEAM-9147))
+* Added integration of Java SDK with Google Cloud AI natural language processing API
+([BEAM-9634](https://issues.apache.org/jira/browse/BEAM-9634))
+* `docker-pull-licenses` tag was introduced. Licenses/notices of third party dependencies will be added to the docker images when `docker-pull-licenses` was set. 
+  The files are added to `/opt/apache/beam/third_party_licenses/`. 
+  By default, no licenses/notices are added to the docker images. ([BEAM-9136](https://issues.apache.org/jira/browse/BEAM-9136))
 
  
 ## Breaking Changes
@@ -132,10 +143,12 @@ conversion to beam schema options. *Remark: Schema aware is still experimental.*
 * HBaseIO.ReadAll now requires a PCollection of HBaseIO.Read objects instead of HBaseQuery objects ([BEAM-9279](https://issues.apache.org/jira/browse/BEAM-9279)).
 * ProcessContext.updateWatermark has been removed in favor of using a WatermarkEstimator ([BEAM-9430](https://issues.apache.org/jira/browse/BEAM-9430)).
 * Coder inference for PCollection of Row objects has been disabled ([BEAM-9569](https://issues.apache.org/jira/browse/BEAM-9569)).
+* Go SDK docker images are no longer released until further notice.
 
 ## Deprecations
 * Java SDK: Beam Schema FieldType.getMetadata is now deprecated and is replaced by the Beam
 Schema Options, it will be removed in version `2.23.0`. ([BEAM-9704](https://issues.apache.org/jira/browse/BEAM-9704))
+* The `--zone` option in the Dataflow runner is now deprecated. Please use `--worker_zone` instead. ([BEAM-9716](https://issues.apache.org/jira/browse/BEAM-9716))
 
 ## Known Issues
 
