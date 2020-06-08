@@ -21,4 +21,5 @@ content:
 - Map
 - GroupByKey
 - CoGroupByKey
+- Combine
 - Flatten
