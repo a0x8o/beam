@@ -3457,7 +3457,7 @@ public class ZetaSQLDialectSpecTest {
 
     ZetaSQLQueryPlanner zetaSQLQueryPlanner = new ZetaSQLQueryPlanner(config);
     thrown.expect(UnsupportedOperationException.class);
-    BeamRelNode beamRelNode = zetaSQLQueryPlanner.convertToBeamRel(sql);
+    zetaSQLQueryPlanner.convertToBeamRel(sql);
   }
 
   @Test
@@ -3565,19 +3565,16 @@ public class ZetaSQLDialectSpecTest {
   }
 
   @Test
-  @Ignore(
-      "Codegen generates code that Janino cannot compile, need further investigation on root"
-          + " cause.")
   public void testCastToDateWithCase() {
     String sql =
         "SELECT f_int, \n"
             + "CASE WHEN CHAR_LENGTH(TRIM(f_string)) = 8 \n"
             + "    THEN CAST (CONCAT(\n"
-            + "       SUBSTR(TRIM(f_string), 0, 4) \n"
+            + "       SUBSTR(TRIM(f_string), 1, 4) \n"
             + "        , '-' \n"
-            + "        , SUBSTR(TRIM(f_string), 4, 2) \n"
+            + "        , SUBSTR(TRIM(f_string), 5, 2) \n"
             + "        , '-' \n"
-            + "        , SUBSTR(TRIM(f_string), 6, 2)) AS DATE)\n"
+            + "        , SUBSTR(TRIM(f_string), 7, 2)) AS DATE)\n"
             + "    ELSE NULL\n"
             + "END \n"
             + "FROM table_for_case_when";
@@ -3587,11 +3584,14 @@ public class ZetaSQLDialectSpecTest {
     PCollection<Row> stream = BeamSqlRelUtils.toPCollection(pipeline, beamRelNode);
 
     Schema resultType =
-        Schema.builder().addInt32Field("f_int").addNullableField("f_date", DATETIME).build();
+        Schema.builder()
+            .addInt64Field("f_long")
+            .addNullableField("f_date", FieldType.logicalType(SqlTypes.DATE))
+            .build();
 
     PAssert.that(stream)
         .containsInAnyOrder(
-            Row.withSchema(resultType).addValues(1, parseDate("2018-10-18")).build());
+            Row.withSchema(resultType).addValues(1L, LocalDate.parse("2018-10-18")).build());
     pipeline.run().waitUntilFinish(Duration.standardMinutes(PIPELINE_EXECUTION_WAITTIME_MINUTES));
   }
 
@@ -3841,9 +3841,6 @@ public class ZetaSQLDialectSpecTest {
   }
 
   @Test
-  @Ignore(
-      "Calcite codegen does not support UDF with ... args."
-          + " See:https://jira.apache.org/jira/browse/CALCITE-2889")
   public void testConcatWithSixParameters() {
     String sql = "SELECT concat('abc', 'def', '  ', 'xyz', 'kkk', 'ttt')";
     ZetaSQLQueryPlanner zetaSQLQueryPlanner = new ZetaSQLQueryPlanner(config);
@@ -4252,7 +4249,7 @@ public class ZetaSQLDialectSpecTest {
   }
 
   @Test
-  @Ignore("")
+  @Ignore("https://jira.apache.org/jira/browse/BEAM-9191")
   public void testCastBytesToString1() {
     String sql = "SELECT CAST(@p0 AS STRING)";
     ImmutableMap<String, Value> params =
@@ -4281,7 +4278,7 @@ public class ZetaSQLDialectSpecTest {
   }
 
   @Test
-  @Ignore("")
+  @Ignore("https://jira.apache.org/jira/browse/BEAM-9191")
   public void testCastBytesToStringFromTable() {
     String sql = "SELECT CAST(bytes_col AS STRING) FROM table_all_types";
     ZetaSQLQueryPlanner zetaSQLQueryPlanner = new ZetaSQLQueryPlanner(config);
