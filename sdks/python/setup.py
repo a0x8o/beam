@@ -151,7 +151,7 @@ REQUIRED_PACKAGES = [
     'funcsigs>=1.0.2,<2; python_version < "3.0"',
     'future>=0.18.2,<1.0.0',
     'futures>=3.2.0,<4.0.0; python_version < "3.0"',
-    'grpcio>=1.12.1,<2',
+    'grpcio>=1.29.0,<2',
     'hdfs>=2.1.0,<3.0.0',
     'httplib2>=0.8,<0.18.0',
     'mock>=1.0.1,<3.0.0',
@@ -193,6 +193,7 @@ REQUIRED_TEST_PACKAGES = [
     'pytest>=4.4.0,<5.0',
     'pytest-xdist>=1.29.0,<2',
     'pytest-timeout>=1.3.3,<2',
+    'rsa<4.1; python_version < "3.0"',
     ]
 
 GCP_REQUIREMENTS = [
@@ -228,7 +229,7 @@ INTERACTIVE_BEAM_TEST = [
     # headless chrome based integration tests
     'selenium>=3.141.0,<4',
     'needle>=0.5.0,<1',
-    'chromedriver-binary>=80,<81',
+    'chromedriver-binary>=83,<84',
     # use a fixed major version of PIL for different python versions
     'pillow>=7.1.1,<8',
 ]
