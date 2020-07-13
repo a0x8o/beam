@@ -30,6 +30,7 @@ import org.gradle.api.Project
 import org.gradle.api.Task
 import org.gradle.api.artifacts.Configuration
 import org.gradle.api.artifacts.ProjectDependency
+import org.gradle.api.file.FileCollection
 import org.gradle.api.file.FileTree
 import org.gradle.api.plugins.quality.Checkstyle
 import org.gradle.api.publish.maven.MavenPublication
@@ -299,8 +300,8 @@ class BeamModulePlugin implements Plugin<Project> {
       // includeCategories 'org.apache.beam.sdk.testing.ValidatesRunner'
       // excludeCategories 'org.apache.beam.sdk.testing.FlattenWithHeterogeneousCoders'
     }
-    // Configuration for the classpath when running the test.
-    Configuration testClasspathConfiguration
+    // classpath for running tests.
+    FileCollection classpath
   }
 
   def isRelease(Project project) {
@@ -799,6 +800,17 @@ class BeamModulePlugin implements Plugin<Project> {
         // https://github.com/findbugsproject/findbugs/blob/master/findbugs/licenses/LICENSE-jsr305.txt
         "com.github.spotbugs:spotbugs-annotations:3.1.12",
         "net.jcip:jcip-annotations:1.0",
+        // This explicitly adds javax.annotation.Generated (SOURCE retention)
+        // as a compile time dependency since Java 9+ no longer includes common
+        // EE annotations: http://bugs.openjdk.java.net/browse/JDK-8152842. This
+        // is required for grpc: http://github.com/grpc/grpc-java/issues/5343.
+        //
+        // javax.annotation is licensed under GPL 2.0 with Classpath Exception
+        // and must not be included in the Apache Beam distribution, but may be
+        // relied on during build.
+        // See exception in: https://www.apache.org/legal/resolved.html#prohibited
+        // License: https://github.com/javaee/javax.annotation/blob/1.3.2/LICENSE
+        "javax.annotation:javax.annotation-api:1.3.2",
       ]
 
       project.dependencies {
@@ -1794,7 +1806,7 @@ class BeamModulePlugin implements Plugin<Project> {
           systemProperty "beamTestPipelineOptions", JsonOutput.toJson(beamJavaTestPipelineOptions)
           systemProperty "expansionJar", expansionJar
           systemProperty "expansionPort", port
-          classpath = config.testClasspathConfiguration
+          classpath = config.classpath
           testClassesDirs = project.files(project.project(":runners:core-construction-java").sourceSets.test.output.classesDirs)
           maxParallelForks config.numParallelTests
           useJUnit(config.testCategories)
