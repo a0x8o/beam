@@ -17,21 +17,15 @@
  */
 package org.apache.beam.sdk.schemas.io;
 
+import javax.annotation.Nullable;
 import org.apache.beam.sdk.annotations.Experimental;
 import org.apache.beam.sdk.annotations.Experimental.Kind;
 import org.apache.beam.sdk.annotations.Internal;
 import org.apache.beam.sdk.schemas.Schema;
-import org.apache.beam.sdk.transforms.PTransform;
-import org.apache.beam.sdk.values.PBegin;
-import org.apache.beam.sdk.values.PCollection;
-import org.apache.beam.sdk.values.POutput;
 import org.apache.beam.sdk.values.Row;
 
 /**
- * An abstraction to create schema capable and aware IOs. The interface is intended to be used in
- * conjunction with the interface {@link SchemaIOProvider}.
- *
- * <p>The interfaces can be implemented to make IOs available in other SDKs in addition to Beam SQL.
+ * Provider to create {@link SchemaIO} instances for use in Beam SQL and other SDKs.
  *
  * <p><b>Internal only:</b> This interface is actively being worked on and it will likely change as
  * we provide implementations for more standard Beam IOs. We provide no backwards compatibility
@@ -39,13 +33,23 @@ import org.apache.beam.sdk.values.Row;
  */
 @Internal
 @Experimental(Kind.SCHEMAS)
-public interface SchemaIO {
-  /** Returns the schema of the data. */
-  Schema schema();
+public interface SchemaIOProvider {
+  /** Returns an id that uniquely represents this IO. */
+  String identifier();
 
-  /** Returns a schema aware reader. */
-  PTransform<PBegin, PCollection<Row>> buildReader();
+  /**
+   * Returns the expected schema of the configuration object. Note this is distinct from the schema
+   * of the data source itself.
+   */
+  Schema configurationSchema();
 
-  /** Returns a schema aware writer. */
-  PTransform<PCollection<Row>, POutput> buildWriter();
+  /**
+   * Produce a SchemaIO given a String representing the data's location, the schema of the data that
+   * resides there, and some IO-specific configuration object. Can throw a {@link
+   * InvalidConfigurationException} or a {@link InvalidSchemaException}.
+   */
+  SchemaIO from(String location, Row configuration, @Nullable Schema dataSchema);
+
+  /** Indicates whether the dataSchema value is necessary. */
+  boolean requiresDataSchema();
 }
