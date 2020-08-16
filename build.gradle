@@ -188,6 +188,7 @@ task sqlPostCommit() {
 }
 
 task goPreCommit() {
+  dependsOn ":sdks:go:goBuild"
   dependsOn ":sdks:go:goTest"
 
   dependsOn ":sdks:go:examples:goBuild"
@@ -228,6 +229,10 @@ task pythonPreCommit() {
   // We don't include Py35, Py36 precommit ITs to reduce quota footprint.
   // We can reconsider if we ever see an issue that these suites would
   // have caught. Note that the same tests will still run in postcommit.
+}
+
+task pythonDocsPreCommit() {
+  dependsOn ":sdks:python:test-suites:tox:pycommon:docs"
 }
 
 task pythonDockerBuildPreCommit() {
