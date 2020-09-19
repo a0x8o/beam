@@ -20,6 +20,7 @@ import pandas as pd
 
 from apache_beam.dataframe import expressions
 from apache_beam.dataframe import frame_base
+from apache_beam.dataframe import io
 from apache_beam.dataframe import partitionings
 
 
@@ -258,7 +259,7 @@ class DeferredDataFrame(frame_base.DeferredFrame):
   def T(self):
     return self.transpose()
 
-  def groupby(self, cols):
+  def groupby(self, by):
     # TODO: what happens to the existing index?
     # We set the columns to index as we have a notion of being partitioned by
     # index, but not partitioned by an arbitrary subset of columns.
@@ -266,7 +267,7 @@ class DeferredDataFrame(frame_base.DeferredFrame):
         expressions.ComputedExpression(
             'groupbyindex',
             lambda df: df.groupby(level=list(range(df.index.nlevels))),
-            [self.set_index(cols)._expr],
+            [self.set_index(by)._expr],
             requires_partition_by=partitionings.Index(),
             preserves_partition_by=partitionings.Singleton()))
 
@@ -717,6 +718,8 @@ class DeferredDataFrame(frame_base.DeferredFrame):
   @frame_base.args_to_kwargs(pd.DataFrame)
   @frame_base.populate_defaults(pd.DataFrame)
   def shift(self, axis, **kwargs):
+    if 'freq' in kwargs:
+      raise frame_base.WontImplementError('data-dependent')
     if axis == 1 or axis == 'columns':
       requires_partition_by = partitionings.Nothing()
     else:
@@ -782,6 +785,11 @@ class DeferredDataFrame(frame_base.DeferredFrame):
       inplace=True,
       requires_partition_by=partitionings.Index(),
       preserves_partition_by=partitionings.Index())
+
+  @frame_base.args_to_kwargs(pd.DataFrame)
+  @frame_base.populate_defaults(pd.DataFrame)
+  def to_csv(self, path_or_buf, **kwargs):
+    return io.write_csv(self, path_or_buf, **kwargs)
 
 for meth in ('filter', ):
   setattr(DeferredDataFrame, meth, frame_base._elementwise_method(meth))
