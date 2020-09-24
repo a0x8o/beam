@@ -215,6 +215,8 @@ GCP_REQUIREMENTS = [
     'google-cloud-language>=1.3.0,<2',
     'google-cloud-videointelligence>=1.8.0,<2',
     'google-cloud-vision>=0.38.0,<2',
+    # GCP packages required by prebuild sdk container functionality.
+    'google-cloud-build>=2.0.0,<3; python_version >= "3.6"',
 ]
 
 INTERACTIVE_BEAM = [
@@ -265,17 +267,7 @@ def generate_protos_first(original_cmd):
     return original_cmd
 
 
-python_requires = '>=2.7,!=3.0.*,!=3.1.*,!=3.2.*,!=3.3.*,!=3.4.*'
-
-if sys.version_info.major == 2:
-  warnings.warn(
-      'You are using the final Apache Beam release with Python 2 support. '
-      'New releases of Apache Beam will require Python 3.6 or a newer version.')
-
-if sys.version_info.major == 3 and sys.version_info.minor == 5:
-  warnings.warn(
-      'You are using the final Apache Beam release with Python 3.5 support. '
-      'New releases of Apache Beam will require Python 3.6 or a newer version.')
+python_requires = '>=3.6'
 
 if sys.version_info.major == 3 and sys.version_info.minor >= 9:
   warnings.warn(
@@ -328,8 +320,6 @@ setuptools.setup(
         'Intended Audience :: End Users/Desktop',
         'License :: OSI Approved :: Apache Software License',
         'Operating System :: POSIX :: Linux',
-        'Programming Language :: Python :: 2.7',
-        'Programming Language :: Python :: 3.5',
         'Programming Language :: Python :: 3.6',
         'Programming Language :: Python :: 3.7',
         'Programming Language :: Python :: 3.8',
