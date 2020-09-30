@@ -34,6 +34,7 @@ import org.gradle.api.publish.maven.MavenPublication
 import org.gradle.api.tasks.Copy
 import org.gradle.api.tasks.Exec
 import org.gradle.api.tasks.JavaExec
+import org.gradle.api.tasks.PathSensitivity
 import org.gradle.api.tasks.bundling.Jar
 import org.gradle.api.tasks.compile.JavaCompile
 import org.gradle.api.tasks.javadoc.Javadoc
@@ -957,6 +958,7 @@ class BeamModulePlugin implements Plugin<Project> {
 
       project.dependencies {
         errorprone("com.google.errorprone:error_prone_core:2.3.1")
+        errorprone("jp.skypencil.errorprone.slf4j:errorprone-slf4j:0.1.2")
         // At least JDk 9 compiler is required, however JDK 8 still can be used but with additional errorproneJavac
         // configuration. For more details please see https://github.com/tbroyer/gradle-errorprone-plugin#jdk-8-support
         errorproneJavac("com.google.errorprone:javac:9+181-r4173-1")
@@ -968,6 +970,9 @@ class BeamModulePlugin implements Plugin<Project> {
         options.errorprone.disableWarningsInGeneratedCode = true
         options.errorprone.excludedPaths = '(.*/)?(build/generated-src|build/generated.*avro-java|build/generated)/.*'
         options.errorprone.errorproneArgs.add("MutableConstantField:OFF")
+        options.errorprone.errorproneArgs.add("-Xep:Slf4jLoggerShouldBeNonStatic:OFF")
+        options.errorprone.errorproneArgs.add("-Xep:Slf4jFormatShouldBeConst:OFF")
+        options.errorprone.errorproneArgs.add("-Xep:Slf4jSignOnlyFormat:OFF")
       }
 
       if (configuration.shadowClosure) {
@@ -1545,7 +1550,7 @@ class BeamModulePlugin implements Plugin<Project> {
     // development image at docker.io (see sdks/CONTAINERS.md):
     //
     //    format: apache/beam_$NAME_sdk:latest
-    //    ie: apache/beam_python3.7_sdk:latest apache/beam_java_sdk:latest apache/beam_go_sdk:latest
+    //    ie: apache/beam_python3.7_sdk:latest apache/beam_java8_sdk:latest apache/beam_go_sdk:latest
     //
     // Both the root and tag can be defined using properties or explicitly provided.
     project.ext.containerImageName = {
@@ -1983,6 +1988,7 @@ class BeamModulePlugin implements Plugin<Project> {
             '**/*.pyc',
             'sdks/python/*.egg*/**',
             'sdks/python/test-suites/**',
+            '**/reports/test/index.html',
           ])
           )
       def copiedSrcRoot = "${project.buildDir}/srcs"
@@ -2041,7 +2047,7 @@ class BeamModulePlugin implements Plugin<Project> {
       }
 
       project.ext.toxTask = { name, tox_env ->
-        project.tasks.create(name) {
+        project.tasks.register(name) {
           dependsOn 'setupVirtualenv'
           dependsOn ':sdks:python:sdist'
 
@@ -2058,8 +2064,13 @@ class BeamModulePlugin implements Plugin<Project> {
               args '-c', ". ${project.ext.envdir}/bin/activate && cd ${copiedPyRoot} && scripts/run_tox.sh $tox_env $distTarBall"
             }
           }
-          inputs.files project.pythonSdkDeps
-          outputs.files project.fileTree(dir: "${pythonRootDir}/target/.tox/${tox_env}/log/")
+          outputs.cacheIf { true }
+          inputs.files(project.pythonSdkDeps)
+              .withPropertyName('pythonSdkDeps')
+              .withPathSensitivity(PathSensitivity.RELATIVE)
+
+          outputs.dir("${pythonRootDir}/target/.tox/${tox_env}/log/")
+              .withPropertyName('outputLog')
         }
       }
 
