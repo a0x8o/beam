@@ -61,7 +61,7 @@ scipy==1.4.1
 pandas==1.1.4
 protorpc==0.12.0
 python-gflags==3.0.6
-tensorflow==2.3.0
+tensorflow==2.3.1
 
 # Packages needed for testing.
 tenacity>=5.0.2
