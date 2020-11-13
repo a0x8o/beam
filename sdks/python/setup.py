@@ -153,6 +153,8 @@ REQUIRED_PACKAGES = [
     'pytz>=2018.3',
     'requests>=2.24.0,<3.0.0',
     'typing-extensions>=3.7.0,<3.8.0',
+    # TODO(BEAM-11255): urllib3 upper bound added to fix incompatibility.
+    'urllib3<1.26',
     ]
 
 # [BEAM-8181] pyarrow cannot be installed on 32-bit Windows platforms.
@@ -165,7 +167,7 @@ REQUIRED_TEST_PACKAGES = [
     'freezegun>=0.3.12',
     'nose>=1.3.7',
     'nose_xunitmp>=0.4.1',
-    'pandas>=0.25.2,<2',
+    'pandas>=1.0,<2',
     'parameterized>=0.7.1,<0.8.0',
     'pyhamcrest>=1.9,!=1.10.0,<2.0.0',
     'pyyaml>=3.12,<6.0.0',

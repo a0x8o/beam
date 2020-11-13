@@ -94,6 +94,7 @@ dependencies {
   testCompile project(path: ":sdks:java:io:google-cloud-platform", configuration: "testRuntime")
   testCompile project(path: ":sdks:java:core", configuration: "shadowTest")
   testCompile project(path: ":sdks:java:extensions:google-cloud-platform-core", configuration: "testRuntime")
+  testCompile project(path: ":runners:core-construction-java", configuration: "testRuntime")
   testCompile library.java.google_cloud_dataflow_java_proto_library_all
   testCompile library.java.jackson_dataformat_yaml
   testCompile library.java.mockito_core
@@ -226,36 +227,24 @@ def createRunnerV2ValidatesRunnerTest = { Map args ->
   }
 }
 
-def createBuildAndPushDockerContainer = { Map args ->
-  def name = args.name
-  def cleanupImage = args.cleanupImage
-
-  return tasks.create(name) {
-    dependsOn ":sdks:java:container:docker"
-    if (cleanupImage) {
-      finalizedBy 'cleanUpDockerImages'
-    }
-    def defaultDockerImageName = containerImageName(
-            name: project.docker_image_default_repo_prefix + "java8_sdk",
-            root: "apache",
-            tag: project.sdk_version)
-    doLast {
-      exec {
-        commandLine "docker", "tag", "${defaultDockerImageName}", "${dockerImageName}"
-      }
-      exec {
-        commandLine "gcloud", "docker", "--", "push", "${dockerImageContainer}"
-      }
-    }
-  }
-}
-
 // Push docker images to a container registry for use within tests.
 // NB: Tasks which consume docker images from the registry should depend on this
 // task directly ('dependsOn buildAndPushDockerContainer'). This ensures the correct
 // task ordering such that the registry doesn't get cleaned up prior to task completion.
 task buildAndPushDockerContainer() {
-  dependsOn(createBuildAndPushDockerContainer(name: "buildAndPushDockerContainerImageWithCleanup"))
+  dependsOn ":sdks:java:container:docker"
+  def defaultDockerImageName = containerImageName(
+          name: project.docker_image_default_repo_prefix + "java8_sdk",
+          root: "apache",
+          tag: project.sdk_version)
+  doLast {
+    exec {
+      commandLine "docker", "tag", "${defaultDockerImageName}", "${dockerImageName}"
+    }
+    exec {
+      commandLine "gcloud", "docker", "--", "push", "${dockerImageContainer}"
+    }
+  }
 }
 
 // Clean up built images
@@ -273,17 +262,14 @@ task cleanUpDockerImages() {
 afterEvaluate {
   // Ensure all tasks which use published docker images run before they are cleaned up
   tasks.each { t ->
-    if (t.dependsOn.contains(buildAndPushDockerContainer)) {
-      cleanUpDockerImages.mustRunAfter t
+    if (t.dependsOn.contains(buildAndPushDockerContainer) && !t.name.equalsIgnoreCase('printRunnerV2PipelineOptions')) {
+      t.finalizedBy cleanUpDockerImages
     }
   }
 }
 
 task printRunnerV2PipelineOptions {
-  dependsOn createBuildAndPushDockerContainer (
-    name: "buildAndPushDockerContainerImageNoCleanup" ,
-    cleanupImage: false
-  )
+  dependsOn buildAndPushDockerContainer
 
   doLast {
     println "To run a Dataflow job with runner V2, add the following pipeline options to your command-line:"
@@ -314,6 +300,36 @@ task validatesRunnerStreaming {
     ]
   ))
 }
+
+createCrossLanguageValidatesRunnerTask(
+  startJobServer: buildAndPushDockerContainer,
+  cleanupJobServer: cleanUpDockerImages,
+  classpath: configurations.validatesRunner,
+  numParallelTests: Integer.MAX_VALUE,
+  needsSdkLocation: true,
+  pythonPipelineOptions: [
+    "--runner=TestDataflowRunner",
+    "--project=${dataflowProject}",
+    "--region=${dataflowRegion}",
+    "--sdk_harness_container_image_overrides=.*java.*,${dockerImageContainer}:${dockerTag}",
+    "--experiments=use_runner_v2",
+  ],
+  javaPipelineOptions: [
+    "--runner=TestDataflowRunner",
+    "--project=${dataflowProject}",
+    "--region=${dataflowRegion}",
+    "--tempRoot=${dataflowValidatesTempRoot}",
+    "--sdkHarnessContainerImageOverrides=.*java.*,${dockerImageContainer}:${dockerTag}",
+    "--experiments=use_runner_v2",
+  ],
+  nosetestsOptions: [
+    "--nocapture",
+    "--processes=8",
+    "--process-timeout=4500",
+    // TODO: enable after fixing BEAM-10507
+    "--exclude=test_xlang_parquetio_write|test_flatten",
+  ]
+)
 
 task validatesRunnerV2 {
   group = "Verification"
