@@ -16,26 +16,19 @@
  * limitations under the License.
  */
 
-plugins { id 'groovy' }
-
-repositories {
-  mavenCentral()
+plugins {
+  id 'org.apache.beam.module'
 }
+
+applyJavaNature(automaticModuleName: 'org.apache.beam.sdk.extensions.sql.provider')
+
+description = "Apache Beam :: SDKs :: Java :: Extensions :: SQL :: UDF test provider"
+ext.summary = "Java UDFs for testing. This project must be built separately from its parent so the UDF provider is not included in the context classloader for tests."
+
+project.ext.jarPath = jar.archivePath
 
 dependencies {
-  compile library.groovy.groovy_all
-  compile 'commons-cli:commons-cli:1.2'
-}
-
-task runJavaExamplesValidationTask {
-  group = "Verification"
-  description = "Run the Beam quickstart across all Java runners"
-  dependsOn ":runners:direct-java:runQuickstartJavaDirect"
-  dependsOn ":runners:google-cloud-dataflow-java:runQuickstartJavaDataflow"
-  dependsOn ":runners:spark:runQuickstartJavaSpark"
-  dependsOn ":runners:flink:1.10:runQuickstartJavaFlinkLocal"
-  dependsOn ":runners:direct-java:runMobileGamingJavaDirect"
-  dependsOn ":runners:google-cloud-dataflow-java:runMobileGamingJavaDataflow"
-  dependsOn ":runners:twister2:runQuickstartJavaTwister2"
-  dependsOn ":runners:google-cloud-dataflow-java:runMobileGamingJavaDataflowBom"
+  // No dependency (direct or transitive) on :sdks:java:core.
+  compile project(":sdks:java:extensions:sql:udf")
+  compile library.java.guava
 }
