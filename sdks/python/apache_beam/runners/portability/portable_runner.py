@@ -338,7 +338,6 @@ class PortableRunner(runner.PipelineRunner):
         pre_optimize != 'none'):
       if pre_optimize == 'default':
         phases = [
-            translations.eliminate_common_key_with_none,
             # TODO: https://issues.apache.org/jira/browse/BEAM-4678
             #       https://issues.apache.org/jira/browse/BEAM-11478
             # Eventually remove the 'lift_combiners' phase from 'default'.
@@ -351,7 +350,6 @@ class PortableRunner(runner.PipelineRunner):
             translations.annotate_downstream_side_inputs,
             translations.annotate_stateful_dofns_as_roots,
             translations.fix_side_input_pcoll_coders,
-            translations.eliminate_common_key_with_none,
             # TODO(BEAM-11715): Enable translations.pack_combiners.
             # translations.pack_combiners,
             translations.lift_combiners,
@@ -372,7 +370,6 @@ class PortableRunner(runner.PipelineRunner):
             translations.annotate_downstream_side_inputs,
             translations.annotate_stateful_dofns_as_roots,
             translations.fix_side_input_pcoll_coders,
-            translations.eliminate_common_key_with_none,
             # TODO(BEAM-11715): Enable translations.pack_combiners.
             # translations.pack_combiners,
             translations.lift_combiners,
@@ -390,9 +387,7 @@ class PortableRunner(runner.PipelineRunner):
         phases = []
         for phase_name in pre_optimize.split(','):
           # For now, these are all we allow.
-          if phase_name in ('eliminate_common_key_with_none',
-                            'pack_combiners',
-                            'lift_combiners'):
+          if phase_name in ('pack_combiners', 'lift_combiners'):
             phases.append(getattr(translations, phase_name))
           else:
             raise ValueError(
