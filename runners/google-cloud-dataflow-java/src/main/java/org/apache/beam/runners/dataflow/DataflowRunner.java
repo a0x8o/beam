@@ -1172,7 +1172,8 @@ public class DataflowRunner extends PipelineRunner<DataflowPipelineJob> {
             DataflowClient.create(options),
             jobResult.getId(),
             options,
-            jobSpecification.getStepNames());
+            jobSpecification.getStepNames(),
+            pipelineProto);
 
     // If the service returned client request id, the SDK needs to compare it
     // with the original id generated in the request, if they are not the same
@@ -1393,11 +1394,8 @@ public class DataflowRunner extends PipelineRunner<DataflowPipelineJob> {
     checkArgument(
         options.isEnableStreamingEngine(),
         "Runner determined sharding not available in Dataflow for GroupIntoBatches for"
-            + " non-Streaming-Engine jobs.");
-    checkArgument(
-        hasExperiment(options, "enable_streaming_auto_sharding"),
-        "Runner determined sharding not enabled in Dataflow for GroupIntoBatches."
-            + " Try adding the experiment: --experiments=enable_streaming_auto_sharding.");
+            + " non-Streaming-Engine jobs. In order to use runner determined sharding, please use"
+            + " --streaming --enable_streaming_engine");
     pcollectionsRequiringAutoSharding.add(pcol);
   }
 
