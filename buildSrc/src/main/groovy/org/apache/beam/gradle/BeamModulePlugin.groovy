@@ -95,7 +95,7 @@ class BeamModulePlugin implements Plugin<Project> {
     Map<String, String> classesTriggerCheckerBugs = [:]
 
     /** Controls whether the dependency analysis plugin is enabled. */
-    boolean enableStrictDependencies = false
+    boolean enableStrictDependencies = true
 
     /** Override the default "beam-" + `dash separated path` archivesBaseName. */
     String archivesBaseName = null
@@ -351,7 +351,7 @@ class BeamModulePlugin implements Plugin<Project> {
 
     // Automatically use the official release version if we are performing a release
     // otherwise append '-SNAPSHOT'
-    project.version = '2.29.0'
+    project.version = '2.30.0'
     if (!isRelease(project)) {
       project.version += '-SNAPSHOT'
     }
@@ -828,6 +828,9 @@ class BeamModulePlugin implements Plugin<Project> {
       skipDefRegexes += configuration.classesTriggerCheckerBugs.keySet()
       String skipDefCombinedRegex = skipDefRegexes.collect({ regex -> "(${regex})"}).join("|")
 
+      // SLF4J logger handles null log message parameters
+      String skipUsesRegex = "^org\\.slf4j\\.Logger.*"
+
       project.apply plugin: 'org.checkerframework'
       project.checkerFramework {
         checkers = [
@@ -843,6 +846,7 @@ class BeamModulePlugin implements Plugin<Project> {
 
         extraJavacArgs = [
           "-AskipDefs=${skipDefCombinedRegex}",
+          "-AskipUses=${skipUsesRegex}",
           "-AsuppressWarnings=annotation.not.completed",
         ]
 
@@ -1834,6 +1838,7 @@ class BeamModulePlugin implements Plugin<Project> {
       }
 
       project.ext.applyJavaNature(
+          enableStrictDependencies: false,
           exportJavadoc: false,
           enableSpotbugs: false,
           publish: configuration.publish,
@@ -2095,6 +2100,30 @@ class BeamModulePlugin implements Plugin<Project> {
         cleanupTask.mustRunAfter pythonTask
         config.cleanupJobServer.mustRunAfter pythonTask
       }
+
+      // Task for running Python-only testcases in Java SDK
+      def javaUsingPythonOnlyTask = project.tasks.create(name: config.name+"JavaUsingPythonOnly", type: Test) {
+        group = "Verification"
+        description = "Validates runner for cross-language capability of using Python-only transforms from Java SDK"
+        systemProperty "beamTestPipelineOptions", JsonOutput.toJson(config.javaPipelineOptions)
+        systemProperty "expansionJar", expansionJar
+        systemProperty "expansionPort", pythonPort
+        classpath = config.classpath
+        testClassesDirs = project.files(project.project(":runners:core-construction-java").sourceSets.test.output.classesDirs)
+        maxParallelForks config.numParallelTests
+        useJUnit {
+          includeCategories 'org.apache.beam.sdk.testing.UsesPythonExpansionService'
+        }
+        // increase maxHeapSize as this is directly correlated to direct memory,
+        // see https://issues.apache.org/jira/browse/BEAM-6698
+        maxHeapSize = '4g'
+        dependsOn setupTask
+        dependsOn config.startJobServer
+      }
+      mainTask.dependsOn javaUsingPythonOnlyTask
+      cleanupTask.mustRunAfter javaUsingPythonOnlyTask
+      config.cleanupJobServer.mustRunAfter javaUsingPythonOnlyTask
+
       // Task for running testcases in Python SDK
       def testOpts = [
         "--attr=UsesSqlExpansionService"
@@ -2110,13 +2139,12 @@ class BeamModulePlugin implements Plugin<Project> {
         description = "Validates runner for cross-language capability of using Java's SqlTransform from Python SDK"
         executable 'sh'
         args '-c', ". $envDir/bin/activate && cd $pythonDir && ./scripts/run_integration_test.sh $cmdArgs"
+        dependsOn setupTask
         dependsOn config.startJobServer
-        dependsOn ':sdks:java:container:java8:docker'
-        dependsOn ':sdks:python:container:py'+pythonContainerSuffix+':docker'
         dependsOn ':sdks:java:extensions:sql:expansion-service:shadowJar'
-        dependsOn ":sdks:python:installGcpTest"
       }
       mainTask.dependsOn pythonSqlTask
+      cleanupTask.mustRunAfter pythonSqlTask
       config.cleanupJobServer.mustRunAfter pythonSqlTask
     }
 
