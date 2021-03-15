@@ -56,7 +56,6 @@ class DoctestTest(unittest.TestCase):
                 "df.nsmallest(3, ['population', 'GDP'])",
                 "df.nsmallest(3, 'population', keep='last')",
             ],
-            'pandas.core.frame.DataFrame.nunique': ['*'],
             'pandas.core.frame.DataFrame.replace': [
                 "s.replace([1, 2], method='bfill')",
                 # Relies on method='pad'
@@ -91,7 +90,6 @@ class DoctestTest(unittest.TestCase):
             'pandas.core.frame.DataFrame.transform': ['*'],
             'pandas.core.frame.DataFrame.isin': ['*'],
             'pandas.core.frame.DataFrame.melt': ['*'],
-            'pandas.core.frame.DataFrame.count': ['*'],
             'pandas.core.frame.DataFrame.reindex': ['*'],
             'pandas.core.frame.DataFrame.reindex_axis': ['*'],
 
@@ -304,7 +302,6 @@ class DoctestTest(unittest.TestCase):
             'pandas.core.series.Series.combine': ['*'],
             'pandas.core.series.Series.combine_first': ['*'],
             'pandas.core.series.Series.compare': ['*'],
-            'pandas.core.series.Series.count': ['*'],
             'pandas.core.series.Series.cov': [
                 # Differs in LSB on jenkins.
                 "s1.cov(s2)",
