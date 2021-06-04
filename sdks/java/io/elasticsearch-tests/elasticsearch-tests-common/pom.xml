@@ -34,7 +34,7 @@
         <log4j.version>2.6.2</log4j.version>
         <httpcomponents.core.version>4.4.5</httpcomponents.core.version>
         <httpcomponents.httpasyncclient.version>4.1.2</httpcomponents.httpasyncclient.version>
-        <httpcomponents.httpclient.version>4.5.2</httpcomponents.httpclient.version>
+        <httpcomponents.httpclient.version>4.5.13</httpcomponents.httpclient.version>
     </properties>
 
     <dependencies>
