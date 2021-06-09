@@ -13,19 +13,28 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package core contains constants and other static data related to the SDK,
-// such as the SDK Name and version.
-//
-// As a rule, this package should not have dependencies, and should not depend
-// on any package within the Apache Beam Go SDK.
-//
-// Files in this package may be generated or updated by release scripts, allowing
-// for accurate version information to be included.
-package core
+package regression
 
-const (
-	// SdkName is the human readable name of the SDK for UserAgents.
-	SdkName = "Apache Beam SDK for Go"
-	// SdkVersion is the current version of the SDK.
-	SdkVersion = "2.32.0.dev"
+import (
+	"testing"
+
+	"github.com/apache/beam/sdks/go/pkg/beam"
+	"github.com/apache/beam/sdks/go/pkg/beam/testing/passert"
+	"github.com/apache/beam/sdks/go/pkg/beam/testing/ptest"
+	"github.com/apache/beam/sdks/go/test/integration"
+
+	_ "github.com/apache/beam/sdks/go/pkg/beam/runners/dataflow"
+	_ "github.com/apache/beam/sdks/go/pkg/beam/runners/flink"
+	_ "github.com/apache/beam/sdks/go/pkg/beam/runners/spark"
 )
+
+func TestLPErrorPipeline(t *testing.T) {
+	integration.CheckFilters(t)
+
+	pipeline, s := beam.NewPipelineWithRoot()
+	want := beam.CreateList(s, []int{0})
+	got := LPErrorPipeline(s)
+	passert.Equals(s, got, want)
+
+	ptest.RunAndValidate(t, pipeline)
+}

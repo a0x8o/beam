@@ -13,19 +13,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package core contains constants and other static data related to the SDK,
-// such as the SDK Name and version.
-//
-// As a rule, this package should not have dependencies, and should not depend
-// on any package within the Apache Beam Go SDK.
-//
-// Files in this package may be generated or updated by release scripts, allowing
-// for accurate version information to be included.
-package core
+package regression
 
-const (
-	// SdkName is the human readable name of the SDK for UserAgents.
-	SdkName = "Apache Beam SDK for Go"
-	// SdkVersion is the current version of the SDK.
-	SdkVersion = "2.32.0.dev"
+import (
+	"testing"
+
+	"github.com/apache/beam/sdks/go/pkg/beam/testing/ptest"
 )
+
+// TestMain invokes ptest.Main to allow running these tests on
+// non-direct runners.
+func TestMain(m *testing.M) {
+	ptest.Main(m)
+}
