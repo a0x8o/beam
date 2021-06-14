@@ -422,6 +422,19 @@ class DeferredDataFrameOrSeries(frame_base.DeferredFrame):
         grouping_columns=grouping_columns,
         grouping_indexes=grouping_indexes)
 
+  @property  # type: ignore
+  @frame_base.with_docs_from(pd.DataFrame)
+  def loc(self):
+    return _DeferredLoc(self)
+
+  @property  # type: ignore
+  @frame_base.with_docs_from(pd.DataFrame)
+  def iloc(self):
+    """Position-based indexing with `iloc` is order-sensitive in almost every
+    case. Beam DataFrame users should prefer label-based indexing with `loc`.
+    """
+    return _DeferredILoc(self)
+
   abs = frame_base._elementwise_method('abs', base=pd.core.generic.NDFrame)
 
   @frame_base.with_docs_from(pd.core.generic.NDFrame)
@@ -967,6 +980,9 @@ class DeferredSeries(DeferredDataFrameOrSeries):
             requires_partition_by=partitionings.Index(),
             preserves_partition_by=partitionings.Arbitrary()))
     return aligned.iloc[:, 0], aligned.iloc[:, 1]
+
+  argsort = frame_base.wont_implement_method(
+      pd.Series, 'argsort', reason="order-sensitive")
 
   array = property(
       frame_base.wont_implement_method(
@@ -1833,19 +1849,6 @@ class DeferredDataFrame(DeferredDataFrameOrSeries):
           [self._expr],
           requires_partition_by=partitionings.Arbitrary(),
           preserves_partition_by=partitionings.Singleton()))
-
-  @property  # type: ignore
-  @frame_base.with_docs_from(pd.DataFrame)
-  def loc(self):
-    return _DeferredLoc(self)
-
-  @property  # type: ignore
-  @frame_base.with_docs_from(pd.DataFrame)
-  def iloc(self):
-    """Position-based indexing with `iloc` is order-sensitive in almost every
-    case. Beam DataFrame users should prefer label-based indexing with `loc`.
-    """
-    return _DeferredILoc(self)
 
   @property  # type: ignore
   @frame_base.with_docs_from(pd.DataFrame)
@@ -3114,6 +3117,9 @@ class DeferredGroupBy(frame_base.DeferredFrame):
     else:
       raise NotImplementedError(f"GroupBy.agg(func={fn!r})")
 
+  @property
+  def ndim(self):
+    return self._expr.proxy().ndim
 
   def apply(self, fn, *args, **kwargs):
     project = _maybe_project_func(self._projection)
@@ -3217,6 +3223,42 @@ class DeferredGroupBy(frame_base.DeferredFrame):
             proxy=proxy,
             requires_partition_by=partitionings.Index(levels),
             preserves_partition_by=partitionings.Index(self._grouping_indexes)))
+
+  def filter(self, func=None, dropna=True):
+    if func is None or not callable(func):
+      raise TypeError("func must be specified and it must be callable")
+
+    def apply_fn(df):
+      if func(df):
+        return df
+      elif not dropna:
+        result = df.copy()
+        result.iloc[:, :] = np.nan
+        return result
+      else:
+        return df.iloc[:0]
+
+    return self.apply(apply_fn).droplevel(self._grouping_columns)
+
+  @property
+  def dtypes(self):
+    grouping_columns = self._grouping_columns
+    return self.apply(lambda df: df.drop(grouping_columns, axis=1).dtypes)
+
+  fillna = frame_base.wont_implement_method(
+      DataFrameGroupBy, 'fillna', explanation=(
+          "df.fillna() should be used instead. Only method=None is supported "
+          "because other methods are order-sensitive. df.groupby(..).fillna() "
+          "without a method is equivalent to df.fillna()."))
+
+  ffill = frame_base.wont_implement_method(DataFrameGroupBy, 'ffill',
+                                           reason="order-sensitive")
+  bfill = frame_base.wont_implement_method(DataFrameGroupBy, 'bfill',
+                                           reason="order-sensitive")
+  pad = frame_base.wont_implement_method(DataFrameGroupBy, 'pad',
+                                         reason="order-sensitive")
+  backfill = frame_base.wont_implement_method(DataFrameGroupBy, 'backfill',
+                                              reason="order-sensitive")
 
   aggregate = agg
 
@@ -3484,6 +3526,10 @@ class _DeferredIndex(object):
     return self._frame._expr.proxy().index.ndim
 
   @property
+  def dtype(self):
+    return self._frame._expr.proxy().index.dtype
+
+  @property
   def nlevels(self):
     return self._frame._expr.proxy().index.nlevels
 
@@ -3496,26 +3542,44 @@ class _DeferredLoc(object):
   def __init__(self, frame):
     self._frame = frame
 
-  def __getitem__(self, index):
-    if isinstance(index, tuple):
-      rows, cols = index
+  def __getitem__(self, key):
+    if isinstance(key, tuple):
+      rows, cols = key
       return self[rows][cols]
-    elif isinstance(index, list) and index and isinstance(index[0], bool):
-      # Aligned by numerical index.
-      raise NotImplementedError(type(index))
-    elif isinstance(index, list):
+    elif isinstance(key, list) and key and isinstance(key[0], bool):
+      # Aligned by numerical key.
+      raise NotImplementedError(type(key))
+    elif isinstance(key, list):
       # Select rows, but behaves poorly on missing values.
-      raise NotImplementedError(type(index))
-    elif isinstance(index, slice):
+      raise NotImplementedError(type(key))
+    elif isinstance(key, slice):
       args = [self._frame._expr]
-      func = lambda df: df.loc[index]
-    elif isinstance(index, frame_base.DeferredFrame):
-      args = [self._frame._expr, index._expr]
-      func = lambda df, index: df.loc[index]
-    elif callable(index):
+      func = lambda df: df.loc[key]
+    elif isinstance(key, frame_base.DeferredFrame):
+      func = lambda df, key: df.loc[key]
+      if pd.core.dtypes.common.is_bool_dtype(key._expr.proxy()):
+        # Boolean indexer, just pass it in as-is
+        args = [self._frame._expr, key._expr]
+      else:
+        # Likely a DeferredSeries of labels, overwrite the key's index with it's
+        # values so we can colocate them with the labels they're selecting
+        def data_to_index(s):
+          s = s.copy()
+          s.index = s
+          return s
 
-      def checked_callable_index(df):
-        computed_index = index(df)
+        reindexed_expr = expressions.ComputedExpression(
+            'data_to_index',
+            data_to_index,
+            [key._expr],
+            requires_partition_by=partitionings.Arbitrary(),
+            preserves_partition_by=partitionings.Singleton(),
+        )
+        args = [self._frame._expr, reindexed_expr]
+    elif callable(key):
+
+      def checked_callable_key(df):
+        computed_index = key(df)
         if isinstance(computed_index, tuple):
           row_index, _ = computed_index
         else:
@@ -3528,9 +3592,9 @@ class _DeferredLoc(object):
         return computed_index
 
       args = [self._frame._expr]
-      func = lambda df: df.loc[checked_callable_index]
+      func = lambda df: df.loc[checked_callable_key]
     else:
-      raise NotImplementedError(type(index))
+      raise NotImplementedError(type(key))
 
     return frame_base.DeferredFrame.wrap(
         expressions.ComputedExpression(
