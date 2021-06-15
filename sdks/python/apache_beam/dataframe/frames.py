@@ -469,6 +469,34 @@ class DeferredDataFrameOrSeries(frame_base.DeferredFrame):
     """
     return _DeferredILoc(self)
 
+  @frame_base.with_docs_from(pd.DataFrame)
+  @frame_base.args_to_kwargs(pd.DataFrame)
+  @frame_base.populate_defaults(pd.DataFrame)
+  @frame_base.maybe_inplace
+  def reset_index(self, level=None, **kwargs):
+    """Dropping the entire index (e.g. with ``reset_index(level=None)``) is
+    not parallelizable. It is also only guaranteed that the newly generated
+    index values will be unique. The Beam DataFrame API makes no guarantee
+    that the same index values as the equivalent pandas operation will be
+    generated, because that implementation is order-sensitive."""
+    if level is not None and not isinstance(level, (tuple, list)):
+      level = [level]
+    if level is None or len(level) == self._expr.proxy().index.nlevels:
+      # TODO(BEAM-12182): Could do distributed re-index with offsets.
+      requires_partition_by = partitionings.Singleton(
+          reason=(
+              f"reset_index(level={level!r}) drops the entire index and "
+              "creates a new one, so it cannot currently be parallelized "
+              "(BEAM-12182)."))
+    else:
+      requires_partition_by = partitionings.Arbitrary()
+    return frame_base.DeferredFrame.wrap(
+        expressions.ComputedExpression(
+            'reset_index',
+            lambda df: df.reset_index(level=level, **kwargs), [self._expr],
+            preserves_partition_by=partitionings.Singleton(),
+            requires_partition_by=requires_partition_by))
+
   abs = frame_base._elementwise_method('abs', base=pd.core.generic.NDFrame)
 
   @frame_base.with_docs_from(pd.core.generic.NDFrame)
@@ -950,8 +978,12 @@ class DeferredSeries(DeferredDataFrameOrSeries):
   def keys(self):
     return self.index
 
-  # Series.T == transpose, which is a no-op
+  # Series.T == transpose. Both are a no-op
   T = frame_base._elementwise_method('T', base=pd.Series)
+  transpose = frame_base._elementwise_method('transpose', base=pd.Series)
+  shape = property(
+      frame_base.wont_implement_method(
+          pd.Series, 'shape', reason="non-deferred-result"))
 
   @frame_base.with_docs_from(pd.Series)
   @frame_base.args_to_kwargs(pd.Series)
@@ -1708,6 +1740,24 @@ class DeferredSeries(DeferredDataFrameOrSeries):
   def cat(self):
     return _DeferredCategoricalMethods(self._expr)
 
+  @frame_base.with_docs_from(pd.Series)
+  def mode(self, *args, **kwargs):
+    """mode is not currently parallelizable. An approximate,
+    parallelizable implementation of mode may be added in the future
+    (`BEAM-12181 <https://issues.apache.org/jira/BEAM-12181>`_)."""
+    return frame_base.DeferredFrame.wrap(
+        expressions.ComputedExpression(
+            'mode',
+            lambda df: df.mode(*args, **kwargs),
+            [self._expr],
+            #TODO(BEAM-12181): Can we add an approximate implementation?
+            requires_partition_by=partitionings.Singleton(
+                reason=(
+                    "mode cannot currently be parallelized. See "
+                    "BEAM-12181 tracking the possble addition of "
+                    "an approximate, parallelizable implementation of mode.")),
+            preserves_partition_by=partitionings.Singleton()))
+
   apply = frame_base._elementwise_method('apply', base=pd.Series)
   map = frame_base._elementwise_method('map', base=pd.Series)
   # TODO(BEAM-11636): Implement transform using type inference to determine the
@@ -2416,6 +2466,9 @@ class DeferredDataFrame(DeferredDataFrameOrSeries):
           f"(got frac={frac!r}, random_state={random_state!r}, "
           f"replace={replace!r}). See BEAM-12476.")
 
+    if n is None:
+      n = 1
+
     if isinstance(weights, str):
       weights = self[weights]
 
@@ -2431,12 +2484,18 @@ class DeferredDataFrame(DeferredDataFrameOrSeries):
           requires_partition_by=partitionings.Index(),
           preserves_partition_by=partitionings.Arbitrary()))
     else:
+      # See "Fast Parallel Weighted Random Sampling" by Efraimidis and Spirakis
+      # https://www.cti.gr/images_gr/reports/99-06-02.ps
+      def assign_randomized_weights(df, weights):
+        non_zero_weights = (weights > 0) | pd.Series(dtype=bool, index=df.index)
+        df = df.loc[non_zero_weights]
+        weights = weights.loc[non_zero_weights]
+        random_weights = np.log(np.random.rand(len(weights))) / weights
+        return df.assign(**{tmp_weight_column_name: random_weights})
       self_with_randomized_weights = frame_base.DeferredFrame.wrap(
           expressions.ComputedExpression(
           'randomized_weights',
-          lambda df, weights: df.assign(**{tmp_weight_column_name:
-                                           weights * np.random.rand(
-                                               *weights.shape)}),
+          assign_randomized_weights,
           [self._expr, weights._expr],
           requires_partition_by=partitionings.Index(),
           preserves_partition_by=partitionings.Arbitrary()))
@@ -2907,34 +2966,6 @@ class DeferredDataFrame(DeferredDataFrameOrSeries):
             requires_partition_by=requires_partition_by))
 
   rename_axis = frame_base._elementwise_method('rename_axis', base=pd.DataFrame)
-
-  @frame_base.with_docs_from(pd.DataFrame)
-  @frame_base.args_to_kwargs(pd.DataFrame)
-  @frame_base.populate_defaults(pd.DataFrame)
-  @frame_base.maybe_inplace
-  def reset_index(self, level=None, **kwargs):
-    """Dropping the entire index (e.g. with ``reset_index(level=None)``) is
-    not parallelizable. It is also only guaranteed that the newly generated
-    index values will be unique. The Beam DataFrame API makes no guarantee
-    that the same index values as the equivalent pandas operation will be
-    generated, because that implementation is order-sensitive."""
-    if level is not None and not isinstance(level, (tuple, list)):
-      level = [level]
-    if level is None or len(level) == self._expr.proxy().index.nlevels:
-      # TODO(BEAM-12182): Could do distributed re-index with offsets.
-      requires_partition_by = partitionings.Singleton(reason=(
-          "reset_index(level={level!r}) drops the entire index and creates a "
-          "new one, so it cannot currently be parallelized (BEAM-12182)."
-      ))
-    else:
-      requires_partition_by = partitionings.Arbitrary()
-    return frame_base.DeferredFrame.wrap(
-        expressions.ComputedExpression(
-            'reset_index',
-            lambda df: df.reset_index(level=level, **kwargs),
-            [self._expr],
-            preserves_partition_by=partitionings.Singleton(),
-            requires_partition_by=requires_partition_by))
 
   @frame_base.with_docs_from(pd.DataFrame)
   @frame_base.args_to_kwargs(pd.DataFrame)
