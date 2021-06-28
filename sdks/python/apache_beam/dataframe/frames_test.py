@@ -235,6 +235,25 @@ class DeferredFrameTest(_AbstractFrameTest):
     self._run_test(lambda df: df.get('Animal'), df)
     self._run_test(lambda df: df.get('FOO', df.Animal), df)
 
+  def test_series_xs(self):
+    # pandas doctests only verify DataFrame.xs, here we verify Series.xs as well
+    d = {
+        'num_legs': [4, 4, 2, 2],
+        'num_wings': [0, 0, 2, 2],
+        'class': ['mammal', 'mammal', 'mammal', 'bird'],
+        'animal': ['cat', 'dog', 'bat', 'penguin'],
+        'locomotion': ['walks', 'walks', 'flies', 'walks']
+    }
+    df = pd.DataFrame(data=d)
+    df = df.set_index(['class', 'animal', 'locomotion'])
+
+    self._run_test(lambda df: df.num_legs.xs('mammal'), df)
+    self._run_test(lambda df: df.num_legs.xs(('mammal', 'dog')), df)
+    self._run_test(lambda df: df.num_legs.xs('cat', level=1), df)
+    self._run_test(
+        lambda df: df.num_legs.xs(('bird', 'walks'), level=[0, 'locomotion']),
+        df)
+
   def test_set_column(self):
     def new_column(df):
       df['NewCol'] = df['Speed']
@@ -852,6 +871,29 @@ class DeferredFrameTest(_AbstractFrameTest):
     self._run_test(
         lambda df: df.drop_duplicates(subset=['brand', 'style'], keep=False),
         df)
+
+  @parameterized.expand([
+      (
+          lambda base: base.from_dict({
+              'col_1': [3, 2, 1, 0], 'col_2': ['a', 'b', 'c', 'd']
+          }), ),
+      (
+          lambda base: base.from_dict({
+              'row_1': [3, 2, 1, 0], 'row_2': ['a', 'b', 'c', 'd']
+          },
+                                      orient='index'), ),
+      (
+          lambda base: base.from_records(
+              np.array([(3, 'a'), (2, 'b'), (1, 'c'), (0, 'd')],
+                       dtype=[('col_1', 'i4'), ('col_2', 'U1')])), ),
+  ])
+  def test_create_methods(self, func):
+    expected = func(pd.DataFrame)
+
+    deferred_df = func(frames.DeferredDataFrame)
+    actual = expressions.Session({}).evaluate(deferred_df._expr)
+
+    pd.testing.assert_frame_equal(actual, expected)
 
   def test_replace(self):
     # verify a replace() doctest case that doesn't quite work in Beam as it uses

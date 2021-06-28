@@ -768,7 +768,7 @@ class DeferredDataFrameOrSeries(frame_base.DeferredFrame):
 
     It is not implemented for ``axis=columns`` because it makes the order of
     the columns depend on the data (see
-    https://s.apache.org/dataframe-non-deferred-column-names)."""
+    https://s.apache.org/dataframe-non-deferred-columns)."""
     if axis in (0, 'index'):
       # axis=index imposes an ordering on the DataFrame rows which we do not
       # support
@@ -869,6 +869,70 @@ class DeferredDataFrameOrSeries(frame_base.DeferredFrame):
     """mask is not parallelizable when ``errors="ignore"`` is specified."""
     return self.where(~cond, **kwargs)
 
+  @frame_base.with_docs_from(pd.DataFrame)
+  @frame_base.args_to_kwargs(pd.DataFrame)
+  @frame_base.populate_defaults(pd.DataFrame)
+  def xs(self, key, axis, level, **kwargs):
+    """Note that ``xs(axis='index')`` will raise a ``KeyError`` at execution
+    time if the key does not exist in the index."""
+
+    if axis in ('columns', 1):
+      # Special case for axis=columns. This is a simple project that raises a
+      # KeyError at construction time for missing columns.
+      return frame_base.DeferredFrame.wrap(
+          expressions.ComputedExpression(
+              'xs',
+              lambda df: df.xs(key, axis=axis, **kwargs), [self._expr],
+              requires_partition_by=partitionings.Arbitrary(),
+              preserves_partition_by=partitionings.Arbitrary()))
+    elif axis not in ('index', 0):
+      # Make sure that user's axis is valid
+      raise ValueError(
+          "axis must be one of ('index', 0, 'columns', 1). "
+          f"got {axis!r}.")
+
+    if not isinstance(key, tuple):
+      key = (key, )
+
+    key_size = len(key)
+    key_series = pd.Series([key], pd.MultiIndex.from_tuples([key]))
+    key_expr = expressions.ConstantExpression(
+        key_series, proxy=key_series.iloc[:0])
+
+    if level is None:
+      reindexed = self
+    else:
+      if not isinstance(level, list):
+        level = [level]
+
+      # If user specifed levels, reindex so those levels are at the beginning.
+      # Keep the others and preserve their order.
+      level = [
+          l if isinstance(l, int) else list(self.index.names).index(l)
+          for l in level
+      ]
+
+      reindexed = self.reorder_levels(
+          level + [i for i in range(self.index.nlevels) if i not in level])
+
+    def xs_partitioned(frame, key):
+      if not len(key):
+        # key is not in this partition, return empty dataframe
+        return frame.iloc[:0].droplevel(list(range(key_size)))
+
+      # key should be in this partition, call xs. Will raise KeyError if not
+      # present.
+      return frame.xs(key.item())
+
+    return frame_base.DeferredFrame.wrap(
+        expressions.ComputedExpression(
+            'xs',
+            xs_partitioned,
+            [reindexed._expr, key_expr],
+            requires_partition_by=partitionings.Index(list(range(key_size))),
+            # Drops index levels, so partitioning is not preserved
+            preserves_partition_by=partitionings.Singleton()))
+
   @property
   def dtype(self):
     return self._expr.proxy().dtype
@@ -903,6 +967,9 @@ class DeferredDataFrameOrSeries(frame_base.DeferredFrame):
     raise NotImplementedError(
         "Assigning an index is not yet supported. "
         "Consider using set_index() instead.")
+
+  reindex = frame_base.wont_implement_method(
+      pd.DataFrame, 'reindex', reason="order-sensitive")
 
   hist = frame_base.wont_implement_method(
       pd.DataFrame, 'hist', reason="plotting-tools")
@@ -1063,7 +1130,7 @@ class DeferredSeries(DeferredDataFrameOrSeries):
 
     Filling NaN values via ``method`` is not supported, because it is
     `order-sensitive
-    <https://s.apache.org/dataframe-order-sensitive-operatons>`_.
+    <https://s.apache.org/dataframe-order-sensitive-operations>`_.
     Only the default, ``method=None``, is allowed."""
     if level is not None:
       raise NotImplementedError('per-level align')
@@ -1583,7 +1650,7 @@ class DeferredSeries(DeferredDataFrameOrSeries):
       keep = 'first'
     elif keep != 'all':
       raise frame_base.WontImplementError(
-          "nlargest(keep={keep!r}) is not supported because it is "
+          f"nlargest(keep={keep!r}) is not supported because it is "
           "order sensitive. Only keep=\"all\" is supported.",
           reason="order-sensitive")
     kwargs['keep'] = keep
@@ -1613,7 +1680,7 @@ class DeferredSeries(DeferredDataFrameOrSeries):
       keep = 'first'
     elif keep != 'all':
       raise frame_base.WontImplementError(
-          "nsmallest(keep={keep!r}) is not supported because it is "
+          f"nsmallest(keep={keep!r}) is not supported because it is "
           "order sensitive. Only keep=\"all\" is supported.",
           reason="order-sensitive")
     kwargs['keep'] = keep
@@ -1936,7 +2003,7 @@ class DeferredDataFrame(DeferredDataFrameOrSeries):
 
     Filling NaN values via ``method`` is not supported, because it is
     `order-sensitive
-    <https://s.apache.org/dataframe-order-sensitive-operatons>`_. Only the
+    <https://s.apache.org/dataframe-order-sensitive-operations>`_. Only the
     default, ``method=None``, is allowed.
 
     ``copy=False`` is not supported because its behavior (whether or not it is
@@ -2122,6 +2189,19 @@ class DeferredDataFrame(DeferredDataFrameOrSeries):
               preserves_partition_by=partitionings.Arbitrary()))
 
     self._expr = inserted._expr
+
+  @staticmethod
+  @frame_base.with_docs_from(pd.DataFrame)
+  def from_dict(*args, **kwargs):
+    return frame_base.DeferredFrame.wrap(
+        expressions.ConstantExpression(pd.DataFrame.from_dict(*args, **kwargs)))
+
+  @staticmethod
+  @frame_base.with_docs_from(pd.DataFrame)
+  def from_records(*args, **kwargs):
+    return frame_base.DeferredFrame.wrap(
+        expressions.ConstantExpression(pd.DataFrame.from_records(*args,
+                                                                 **kwargs)))
 
   @frame_base.with_docs_from(pd.DataFrame)
   @frame_base.args_to_kwargs(pd.DataFrame)
@@ -2336,7 +2416,7 @@ class DeferredDataFrame(DeferredDataFrameOrSeries):
   def corr(self, method, min_periods):
     """Only ``method="pearson"`` can be parallelized. Other methods require
     collecting all data on a single worker (see
-    https://s.apache.org/dataframe-non-parallelizable-operations for details).
+    https://s.apache.org/dataframe-non-parallel-operations for details).
     """
     if method == 'pearson':
       proxy = self._expr.proxy().corr()
@@ -2854,7 +2934,7 @@ class DeferredDataFrame(DeferredDataFrameOrSeries):
       keep = 'first'
     elif keep != 'all':
       raise frame_base.WontImplementError(
-          "nlargest(keep={keep!r}) is not supported because it is "
+          f"nlargest(keep={keep!r}) is not supported because it is "
           "order sensitive. Only keep=\"all\" is supported.",
           reason="order-sensitive")
     kwargs['keep'] = keep
@@ -2886,7 +2966,7 @@ class DeferredDataFrame(DeferredDataFrameOrSeries):
       keep = 'first'
     elif keep != 'all':
       raise frame_base.WontImplementError(
-          "nsmallest(keep={keep!r}) is not supported because it is "
+          f"nsmallest(keep={keep!r}) is not supported because it is "
           "order sensitive. Only keep=\"all\" is supported.",
           reason="order-sensitive")
     kwargs['keep'] = keep
