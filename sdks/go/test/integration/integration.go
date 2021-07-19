@@ -60,6 +60,8 @@ var sickbay = []string{}
 var directFilters = []string{
 	// The direct runner does not yet support cross-language.
 	"TestXLang.*",
+	// TODO(BEAM-4152): The direct runner does not support session window merging.
+	"TestWindowSums.*",
 }
 
 var portableFilters = []string{}
@@ -67,6 +69,12 @@ var portableFilters = []string{}
 var flinkFilters = []string{
 	// TODO(BEAM-11500): Flink tests timing out on reads.
 	"TestXLang_Combine.*",
+}
+
+var samzaFilters = []string{
+    // TODO(BEAM-12608): Samza tests invalid encoding.
+    "TestReshuffle",
+    "TestReshuffleKV",
 }
 
 var sparkFilters = []string{
@@ -115,6 +123,8 @@ func CheckFilters(t *testing.T) {
 		filters = portableFilters
 	case "flink", "FlinkRunner":
 		filters = flinkFilters
+	case "samza", "SamzaRunner":
+		filters = samzaFilters
 	case "spark", "SparkRunner":
 		filters = sparkFilters
 	case "dataflow", "DataflowRunner":
