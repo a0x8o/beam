@@ -102,7 +102,7 @@
     <beamSurefireArgline />
 
     <!-- If updating dependencies, please update any relevant javadoc offlineLinks -->
-    <apache.commons.compress.version>1.16.1</apache.commons.compress.version>
+    <apache.commons.compress.version>1.21</apache.commons.compress.version>
     <apache.commons.lang.version>3.6</apache.commons.lang.version>
     <apex.kryo.version>2.24.0</apex.kryo.version>
     <api-common.version>1.0.0-rc2</api-common.version>
