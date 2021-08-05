@@ -15,15 +15,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.beam.runners.spark.structuredstreaming.translation.batch;
+package org.apache.beam.runners.spark.structuredstreaming.translation.streaming;
 
-import org.apache.beam.runners.spark.structuredstreaming.translation.AbstractTranslationContext;
-import org.apache.beam.runners.spark.structuredstreaming.translation.TransformTranslator;
-import org.apache.beam.sdk.transforms.Reshuffle;
-
-/** TODO: Should be removed if {@link Reshuffle} won't be translated. */
-class ReshuffleTranslatorBatch<K, InputT> implements TransformTranslator<Reshuffle<K, InputT>> {
-
-  @Override
-  public void translateTransform(Reshuffle<K, InputT> transform, AbstractTranslationContext context) {}
-}
+/**
+ * Spark structured streaming framework does not support more than one aggregation in streaming mode
+ * because of watermark implementation. As a consequence, this runner, does not support streaming
+ * mode yet see https://issues.apache.org/jira/browse/BEAM-9933
+ */
+class DatasetSourceStreaming {}

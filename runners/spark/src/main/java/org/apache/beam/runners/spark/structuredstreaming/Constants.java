@@ -15,15 +15,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.beam.runners.spark.structuredstreaming.translation.batch;
 
-import org.apache.beam.runners.spark.structuredstreaming.translation.AbstractTranslationContext;
-import org.apache.beam.runners.spark.structuredstreaming.translation.TransformTranslator;
-import org.apache.beam.sdk.transforms.Reshuffle;
+package org.apache.beam.runners.spark.structuredstreaming;
 
-/** TODO: Should be removed if {@link Reshuffle} won't be translated. */
-class ReshuffleTranslatorBatch<K, InputT> implements TransformTranslator<Reshuffle<K, InputT>> {
+public class Constants {
 
-  @Override
-  public void translateTransform(Reshuffle<K, InputT> transform, AbstractTranslationContext context) {}
+  public static final String BEAM_SOURCE_OPTION = "beam-source";
+  public static final String DEFAULT_PARALLELISM = "default-parallelism";
+  public static final String PIPELINE_OPTIONS = "pipeline-options";
 }

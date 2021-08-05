@@ -15,15 +15,25 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.beam.runners.spark.structuredstreaming.translation.batch;
+package org.apache.beam.runners.spark.structuredstreaming.translation.helpers;
 
-import org.apache.beam.runners.spark.structuredstreaming.translation.AbstractTranslationContext;
-import org.apache.beam.runners.spark.structuredstreaming.translation.TransformTranslator;
-import org.apache.beam.sdk.transforms.Reshuffle;
+import org.apache.spark.sql.types.DataTypes;
+import org.apache.spark.sql.types.Metadata;
+import org.apache.spark.sql.types.StructField;
+import org.apache.spark.sql.types.StructType;
 
-/** TODO: Should be removed if {@link Reshuffle} won't be translated. */
-class ReshuffleTranslatorBatch<K, InputT> implements TransformTranslator<Reshuffle<K, InputT>> {
+/** A {@link SchemaHelpers} for the Spark Batch Runner. */
+public class SchemaHelpers {
+  private static final StructType BINARY_SCHEMA =
+      new StructType(
+          new StructField[] {
+            StructField.apply("binaryStructField", DataTypes.BinaryType, true, Metadata.empty())
+          });
 
-  @Override
-  public void translateTransform(Reshuffle<K, InputT> transform, AbstractTranslationContext context) {}
+  public static StructType binarySchema() {
+    // we use a binary schema for now because:
+    // using a empty schema raises a indexOutOfBoundsException
+    // using a NullType schema stores null in the elements
+    return BINARY_SCHEMA;
+  }
 }
