@@ -166,8 +166,6 @@ if sys.platform == 'win32' and sys.maxsize <= 2**32:
 REQUIRED_TEST_PACKAGES = [
     'freezegun>=0.3.12',
     'mock>=1.0.1,<3.0.0',
-    'nose>=1.3.7',
-    'nose_xunitmp>=0.4.1',
     'pandas>=1.0,<1.4.0',
     'parameterized>=0.7.1,<0.8.0',
     'pyhamcrest>=1.9,!=1.10.0,<2.0.0',
@@ -188,6 +186,7 @@ GCP_REQUIREMENTS = [
     'google-auth>=1.18.0,<2',
     'google-cloud-datastore>=1.8.0,<2',
     'google-cloud-pubsub>=0.39.0,<2',
+    'google-cloud-bigquery-storage>=2.4.0',
     # GCP packages required by tests
     'google-cloud-bigquery>=1.6.0,<3',
     'google-cloud-core>=0.28.1,<2',
@@ -290,7 +289,6 @@ setuptools.setup(
     ]),
     install_requires=REQUIRED_PACKAGES,
     python_requires=python_requires,
-    test_suite='nose.collector',
     # BEAM-8840: Do NOT use tests_require or setup_requires.
     extras_require={
         'docs': ['Sphinx>=1.5.2,<2.0'],
@@ -317,10 +315,6 @@ setuptools.setup(
     ],
     license='Apache License, Version 2.0',
     keywords=PACKAGE_KEYWORDS,
-    entry_points={
-        'nose.plugins.0.10': [
-            'beam_test_plugin = test_config:BeamTestPlugin',
-        ]},
     cmdclass={
         'build_py': generate_protos_first(build_py),
         'develop': generate_protos_first(develop),
