@@ -17,34 +17,38 @@
  */
 package org.apache.beam.sdk.extensions.sql.impl.parser;
 
-import com.google.common.annotations.VisibleForTesting;
-import java.io.StringReader;
+import java.io.Reader;
 import org.apache.beam.sdk.extensions.sql.impl.parser.impl.BeamSqlParserImpl;
-import org.apache.calcite.config.Lex;
+import org.apache.beam.vendor.calcite.v1_26_0.org.apache.calcite.jdbc.CalcitePrepare;
+import org.apache.beam.vendor.calcite.v1_26_0.org.apache.calcite.server.DdlExecutor;
+import org.apache.beam.vendor.calcite.v1_26_0.org.apache.calcite.sql.parser.SqlAbstractParserImpl;
+import org.apache.beam.vendor.calcite.v1_26_0.org.apache.calcite.sql.parser.SqlParserImplFactory;
 
-/**
- * SQL Parser which handles DDL for Beam.
- */
 public class BeamSqlParser {
-  public static final int DEFAULT_IDENTIFIER_MAX_LENGTH = 128;
-  private final BeamSqlParserImpl impl;
 
-  public BeamSqlParser(String s) {
-    this.impl = new BeamSqlParserImpl(new StringReader(s));
-    this.impl.setTabSize(1);
-    this.impl.setQuotedCasing(Lex.ORACLE.quotedCasing);
-    this.impl.setUnquotedCasing(Lex.ORACLE.unquotedCasing);
-    this.impl.setIdentifierMaxLength(DEFAULT_IDENTIFIER_MAX_LENGTH);
-    /*
-     *  By default parser uses [ ] for quoting identifiers. Switching to
-     *  DQID (double quoted identifiers) is needed for array and map access
-     *  (m['x'] = 1 or arr[2] = 10 etc) to work.
-     */
-    this.impl.switchTo("DQID");
-  }
+  private BeamSqlParser() {}
 
-  @VisibleForTesting
-  public BeamSqlParserImpl impl() {
-    return impl;
+  /** Parser factory. */
+  public static final SqlParserImplFactory FACTORY =
+      new SqlParserImplFactory() {
+        @Override
+        public SqlAbstractParserImpl getParser(Reader stream) {
+          return BeamSqlParserImpl.FACTORY.getParser(stream);
+        }
+
+        @Override
+        public DdlExecutor getDdlExecutor() {
+          return BeamSqlParser.DDL_EXECUTOR;
+        }
+      };
+
+  /** Ddl Executor. */
+  public static final DdlExecutor DDL_EXECUTOR =
+      (context, node) -> {
+        ((ExecutableStatement) node).execute(context);
+      };
+
+  interface ExecutableStatement {
+    void execute(CalcitePrepare.Context context);
   }
 }
