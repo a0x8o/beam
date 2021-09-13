@@ -15,18 +15,26 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.beam.sdk.io.gcp.pubsublite;
+package org.apache.beam.sdk.io.jms;
 
-import com.google.cloud.pubsublite.proto.SequencedMessage;
 import java.io.Serializable;
-import org.apache.beam.sdk.transforms.DoFn.OutputReceiver;
-import org.apache.beam.sdk.transforms.splittabledofn.RestrictionTracker;
+import org.apache.beam.sdk.io.UnboundedSource;
 
-interface SubscriptionPartitionProcessorFactory extends Serializable {
-  long serialVersionUID = 765145146544654L;
+/**
+ * Enables users to specify their own `JMS` backlog reporters enabling {@link JmsIO} to report
+ * {@link UnboundedSource.UnboundedReader#getTotalBacklogBytes()}.
+ */
+public interface AutoScaler extends Serializable {
 
-  SubscriptionPartitionProcessor newProcessor(
-      SubscriptionPartition subscriptionPartition,
-      RestrictionTracker<OffsetByteRange, OffsetByteProgress> tracker,
-      OutputReceiver<SequencedMessage> receiver);
+  /** The {@link AutoScaler} is started when the {@link JmsIO.UnboundedJmsReader} is started. */
+  void start();
+
+  /**
+   * Returns the size of the backlog of unread data in the underlying data source represented by all
+   * splits of this source.
+   */
+  long getTotalBacklogBytes();
+
+  /** The {@link AutoScaler} is stopped when the {@link JmsIO.UnboundedJmsReader} is closed. */
+  void stop();
 }

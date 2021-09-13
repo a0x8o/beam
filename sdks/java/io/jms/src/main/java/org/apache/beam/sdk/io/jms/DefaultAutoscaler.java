@@ -15,18 +15,23 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.beam.sdk.io.gcp.pubsublite;
+package org.apache.beam.sdk.io.jms;
 
-import com.google.cloud.pubsublite.proto.SequencedMessage;
-import java.io.Serializable;
-import org.apache.beam.sdk.transforms.DoFn.OutputReceiver;
-import org.apache.beam.sdk.transforms.splittabledofn.RestrictionTracker;
+import static org.apache.beam.sdk.io.UnboundedSource.UnboundedReader.BACKLOG_UNKNOWN;
 
-interface SubscriptionPartitionProcessorFactory extends Serializable {
-  long serialVersionUID = 765145146544654L;
+/**
+ * Default implementation of {@link AutoScaler}. Returns {@link
+ * org.apache.beam.sdk.io.UnboundedSource.UnboundedReader#BACKLOG_UNKNOWN} as the default value.
+ */
+public class DefaultAutoscaler implements AutoScaler {
+  @Override
+  public void start() {}
 
-  SubscriptionPartitionProcessor newProcessor(
-      SubscriptionPartition subscriptionPartition,
-      RestrictionTracker<OffsetByteRange, OffsetByteProgress> tracker,
-      OutputReceiver<SequencedMessage> receiver);
+  @Override
+  public long getTotalBacklogBytes() {
+    return BACKLOG_UNKNOWN;
+  }
+
+  @Override
+  public void stop() {}
 }
