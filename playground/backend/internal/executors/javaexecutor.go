@@ -13,11 +13,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-module beam.apache.org/playground/backend
+// Executor for Java
+package executors
 
-go 1.16
+type JavaExecutor struct{}
 
-require (
-	google.golang.org/grpc v1.41.0
-	google.golang.org/protobuf v1.27.1
-)
+func (javaExec JavaExecutor) Validate(filePath string) (bool, error) {
+	return true, nil
+}
+
+func (javaExec JavaExecutor) Compile(filePath string) error {
+	return nil
+}
+
+func (javaExec JavaExecutor) Run(filePath string) (string, error) {
+	return "", nil
+}

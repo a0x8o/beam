@@ -13,11 +13,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-module beam.apache.org/playground/backend
+// Interface for all executors (Java/Python/Go/SCIO)
+package executors
 
-go 1.16
+type executor interface {
+	// Validate validates executable file.
+	// Return result of validation (true/false) and error if it occurs
+	Validate(filePath string) (bool, error)
 
-require (
-	google.golang.org/grpc v1.41.0
-	google.golang.org/protobuf v1.27.1
-)
+	// Compile compiles executable file.
+	// Return error if it occurs
+	Compile(filePath string) error
+
+	// Run runs executable file.
+	// Return logs and error if it occurs
+	Run(filePath string) (string, error)
+}
