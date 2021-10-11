@@ -16,17 +16,20 @@
  * limitations under the License.
  */
 
-// paddings
-const double kZeroSpacing = 0.0;
-const double kSmSpacing = 4.0;
-const double kMdSpacing = 8.0;
-const double kLgSpacing = 16.0;
+import 'package:flutter/material.dart';
+import 'package:playground/modules/examples/models/example_model.dart';
+import 'package:playground/modules/examples/repositories/example_repository.dart';
 
-// border radius
-const double kBorderRadius = 8.0;
+class ExampleState with ChangeNotifier {
+  final ExampleRepository _exampleRepository;
+  List<ExampleModel>? examples;
 
-// elevation
-const int kElevation = 1;
+  ExampleState(this._exampleRepository) {
+    _loadExamples();
+  }
 
-// icon sizes
-const double kIconSizeMd = 24.0;
+  _loadExamples() async {
+    examples = await _exampleRepository.getExamples();
+    notifyListeners();
+  }
+}
