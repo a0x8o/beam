@@ -16,19 +16,5 @@
  * limitations under the License.
  */
 
-import 'package:playground/modules/editor/repository/code_repository/code_client/check_status_response.dart';
-import 'package:playground/modules/editor/repository/code_repository/code_client/output_response.dart';
-import 'package:playground/modules/editor/repository/code_repository/code_client/run_code_response.dart';
-import 'package:playground/modules/editor/repository/code_repository/run_code_request.dart';
-
-abstract class CodeClient {
-  Future<RunCodeResponse> runCode(RunCodeRequestWrapper request);
-
-  Future<CheckStatusResponse> checkStatus(String pipelineUuid);
-
-  Future<OutputResponse> getCompileOutput(String pipelineUuid);
-
-  Future<OutputResponse> getRunOutput(String pipelineUuid);
-
-  Future<OutputResponse> getRunErrorOutput(String pipelineUuid);
-}
+const String kApiClientURL =
+    'https://backend-dot-datatokenization.uc.r.appspot.com';
