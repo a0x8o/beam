@@ -22,7 +22,6 @@ import (
 	"beam.apache.org/playground/backend/internal/environment"
 	"beam.apache.org/playground/backend/internal/errors"
 	"beam.apache.org/playground/backend/internal/logger"
-	"beam.apache.org/playground/backend/internal/setup_tools/compile_builder"
 	"beam.apache.org/playground/backend/internal/setup_tools/life_cycle"
 	"beam.apache.org/playground/backend/internal/utils"
 	"context"
@@ -51,7 +50,7 @@ func (controller *playgroundController) RunCode(ctx context.Context, info *pb.Ru
 		return nil, errors.InvalidArgumentError("Run code()", "incorrect sdk: "+info.Sdk.String())
 	}
 	switch info.Sdk {
-	case pb.Sdk_SDK_UNSPECIFIED, pb.Sdk_SDK_PYTHON, pb.Sdk_SDK_SCIO:
+	case pb.Sdk_SDK_UNSPECIFIED, pb.Sdk_SDK_SCIO:
 		logger.Errorf("RunCode(): unimplemented sdk: %s\n", info.Sdk)
 		return nil, errors.InvalidArgumentError("Run code()", "unimplemented sdk: "+info.Sdk.String())
 	}
@@ -63,13 +62,6 @@ func (controller *playgroundController) RunCode(ctx context.Context, info *pb.Ru
 	if err != nil {
 		logger.Errorf("RunCode(): error during setup file system: %s\n", err.Error())
 		return nil, errors.InternalError("Run code", "Error during setup file system: "+err.Error())
-	}
-
-	compileBuilder, err := compile_builder.Setup(lc.GetAbsoluteSourceFilePath(), lc.GetAbsoluteBaseFolderPath(), info.Sdk, controller.env.BeamSdkEnvs.ExecutorConfig)
-	if err != nil {
-		logger.Errorf("RunCode(): error during setup run builder: %s\n", err.Error())
-		code_processing.DeleteFolders(pipelineId, lc)
-		return nil, errors.InvalidArgumentError("Run code", "Error during setup compile builder: "+err.Error())
 	}
 
 	if err = utils.SetToCache(ctx, controller.cacheService, pipelineId, cache.Status, pb.Status_STATUS_VALIDATING); err != nil {
@@ -86,7 +78,7 @@ func (controller *playgroundController) RunCode(ctx context.Context, info *pb.Ru
 	}
 
 	// TODO change using of context.TODO() to context.Background()
-	go code_processing.Process(context.TODO(), controller.cacheService, lc, compileBuilder, pipelineId, &controller.env.ApplicationEnvs, &controller.env.BeamSdkEnvs)
+	go code_processing.Process(context.TODO(), controller.cacheService, lc, pipelineId, &controller.env.ApplicationEnvs, &controller.env.BeamSdkEnvs)
 
 	pipelineInfo := pb.RunCodeResponse{PipelineUuid: pipelineId.String()}
 	return &pipelineInfo, nil
@@ -124,7 +116,9 @@ func (controller *playgroundController) GetRunOutput(ctx context.Context, info *
 	newRunOutput := ""
 	if len(runOutput) > lastIndex {
 		newRunOutput = runOutput[lastIndex:]
-		utils.SetToCache(ctx, controller.cacheService, pipelineId, cache.RunOutputIndex, lastIndex+len(newRunOutput))
+		if err := utils.SetToCache(ctx, controller.cacheService, pipelineId, cache.RunOutputIndex, lastIndex+len(newRunOutput)); err != nil {
+			return nil, errors.InternalError("GetRunOutput", "Error during set value to cache: "+err.Error())
+		}
 	}
 
 	pipelineResult := pb.GetRunOutputResponse{Output: newRunOutput}
