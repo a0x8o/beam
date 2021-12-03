@@ -34,7 +34,7 @@
         <elasticsearch.client.rest.version>5.6.3</elasticsearch.client.rest.version>
         <httpcomponents.core.version>4.4.5</httpcomponents.core.version>
         <httpcomponents.httpasyncclient.version>4.1.2</httpcomponents.httpasyncclient.version>
-        <httpcomponents.httpclient.version>4.5.2</httpcomponents.httpclient.version>
+        <httpcomponents.httpclient.version>4.5.13</httpcomponents.httpclient.version>
     </properties>
 
     <dependencies>
