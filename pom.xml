@@ -134,7 +134,7 @@
       This dependency is defined with a provided scope.
       Users must supply their own Hadoop version at runtime.
     -->
-    <hadoop.version>2.7.3</hadoop.version>
+    <hadoop.version>2.10.1</hadoop.version>
     <hamcrest.version>1.3</hamcrest.version>
     <jackson.version>2.9.5</jackson.version>
     <findbugs.version>3.0.1</findbugs.version>
