@@ -122,7 +122,7 @@
     <google-auto-service.version>1.0-rc2</google-auto-service.version>
     <google-auto-value.version>1.5.3</google-auto-value.version>
     <google-auth.version>0.7.1</google-auth.version>
-    <google-clients.version>1.23.0</google-clients.version>
+    <google-clients.version>1.33.3</google-clients.version>
     <google-cloud-bigdataoss.version>1.4.5</google-cloud-bigdataoss.version>
     <google-cloud-core.version>1.0.2</google-cloud-core.version>
     <google-cloud-dataflow-java-proto-library-all.version>0.5.160304</google-cloud-dataflow-java-proto-library-all.version>
