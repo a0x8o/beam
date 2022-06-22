@@ -31,7 +31,7 @@
     <description>IO to read and write on Elasticsearch</description>
 
     <properties>
-        <elasticsearch.client.rest.version>5.6.3</elasticsearch.client.rest.version>
+        <elasticsearch.client.rest.version>6.8.15</elasticsearch.client.rest.version>
         <httpcomponents.core.version>4.4.5</httpcomponents.core.version>
         <httpcomponents.httpasyncclient.version>4.1.2</httpcomponents.httpasyncclient.version>
         <httpcomponents.httpclient.version>4.5.2</httpcomponents.httpclient.version>
